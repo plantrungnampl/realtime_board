@@ -1,0 +1,47 @@
+# ========== Rust ==========
+/target/
+**/*.rs.bk
+
+# ========== Frontend (React) ==========
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.vite/
+frontend/.next/
+frontend/out/
+frontend/coverage/
+
+# caches
+frontend/.cache/
+frontend/.parcel-cache/
+frontend/.turbo/
+frontend/.npm/
+frontend/.yarn/
+frontend/pnpm-store/
+
+# logs
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/pnpm-debug.log*
+
+# ========== Environment / Secrets ==========
+.env
+.env.*
+!.env.example
+!.env.template
+
+# certificates / keys
+*.pem
+*.key
+*.crt
+*.p12
+
+# ========== OS ==========
+.DS_Store
+Thumbs.db
+
+# ========== IDE ==========
+.idea/
+*.iml
+.vscode/
