@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de};
 use sqlx::prelude::FromRow;
 use uuid::Uuid;
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -108,28 +108,25 @@ pub struct BoardElement {
     pub style: sqlx::types::Json<serde_json::Value>,
     pub properties: sqlx::types::Json<serde_json::Value>,
 }
-#[derive(Debug, Deserialize, Serialize, Clone)]
-#[serde(tag = "action", content = "payload")]
-pub enum WsBoardElementAction {
-    #[serde(rename = "ELEMENT_CREATE")]
-    create(BoardElement),
-    #[serde(rename = "ELEMENT_UPDATE")]
-    update(BoardElement),
-    #[serde(rename = "ELEMENT_FINISH")]
-    finish(BoardElement),
-    #[serde(rename = "CURSOR_MOVE")]
-    CursorMove(CursorMove),
-}
+// #[derive(Debug, Deserialize, Serialize, Clone)]
+// #[serde(tag = "action", content = "payload")]
+// pub enum WsBoardElementAction {
+//     #[serde(rename = "ELEMENT_CREATE")]
+//     create(BoardElement),
+//     #[serde(rename = "ELEMENT_UPDATE")]
+//     update(BoardElement),
+//     #[serde(rename = "ELEMENT_FINISH")]
+//     finish(BoardElement),
+//     #[serde(rename = "CURSOR_MOVE")]
+//     CursorMove(CursorMove),
+// }
 // cursor realtime
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct CursorMove {
-    pub x: f64,
-    pub y: f64,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct CursorBroadcast {
     pub user_id: Uuid,
-    pub x: f64,
-    pub y: f64,
+    pub user_name: String,
+    pub position_x: f64,
+    pub position_y: f64,
+    pub color: String,
+    pub status: String,
 }

@@ -17,14 +17,23 @@ export interface CreateBoardRequest {
 }
 
 export interface CursorMove {
-  x: number;
-  y: number;
+  user_id: string;
+  user_name: string;
+  position_x: number;
+  position_y: number;
+  color: string;
+  status: string;
 }
 
 export interface CursorBroadcast {
-  user_id: string; // UUID
-  x: number;
-  y: number;
+  client_id: number;
+  user_id: string;
+  user_name: string;
+  x: number | null;
+  y: number | null;
+  color: string;
+  status?: string;
+  avatar_url?: string | null;
 }
 
 export interface ElementStyle {

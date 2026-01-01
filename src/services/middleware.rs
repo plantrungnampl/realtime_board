@@ -1,6 +1,6 @@
 use axum::{
-    extract::{FromRef, FromRequestParts, Request, State},
-    http::{header, request::Parts},
+    extract::{Request, State},
+    http::{header},
     middleware::Next,
     response::Response,
 };
@@ -44,11 +44,14 @@ pub async fn auth_middleware(
     };
 
     let jwt_config = JwtConfig::secret_env();
+    
     let claim = jwt_config
         .verify_token(&token)
         .map_err(|e| AppError::Unauthorized(format!("Invalid token: {}", e)))?;
+    
     let user_id = Uuid::parse_str(&claim.sub)
         .map_err(|_| AppError::Unauthorized("Invaliod User id ".to_string()))?;
+    
     let auth_user = AuthUser {
         user_id,
         email: claim.email,

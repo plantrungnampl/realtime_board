@@ -880,8 +880,6 @@ CREATE TABLE crdt.board_update (
   -- Cột partition
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-  -- --- [FIX QUAN TRỌNG] ---
-  -- Phải thêm created_at vào Primary Key
   PRIMARY KEY (board_id, seq, created_at)
 ) PARTITION BY RANGE (created_at);
 

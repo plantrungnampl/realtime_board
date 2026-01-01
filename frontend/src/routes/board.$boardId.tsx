@@ -1,5 +1,13 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
   Stage,
   Layer,
@@ -9,312 +17,449 @@ import {
   Text as KonvaText,
   Group,
 } from "react-konva";
+import type { Stage as KonvaStage } from "konva/lib/Stage";
 import type { KonvaEventObject } from "konva/lib/Node";
 import { useAppStore } from "@/store/useAppStore";
-import type { CursorBroadcast, BoardElement } from "@/types/board";
-import { getBoardsList } from "@/lib/api";
 import {
-  MousePointer2,
-  Square,
-  Circle as CircleIcon,
-  Pencil,
-  Type,
   Undo2,
   Redo2,
+  RotateCcw,
   Share2,
   ChevronLeft,
 } from "lucide-react";
+import type { BoardElement } from "@/types/board";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
-import * as Y from "yjs";
-import { WebsocketProvider } from "y-websocket";
+import {
+  TOOLS,
+  type ToolType,
+  DEFAULT_TEXT_STYLE,
+  createElementForTool,
+  getPointerPosition,
+  useBoardMetadata,
+  useBoardRealtime,
+  useCanvasDimensions,
+  useTextEditor,
+} from "./board.$boardId.logic";
 
 export const Route = createFileRoute("/board/$boardId")({
   component: BoardComponent,
 });
 
-const TOOLS = [
-  { id: "select", icon: MousePointer2, label: "Select" },
-  { id: "shape:rectangle", icon: Square, label: "Rectangle" },
-  { id: "shape:circle", icon: CircleIcon, label: "Circle" },
-  { id: "drawing", icon: Pencil, label: "Draw" },
-  { id: "text", icon: Type, label: "Text" },
-] as const;
+const HEADER_HEIGHT = 56;
+const GRID_SIZE = 40;
+const GRID_MAJOR_EVERY = 5;
+const SCALE_BY = 1.06;
+const MIN_SCALE = 0.2;
+const MAX_SCALE = 4;
+const TEXT_CHAR_WIDTH = 0.6;
+const TEXT_LINE_HEIGHT = 1.2;
+const SELECTION_STROKE = "#FBBF24";
 
-type ToolType = (typeof TOOLS)[number]["id"];
+type Point = { x: number; y: number };
+
+const getTextMetrics = (content: string, fontSize: number) => {
+  const lines = content.split("\n");
+  const longestLine = lines.reduce(
+    (max, line) => Math.max(max, line.length),
+    0,
+  );
+  return {
+    width: Math.max(1, longestLine) * fontSize * TEXT_CHAR_WIDTH,
+    height: Math.max(1, lines.length) * fontSize * TEXT_LINE_HEIGHT,
+  };
+};
+
+const distanceToSegment = (point: Point, start: Point, end: Point) => {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  if (dx === 0 && dy === 0) {
+    return Math.hypot(point.x - start.x, point.y - start.y);
+  }
+  const t =
+    ((point.x - start.x) * dx + (point.y - start.y) * dy) /
+    (dx * dx + dy * dy);
+  const clamped = Math.min(1, Math.max(0, t));
+  const closest = { x: start.x + clamped * dx, y: start.y + clamped * dy };
+  return Math.hypot(point.x - closest.x, point.y - closest.y);
+};
 
 function BoardComponent() {
   const { boardId } = Route.useParams();
   const { user, isAuthenticated } = useAppStore();
   const navigate = useNavigate();
 
-  // Board State
-  const [boardTitle, setBoardTitle] = useState("Untitled Board");
-  const [elements, setElements] = useState<BoardElement[]>([]);
-  const [tool, setTool] = useState<ToolType>("select");
-  const [action, setAction] = useState<"none" | "drawing" | "moving">("none");
+  const boardTitle = useBoardMetadata(boardId, isAuthenticated, navigate);
+  const dimensions = useCanvasDimensions();
+  const {
+    elements,
+    cursors,
+    upsertElement,
+    updateElement,
+    scheduleCursorUpdate,
+    clearCursor,
+    startHistoryEntry,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+  } = useBoardRealtime({ boardId, user });
 
-  // Realtime State
-  const [cursors, setCursors] = useState<Record<string, CursorBroadcast>>({});
-
-  // Yjs Refs
-  const yDocRef = useRef<Y.Doc | null>(null);
-  const providerRef = useRef<WebsocketProvider | null>(null);
-
-  // Canvas State
-  const [dimensions, setDimensions] = useState({
-    width: window.innerWidth,
-    height: window.innerHeight,
+  const {
+    textEditor,
+    setTextEditor,
+    openTextEditor,
+    closeTextEditor,
+    commitTextEditor,
+    textAreaRef,
+    suppressNextPointerRef,
+  } = useTextEditor({
+    boardId,
+    upsertElement,
+    updateElement,
+    startHistoryEntry,
   });
 
-  // Temporary drawing state
+  const [tool, setTool] = useState<ToolType>("select");
+  const [action, setAction] = useState<"none" | "drawing" | "moving">("none");
   const currentShapeId = useRef<string | null>(null);
+  const stageRef = useRef<KonvaStage | null>(null);
+  const [stageScale, setStageScale] = useState(1);
+  const [stagePosition, setStagePosition] = useState({ x: 0, y: 0 });
+  const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
 
-  // Auth & Board Info
-  useEffect(() => {
-    if (!isAuthenticated) {
-      if (!localStorage.getItem("token")) {
-        navigate({ to: "/login" });
-      }
-    }
+  const findElementAtPoint = useCallback(
+    (point: Point): BoardElement | null => {
+      const threshold = 6 / stageScale;
+      for (let index = elements.length - 1; index >= 0; index -= 1) {
+        const el = elements[index];
+        if (el.element_type === "Shape") {
+          if (el.properties.shapeType === "rectangle") {
+            const x2 = el.position_x + el.width;
+            const y2 = el.position_y + el.height;
+            const minX = Math.min(el.position_x, x2);
+            const maxX = Math.max(el.position_x, x2);
+            const minY = Math.min(el.position_y, y2);
+            const maxY = Math.max(el.position_y, y2);
+            if (
+              point.x >= minX &&
+              point.x <= maxX &&
+              point.y >= minY &&
+              point.y <= maxY
+            ) {
+              return el;
+            }
+          }
 
-    getBoardsList()
-      .then((boards) => {
-        const currentBoard = boards.find((b) => b.id.toString() === boardId);
-        if (currentBoard) {
-          setBoardTitle(currentBoard.name);
+          if (el.properties.shapeType === "circle") {
+            const radius = Math.hypot(el.width || 0, el.height || 0);
+            const dx = point.x - el.position_x;
+            const dy = point.y - el.position_y;
+            if (dx * dx + dy * dy <= radius * radius) {
+              return el;
+            }
+          }
         }
-      })
-      .catch(console.error);
-  }, [isAuthenticated, navigate, boardId]);
 
-  // Resize handler
-  useEffect(() => {
-    const handleResize = () => {
-      setDimensions({ width: window.innerWidth, height: window.innerHeight });
-    };
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
-
-  // Yjs & WebSocket Setup
-  useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (!token) return;
-
-    // Initialize Yjs Doc
-    const doc = new Y.Doc();
-    yDocRef.current = doc;
-
-    // Connect to Websocket Provider
-    // Using a specific room name for the board
-    const wsUrl = "ws://localhost:3000/ws/yjs"; // Assuming Yjs endpoint
-    const provider = new WebsocketProvider(wsUrl, `board-${boardId}`, doc, {
-      params: { token },
-    });
-    providerRef.current = provider;
-
-    // Elements Map (using Y.Map for ID-based lookups)
-    const yElements = doc.getMap<BoardElement>("elements");
-
-    // Sync initial state
-    setElements(Array.from(yElements.values()));
-
-    // Listen for changes
-    yElements.observe(() => {
-      setElements(Array.from(yElements.values()));
-    });
-
-    // Awareness (Cursors)
-    const awareness = provider.awareness;
-
-    // Set local user state
-    if (user) {
-      awareness.setLocalState({
-        user: {
-          name: user.display_name,
-          color: "#EAB308", // Yellow
-          id: user.id,
-        },
-        x: 0,
-        y: 0,
-      });
-    }
-
-    awareness.on("change", () => {
-      const newCursors: Record<string, CursorBroadcast> = {};
-      awareness.getStates().forEach((state, clientId) => {
-        if (
-          clientId !== awareness.clientID &&
-          state.user &&
-          state.x != null &&
-          state.y != null
-        ) {
-          // Use user.id as key if available, otherwise clientId
-          const key = state.user.id || clientId.toString();
-          newCursors[key] = {
-            user_id: state.user.name || "Anonymous", // Mapping name to user_id for display
-            x: state.x,
-            y: state.y,
-          };
+        if (el.element_type === "Text") {
+          const content = el.properties.content || "";
+          const fontSize = el.style.fontSize ?? DEFAULT_TEXT_STYLE.fontSize;
+          const { width, height } = getTextMetrics(content, fontSize);
+          const padding = 4 / stageScale;
+          if (
+            point.x >= el.position_x - padding &&
+            point.x <= el.position_x + width + padding &&
+            point.y >= el.position_y - padding &&
+            point.y <= el.position_y + height + padding
+          ) {
+            return el;
+          }
         }
-      });
-      setCursors(newCursors);
-    });
 
-    return () => {
-      provider.disconnect();
-      doc.destroy();
-    };
-  }, [boardId, user]);
-
-  // Update cursor position in Awareness
-  const broadcastCursor = (x: number, y: number) => {
-    const provider = providerRef.current;
-    if (provider) {
-      provider.awareness.setLocalStateField("x", x);
-      provider.awareness.setLocalStateField("y", y);
-    }
-  };
-
-  // Drawing Handlers
-  const handleMouseDown = (e: KonvaEventObject<MouseEvent>) => {
-    if (action === "drawing") return;
-
-    const stage = e.target.getStage();
-    if (!stage) return;
-    const pos = stage.getPointerPosition();
-    if (!pos) return;
-    const { x, y } = pos;
-
-    if (tool === "select") return;
-
-    const id = crypto.randomUUID();
-    currentShapeId.current = id;
-    setAction("drawing");
-
-    let newElement: BoardElement | null = null;
-
-    if (tool === "shape:rectangle") {
-      newElement = {
-        id,
-        board_id: boardId,
-        element_type: "Shape",
-        position_x: x,
-        position_y: y,
-        width: 1,
-        height: 1,
-        style: { stroke: "#ffffff", strokeWidth: 2, fill: "transparent" },
-        properties: { shapeType: "rectangle" },
-      };
-    } else if (tool === "shape:circle") {
-      newElement = {
-        id,
-        board_id: boardId,
-        element_type: "Shape",
-        position_x: x,
-        position_y: y,
-        width: 1,
-        height: 1,
-        style: { stroke: "#ffffff", strokeWidth: 2, fill: "transparent" },
-        properties: { shapeType: "circle" },
-      };
-    } else if (tool === "drawing") {
-      newElement = {
-        id,
-        board_id: boardId,
-        element_type: "Drawing",
-        position_x: 0,
-        position_y: 0,
-        width: 1,
-        height: 1,
-        style: { stroke: "#EAB308", strokeWidth: 3 },
-        properties: { points: [x, y] },
-      };
-    } else if (tool === "text") {
-      const text = prompt("Enter text:");
-      if (text) {
-        newElement = {
-          id,
-          board_id: boardId,
-          element_type: "Text",
-          position_x: x,
-          position_y: y,
-          width: 1,
-          height: 1,
-          style: { fontSize: 20, fill: "#ffffff" },
-          properties: { content: text },
-        };
-
-        // Add to Yjs Map
-        if (yDocRef.current) {
-          const yElements = yDocRef.current.getMap<BoardElement>("elements");
-          yElements.set(id, newElement);
+        if (el.element_type === "Drawing") {
+          const points = el.properties.points || [];
+          for (let i = 0; i < points.length - 2; i += 2) {
+            const start = { x: points[i], y: points[i + 1] };
+            const end = { x: points[i + 2], y: points[i + 3] };
+            if (distanceToSegment(point, start, end) <= threshold) {
+              return el;
+            }
+          }
         }
       }
-      setAction("none");
-      return;
-    }
+      return null;
+    },
+    [elements, stageScale],
+  );
 
-    if (newElement) {
-      // Add to Yjs Map
-      if (yDocRef.current) {
-        const yElements = yDocRef.current.getMap<BoardElement>("elements");
-        yElements.set(id, newElement);
+  const handleMouseDown = useCallback(
+    (event: KonvaEventObject<MouseEvent>) => {
+      if (textEditor.isOpen) return;
+      if (suppressNextPointerRef.current) {
+        suppressNextPointerRef.current = false;
+        return;
       }
-    }
-  };
+      if (action === "drawing") return;
 
-  const handleMouseMove = (e: KonvaEventObject<MouseEvent>) => {
-    const stage = e.target.getStage();
-    if (!stage) return;
-    const pos = stage.getPointerPosition();
-    if (!pos) return;
-    const { x, y } = pos;
+      const position = getPointerPosition(event);
+      if (!position) return;
 
-    broadcastCursor(x, y);
-
-    if (action === "drawing" && currentShapeId.current) {
-      // We read from local elements for performance, but ultimately update Yjs
-      const currentElement = elements.find(
-        (el) => el.id === currentShapeId.current,
-      );
-      if (!currentElement) return;
-
-      let updatedElement: BoardElement;
-
-      // Type narrowing via discriminated union
-      if (currentElement.element_type === "Shape") {
-        updatedElement = {
-          ...currentElement,
-          width: x - currentElement.position_x,
-          height: y - currentElement.position_y,
-        };
-      } else if (currentElement.element_type === "Drawing") {
-        const newPoints = [...(currentElement.properties.points || []), x, y];
-        updatedElement = {
-          ...currentElement,
-          properties: {
-            ...currentElement.properties,
-            points: newPoints,
-          },
-        };
-      } else {
-        // Text or other types don't update on drag currently
+      if (tool === "select") {
+        const hit = findElementAtPoint(position);
+        setSelectedElementId(hit?.id ?? null);
+        setAction("none");
         return;
       }
 
-      // Update Yjs Map
-      if (yDocRef.current) {
-        const yElements = yDocRef.current.getMap<BoardElement>("elements");
-        yElements.set(currentElement.id, updatedElement);
+      if (tool === "text") {
+        openTextEditor({
+          x: position.x,
+          y: position.y,
+          value: "",
+          elementId: null,
+          fontSize: DEFAULT_TEXT_STYLE.fontSize,
+          color: DEFAULT_TEXT_STYLE.fill,
+        });
+        setAction("none");
+        return;
       }
-    }
-  };
 
-  const handleMouseUp = () => {
+      startHistoryEntry();
+      const id = crypto.randomUUID();
+      currentShapeId.current = id;
+      setAction("drawing");
+
+      const newElement = createElementForTool(tool, boardId, id, position);
+      if (newElement) {
+        upsertElement(newElement);
+      }
+    },
+    [
+      action,
+      boardId,
+      findElementAtPoint,
+      openTextEditor,
+      startHistoryEntry,
+      textEditor.isOpen,
+      tool,
+      upsertElement,
+    ],
+  );
+
+  const handleMouseMove = useCallback(
+    (event: KonvaEventObject<MouseEvent>) => {
+      if (textEditor.isOpen) return;
+
+      const position = getPointerPosition(event);
+      if (!position) return;
+
+      scheduleCursorUpdate(position);
+
+      if (action !== "drawing" || !currentShapeId.current) return;
+
+      updateElement(currentShapeId.current, (currentElement) => {
+        if (currentElement.element_type === "Shape") {
+          return {
+            ...currentElement,
+            width: position.x - currentElement.position_x,
+            height: position.y - currentElement.position_y,
+          };
+        }
+
+        if (currentElement.element_type === "Drawing") {
+          const newPoints = [
+            ...(currentElement.properties.points || []),
+            position.x,
+            position.y,
+          ];
+          return {
+            ...currentElement,
+            properties: {
+              ...currentElement.properties,
+              points: newPoints,
+            },
+          };
+        }
+
+        return null;
+      });
+    },
+    [action, scheduleCursorUpdate, textEditor.isOpen, updateElement],
+  );
+
+  const handleMouseUp = useCallback(() => {
     setAction("none");
     currentShapeId.current = null;
+  }, []);
+
+  const handleTextChange = useCallback(
+    (event: ChangeEvent<HTMLTextAreaElement>) => {
+      const value = event.target.value;
+      setTextEditor((prev) => ({
+        ...prev,
+        value,
+      }));
+    },
+    [setTextEditor],
+  );
+
+  const handleTextKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        commitTextEditor();
+        return;
+      }
+
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeTextEditor();
+      }
+    },
+    [closeTextEditor, commitTextEditor],
+  );
+
+  const handleWheel = useCallback(
+    (event: KonvaEventObject<WheelEvent>) => {
+      event.evt.preventDefault();
+      if (!event.evt.ctrlKey && !event.evt.metaKey) {
+        setStagePosition((prev) => ({
+          x: prev.x - event.evt.deltaX,
+          y: prev.y - event.evt.deltaY,
+        }));
+        return;
+      }
+      const stage = stageRef.current;
+      if (!stage) return;
+      const pointer = stage.getPointerPosition();
+      if (!pointer) return;
+
+      const oldScale = stage.scaleX() || 1;
+      const oldPosition = stage.position();
+      const scaleDirection = event.evt.deltaY > 0 ? -1 : 1;
+      const scaleFactor = scaleDirection > 0 ? SCALE_BY : 1 / SCALE_BY;
+      const nextScale = Math.min(
+        MAX_SCALE,
+        Math.max(MIN_SCALE, oldScale * scaleFactor),
+      );
+
+      const mousePointTo = {
+        x: (pointer.x - oldPosition.x) / oldScale,
+        y: (pointer.y - oldPosition.y) / oldScale,
+      };
+
+      const nextPosition = {
+        x: pointer.x - mousePointTo.x * nextScale,
+        y: pointer.y - mousePointTo.y * nextScale,
+      };
+
+      setStageScale(nextScale);
+      setStagePosition(nextPosition);
+    },
+    [],
+  );
+
+  const resetZoom = useCallback(() => {
+    setStageScale(1);
+    setStagePosition({ x: 0, y: 0 });
+  }, []);
+
+  const handleGlobalKeyDown = useCallback(
+    (event: KeyboardEvent) => {
+      if (textEditor.isOpen) return;
+      if (event.defaultPrevented) return;
+      const target = event.target;
+      if (target instanceof HTMLElement) {
+        const tagName = target.tagName;
+        if (
+          tagName === "INPUT" ||
+          tagName === "TEXTAREA" ||
+          target.isContentEditable
+        ) {
+          return;
+        }
+      }
+
+      const isModifier = event.metaKey || event.ctrlKey;
+      if (!isModifier) return;
+
+      const key = event.key.toLowerCase();
+      if (key === "z") {
+        event.preventDefault();
+        if (event.shiftKey) {
+          redo();
+        } else {
+          undo();
+        }
+        return;
+      }
+
+      if (key === "y") {
+        event.preventDefault();
+        redo();
+      }
+    },
+    [redo, textEditor.isOpen, undo],
+  );
+
+  useEffect(() => {
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, [handleGlobalKeyDown]);
+
+  useEffect(() => {
+    if (!selectedElementId) return;
+    const exists = elements.some((el) => el.id === selectedElementId);
+    if (!exists) setSelectedElementId(null);
+  }, [elements, selectedElementId]);
+
+  const cursorList = Object.values(cursors);
+  const visibleCursors = cursorList.slice(0, 3);
+  const extraCursorCount = Math.max(0, cursorList.length - 3);
+  const stageHeight = dimensions.height - HEADER_HEIGHT;
+  const worldLeft = (-stagePosition.x) / stageScale;
+  const worldTop = (-stagePosition.y) / stageScale;
+  const worldRight = (dimensions.width - stagePosition.x) / stageScale;
+  const worldBottom = (stageHeight - stagePosition.y) / stageScale;
+  const selectionStrokeWidth = 2 / stageScale;
+  const selectionDash = [6 / stageScale, 4 / stageScale];
+  const selectionPadding = 6 / stageScale;
+  const gridLines = useMemo(() => {
+    const lines: Array<{ points: number[]; major: boolean }> = [];
+    const startX = Math.floor(worldLeft / GRID_SIZE) * GRID_SIZE;
+    const endX = Math.ceil(worldRight / GRID_SIZE) * GRID_SIZE;
+    const startY = Math.floor(worldTop / GRID_SIZE) * GRID_SIZE;
+    const endY = Math.ceil(worldBottom / GRID_SIZE) * GRID_SIZE;
+
+    for (let x = startX; x <= endX; x += GRID_SIZE) {
+      const index = Math.round(x / GRID_SIZE);
+      lines.push({
+        points: [x, worldTop, x, worldBottom],
+        major: index % GRID_MAJOR_EVERY === 0,
+      });
+    }
+    for (let y = startY; y <= endY; y += GRID_SIZE) {
+      const index = Math.round(y / GRID_SIZE);
+      lines.push({
+        points: [worldLeft, y, worldRight, y],
+        major: index % GRID_MAJOR_EVERY === 0,
+      });
+    }
+    return lines;
+  }, [
+    dimensions.width,
+    stageHeight,
+    stagePosition.x,
+    stagePosition.y,
+    stageScale,
+    worldBottom,
+    worldLeft,
+    worldRight,
+    worldTop,
+  ]);
+  const textEditorScreenPosition = {
+    x: textEditor.x * stageScale + stagePosition.x,
+    y: textEditor.y * stageScale + stagePosition.y,
   };
 
   return (
@@ -334,47 +479,20 @@ function BoardComponent() {
           </div>
         </div>
 
-        {/* Toolbar - Center */}
-        <div className="absolute left-1/2 -translate-x-1/2 top-2 bg-neutral-800 border border-neutral-700 p-1 rounded-xl flex items-center gap-1 shadow-xl">
-          {TOOLS.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTool(t.id)}
-              className={cn(
-                "p-2 rounded-lg transition-all",
-                tool === t.id
-                  ? "bg-yellow-500 text-neutral-900 shadow-sm"
-                  : "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-700",
-              )}
-              title={t.label}
-            >
-              <t.icon className="w-5 h-5" />
-            </button>
-          ))}
-          <div className="w-px h-6 bg-neutral-700 mx-1" />
-          <button className="p-2 rounded-lg text-neutral-400 hover:text-neutral-200 hover:bg-neutral-700">
-            <Undo2 className="w-5 h-5" />
-          </button>
-          <button className="p-2 rounded-lg text-neutral-400 hover:text-neutral-200 hover:bg-neutral-700">
-            <Redo2 className="w-5 h-5" />
-          </button>
-        </div>
-
         <div className="flex items-center gap-3">
           <div className="flex -space-x-2">
-            {Object.values(cursors)
-              .slice(0, 3)
-              .map((cursor) => (
-                <div
-                  key={cursor.user_id}
-                  className="w-8 h-8 rounded-full bg-neutral-700 border-2 border-neutral-900 flex items-center justify-center text-xs text-neutral-300"
-                >
-                  {cursor.user_id.slice(0, 2)}
-                </div>
-              ))}
-            {Object.keys(cursors).length > 3 && (
+            {visibleCursors.map((cursor) => (
+              <div
+                key={cursor.client_id}
+                className="w-8 h-8 rounded-full border-2 border-neutral-900 flex items-center justify-center text-xs text-neutral-900"
+                style={{ backgroundColor: cursor.color }}
+              >
+                {cursor.user_name.slice(0, 2).toUpperCase()}
+              </div>
+            ))}
+            {extraCursorCount > 0 && (
               <div className="w-8 h-8 rounded-full bg-neutral-800 border-2 border-neutral-900 flex items-center justify-center text-xs text-neutral-400">
-                +{Object.keys(cursors).length - 3}
+                +{extraCursorCount}
               </div>
             )}
           </div>
@@ -393,94 +511,275 @@ function BoardComponent() {
 
       {/* Canvas */}
       <div className="flex-1 relative cursor-crosshair">
+        <div className="absolute left-4 top-1/2 z-30 flex -translate-y-1/2 flex-col gap-1 rounded-2xl border border-neutral-800 bg-neutral-900/80 p-2 shadow-lg backdrop-blur">
+          {TOOLS.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTool(t.id)}
+              className={cn(
+                "group relative flex h-11 w-11 items-center justify-center rounded-xl transition-all",
+                tool === t.id
+                  ? "bg-yellow-500 text-neutral-900 shadow-sm"
+                  : "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800",
+              )}
+              title={t.label}
+            >
+              <t.icon className="h-5 w-5" />
+              <span className="pointer-events-none absolute left-full top-1/2 ml-3 -translate-y-1/2 translate-x-1 whitespace-nowrap rounded-md border border-neutral-700 bg-neutral-900/95 px-2 py-1 text-xs text-neutral-100 opacity-0 shadow-md transition-all group-hover:translate-x-0 group-hover:opacity-100">
+                {t.label}
+              </span>
+            </button>
+          ))}
+          <div className="my-1 h-px w-full bg-neutral-800" />
+          <button
+            type="button"
+            onClick={undo}
+            disabled={!canUndo}
+            className={cn(
+              "group relative flex h-11 w-11 items-center justify-center rounded-xl transition-colors",
+              canUndo
+                ? "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800"
+                : "text-neutral-700 cursor-not-allowed",
+            )}
+            title="Undo"
+          >
+            <Undo2 className="h-5 w-5" />
+            <span className="pointer-events-none absolute left-full top-1/2 ml-3 -translate-y-1/2 translate-x-1 whitespace-nowrap rounded-md border border-neutral-700 bg-neutral-900/95 px-2 py-1 text-xs text-neutral-100 opacity-0 shadow-md transition-all group-hover:translate-x-0 group-hover:opacity-100">
+              Undo
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={redo}
+            disabled={!canRedo}
+            className={cn(
+              "group relative flex h-11 w-11 items-center justify-center rounded-xl transition-colors",
+              canRedo
+                ? "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800"
+                : "text-neutral-700 cursor-not-allowed",
+            )}
+            title="Redo"
+          >
+            <Redo2 className="h-5 w-5" />
+            <span className="pointer-events-none absolute left-full top-1/2 ml-3 -translate-y-1/2 translate-x-1 whitespace-nowrap rounded-md border border-neutral-700 bg-neutral-900/95 px-2 py-1 text-xs text-neutral-100 opacity-0 shadow-md transition-all group-hover:translate-x-0 group-hover:opacity-100">
+              Redo
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={resetZoom}
+            className="group relative flex h-11 w-11 items-center justify-center rounded-xl text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-200"
+            title="Reset zoom"
+          >
+            <RotateCcw className="h-5 w-5" />
+            <span className="pointer-events-none absolute left-full top-1/2 ml-3 -translate-y-1/2 translate-x-1 whitespace-nowrap rounded-md border border-neutral-700 bg-neutral-900/95 px-2 py-1 text-xs text-neutral-100 opacity-0 shadow-md transition-all group-hover:translate-x-0 group-hover:opacity-100">
+              Reset zoom
+            </span>
+          </button>
+        </div>
+        {textEditor.isOpen && (
+          <textarea
+            ref={textAreaRef}
+            value={textEditor.value}
+            onChange={handleTextChange}
+            onBlur={() => commitTextEditor(true)}
+            onKeyDown={handleTextKeyDown}
+            rows={1}
+            spellCheck={false}
+            className="absolute z-20 min-w-[120px] max-w-[420px] resize-none overflow-hidden bg-neutral-900/90 text-neutral-100 border border-neutral-700 rounded-md px-2 py-1 shadow-lg"
+            style={{
+              top: textEditorScreenPosition.y,
+              left: textEditorScreenPosition.x,
+              fontSize: textEditor.fontSize * stageScale,
+              color: textEditor.color,
+            }}
+          />
+        )}
         <Stage
+          ref={stageRef}
           width={dimensions.width}
-          height={dimensions.height - 56}
+          height={stageHeight}
+          scaleX={stageScale}
+          scaleY={stageScale}
+          x={stagePosition.x}
+          y={stagePosition.y}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
+          onMouseLeave={clearCursor}
+          onWheel={handleWheel}
         >
           <Layer>
             <Rect
-              width={dimensions.width}
-              height={dimensions.height}
-              fill="#171717"
+              x={worldLeft}
+              y={worldTop}
+              width={worldRight - worldLeft}
+              height={worldBottom - worldTop}
+              fill="#141414"
             />
+            {gridLines.map((line, index) => (
+              <Line
+                key={`grid-${index}`}
+                points={line.points}
+                stroke={line.major ? "#2F2F2F" : "#222222"}
+                strokeWidth={(line.major ? 1.2 : 1) / stageScale}
+                listening={false}
+              />
+            ))}
 
             {elements.map((el) => {
+              const isSelected = selectedElementId === el.id;
               if (el.element_type === "Shape") {
                 if (el.properties.shapeType === "rectangle") {
+                  const rectX = Math.min(el.position_x, el.position_x + el.width);
+                  const rectY = Math.min(el.position_y, el.position_y + el.height);
+                  const rectWidth = Math.abs(el.width);
+                  const rectHeight = Math.abs(el.height);
                   return (
-                    <Rect
-                      key={el.id}
-                      x={el.position_x}
-                      y={el.position_y}
-                      width={el.width}
-                      height={el.height}
-                      stroke={el.style.stroke}
-                      strokeWidth={el.style.strokeWidth}
-                      fill={el.style.fill}
-                    />
-                  );
-                } else if (el.properties.shapeType === "circle") {
-                  const radius = Math.sqrt(
-                    Math.pow(el.width || 0, 2) + Math.pow(el.height || 0, 2),
-                  );
-                  return (
-                    <Circle
-                      key={el.id}
-                      x={el.position_x}
-                      y={el.position_y}
-                      radius={radius}
-                      stroke={el.style.stroke}
-                      strokeWidth={el.style.strokeWidth}
-                      fill={el.style.fill}
-                    />
+                    <Fragment key={el.id}>
+                      <Rect
+                        x={el.position_x}
+                        y={el.position_y}
+                        width={el.width}
+                        height={el.height}
+                        stroke={el.style.stroke}
+                        strokeWidth={el.style.strokeWidth}
+                        fill={el.style.fill}
+                      />
+                      {isSelected && (
+                        <Rect
+                          x={rectX - selectionPadding}
+                          y={rectY - selectionPadding}
+                          width={rectWidth + selectionPadding * 2}
+                          height={rectHeight + selectionPadding * 2}
+                          stroke={SELECTION_STROKE}
+                          strokeWidth={selectionStrokeWidth}
+                          dash={selectionDash}
+                          listening={false}
+                        />
+                      )}
+                    </Fragment>
                   );
                 }
-              } else if (el.element_type === "Drawing") {
+                if (el.properties.shapeType === "circle") {
+                  const radius = Math.hypot(el.width || 0, el.height || 0);
+                  return (
+                    <Fragment key={el.id}>
+                      <Circle
+                        x={el.position_x}
+                        y={el.position_y}
+                        radius={radius}
+                        stroke={el.style.stroke}
+                        strokeWidth={el.style.strokeWidth}
+                        fill={el.style.fill}
+                      />
+                      {isSelected && (
+                        <Circle
+                          x={el.position_x}
+                          y={el.position_y}
+                          radius={radius + selectionPadding}
+                          stroke={SELECTION_STROKE}
+                          strokeWidth={selectionStrokeWidth}
+                          dash={selectionDash}
+                          listening={false}
+                        />
+                      )}
+                    </Fragment>
+                  );
+                }
+              }
+
+              if (el.element_type === "Drawing") {
                 return (
-                  <Line
-                    key={el.id}
-                    points={el.properties.points}
-                    stroke={el.style.stroke}
-                    strokeWidth={el.style.strokeWidth}
-                    lineCap="round"
-                    lineJoin="round"
-                  />
-                );
-              } else if (el.element_type === "Text") {
-                return (
-                  <KonvaText
-                    key={el.id}
-                    x={el.position_x}
-                    y={el.position_y}
-                    text={el.properties.content || ""}
-                    fontSize={el.style.fontSize}
-                    fill={el.style.fill}
-                  />
+                  <Fragment key={el.id}>
+                    <Line
+                      points={el.properties.points}
+                      stroke={el.style.stroke}
+                      strokeWidth={el.style.strokeWidth}
+                      lineCap="round"
+                      lineJoin="round"
+                    />
+                    {isSelected && (
+                      <Line
+                        points={el.properties.points}
+                        stroke={SELECTION_STROKE}
+                        strokeWidth={(el.style.strokeWidth ?? 1) + selectionStrokeWidth}
+                        lineCap="round"
+                        lineJoin="round"
+                        dash={selectionDash}
+                        listening={false}
+                      />
+                    )}
+                  </Fragment>
                 );
               }
+
+              if (el.element_type === "Text") {
+                const content = el.properties.content || "";
+                const fontSize = el.style.fontSize ?? DEFAULT_TEXT_STYLE.fontSize;
+                const { width, height } = getTextMetrics(content, fontSize);
+                return (
+                  <Fragment key={el.id}>
+                    <KonvaText
+                      x={el.position_x}
+                      y={el.position_y}
+                      text={content}
+                      fontSize={fontSize}
+                      fill={el.style.fill}
+                      onDblClick={(event) => {
+                        event.cancelBubble = true;
+                        openTextEditor({
+                          x: el.position_x,
+                          y: el.position_y,
+                          value: content,
+                          elementId: el.id,
+                          fontSize,
+                          color: el.style.fill ?? DEFAULT_TEXT_STYLE.fill,
+                        });
+                      }}
+                    />
+                    {isSelected && (
+                      <Rect
+                        x={el.position_x - selectionPadding}
+                        y={el.position_y - selectionPadding}
+                        width={width + selectionPadding * 2}
+                        height={height + selectionPadding * 2}
+                        stroke={SELECTION_STROKE}
+                        strokeWidth={selectionStrokeWidth}
+                        dash={selectionDash}
+                        listening={false}
+                      />
+                    )}
+                  </Fragment>
+                );
+              }
+
               return null;
             })}
 
-            {Object.values(cursors).map((cursor) => (
-              <Group key={cursor.user_id} x={cursor.x} y={cursor.y}>
-                <Circle
-                  radius={4}
-                  fill="#EAB308"
-                  stroke="#171717"
-                  strokeWidth={1}
-                />
-                <KonvaText
-                  text={cursor.user_id.slice(0, 4)}
-                  y={10}
-                  x={-10}
-                  fill="#EAB308"
-                  fontSize={10}
-                />
-              </Group>
-            ))}
+            {cursorList
+              .filter((cursor) => cursor.x !== null && cursor.y !== null)
+              .map((cursor) => (
+                <Group
+                  key={cursor.client_id}
+                  x={cursor.x ?? 0}
+                  y={cursor.y ?? 0}
+                >
+                  <Circle
+                    radius={4}
+                    fill={cursor.color}
+                    stroke="#171717"
+                    strokeWidth={1}
+                  />
+                  <KonvaText
+                    text={cursor.user_name}
+                    y={10}
+                    x={-10}
+                    fill={cursor.color}
+                    fontSize={10}
+                  />
+                </Group>
+              ))}
           </Layer>
         </Stage>
       </div>

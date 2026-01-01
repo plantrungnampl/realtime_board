@@ -4,15 +4,15 @@ services:
   db:
     image: postgis/postgis:17-3.5
     container_name: realtime_board_container
-    restart: always            # Tự khởi động lại nếu bị crash hoặc restart máy
+    restart: always          
     environment:
-      POSTGRES_USER: admin     # Tên đăng nhập
-      POSTGRES_PASSWORD: Annam123@123 # Mật khẩu (Lưu ý: Đừng dùng pass này cho Production)
-      POSTGRES_DB: realtime_board   # Tên database sẽ được tạo tự động
+      POSTGRES_USER: admin     
+      POSTGRES_PASSWORD: Annam123@123 
+      POSTGRES_DB: realtime_board  
     ports:
-      - "5434:5432"            # Mở cổng ra máy thật (Host:Container)
+      - "5434:5432"           
     volumes:
-      - postgres_data:/var/lib/postgresql/data # Lưu dữ liệu ra ổ cứng để không bị mất khi tắt container
+      - postgres_data:/var/lib/postgresql/data 
 
   # (Tùy chọn) Giao diện quản lý DB - pgAdmin
   pgadmin:
@@ -22,10 +22,9 @@ services:
       PGADMIN_DEFAULT_EMAIL: admin@admin.com
       PGADMIN_DEFAULT_PASSWORD: admin
     ports:
-      - "5050:80"              # Truy cập web quản lý qua cổng 5050
+      - "5050:80"              
     depends_on:
       - db
 
-# Khai báo nơi lưu trữ dữ liệu
 volumes:
   postgres_data:

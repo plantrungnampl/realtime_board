@@ -1,4 +1,3 @@
-use crate::error::{AppError, AppResult};
 use argon2::PasswordHasher;
 use argon2::{
     Argon2, PasswordHash, PasswordVerifier,
