@@ -1,11 +1,13 @@
-import { createRootRouteWithContext, Link, Outlet, useLocation } from '@tanstack/react-router'
+import { createRootRouteWithContext, Link, Outlet, useLocation, useNavigate } from '@tanstack/react-router'
 import { TanStackRouterDevtools } from '@tanstack/router-devtools'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import type { QueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/Button'
-import { PenTool, LogOut, User as UserIcon } from 'lucide-react'
+import { LogOut, PenTool, User as UserIcon } from 'lucide-react'
 import { useEffect } from 'react'
 import { useAppStore } from '@/store/useAppStore'
+import { useThemePreference } from '@/shared/theme'
+import { useTranslation } from 'react-i18next'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,6 +36,17 @@ function RootComponent() {
   const logout = useAppStore((state) => state.logout)
   const user = useAppStore((state) => state.user)
   const location = useLocation()
+  const navigate = useNavigate()
+  const preferences = useAppStore((state) => state.user?.preferences)
+  const { t, i18n } = useTranslation()
+
+  useThemePreference(preferences?.theme ?? "dark")
+
+  useEffect(() => {
+    const locale = preferences?.language === "vi" ? "vi" : "en"
+    i18n.changeLanguage(locale)
+    document.documentElement.lang = locale
+  }, [i18n, preferences?.language])
 
   useEffect(() => {
     checkAuth()
@@ -43,7 +56,11 @@ function RootComponent() {
   const avatarFallback = displayName.charAt(0).toUpperCase()
 
   // Check if we are on the dashboard or board route to hide the header
-  const shouldHideHeader = location.pathname.startsWith('/dashboard') || location.pathname.startsWith('/board')
+  const shouldHideHeader =
+    location.pathname.startsWith('/dashboard') ||
+    location.pathname.startsWith('/board') ||
+    location.pathname.startsWith('/organizations') ||
+    location.pathname.startsWith('/invitations')
 
   return (
     <>
@@ -60,10 +77,10 @@ function RootComponent() {
               
               <div className="hidden md:flex items-center gap-6 text-sm font-medium text-text-secondary">
                 <Link to="/" className="hover:text-text-primary transition-colors">
-                  Features
+                  {t("nav.features")}
                 </Link>
                 <Link to="/pricing" className="hover:text-text-primary transition-colors">
-                  Pricing
+                  {t("nav.pricing")}
                 </Link>
               </div>
             </div>
@@ -89,13 +106,13 @@ function RootComponent() {
                       </div>
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => navigate({ to: "/profile" })}>
                       <UserIcon className="mr-2 h-4 w-4" />
-                      <span>Profile</span>
+                      <span>{t("nav.profile")}</span>
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => logout()}>
                       <LogOut className="mr-2 h-4 w-4" />
-                      <span>Log out</span>
+                      <span>{t("nav.logout")}</span>
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -103,12 +120,12 @@ function RootComponent() {
                 <>
                   <Link to="/login">
                     <Button variant="ghost" size="sm" className="hidden sm:inline-flex">
-                      Log in
+                      {t("nav.login")}
                     </Button>
                   </Link>
                   <Link to="/register">
                     <Button size="sm">
-                      Get Started
+                      {t("nav.getStarted")}
                     </Button>
                   </Link>
                 </>

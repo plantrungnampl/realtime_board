@@ -8,13 +8,13 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant = 'default', size = 'md', ...props }, ref) => {
-    const baseStyles = 'inline-flex items-center justify-center whitespace-nowrap rounded-lg font-medium ring-offset-neutral-900 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50';
+    const baseStyles = 'inline-flex items-center justify-center whitespace-nowrap rounded-lg font-medium ring-offset-bg-base transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50';
     
     const variants = {
       default: 'bg-yellow-500 text-neutral-900 hover:bg-yellow-400 active:bg-yellow-600',
-      secondary: 'bg-neutral-800 border border-neutral-700 text-neutral-200 hover:bg-neutral-700',
-      ghost: 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800',
-      link: 'text-yellow-500 underline-offset-4 hover:underline',
+      secondary: 'bg-bg-surface border border-border text-text-secondary hover:bg-bg-elevated',
+      ghost: 'text-text-secondary hover:text-text-primary hover:bg-bg-surface',
+      link: 'text-accent underline-offset-4 hover:underline',
     };
 
     const sizes = {

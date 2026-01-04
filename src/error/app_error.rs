@@ -1,12 +1,13 @@
 use axum::{
+    Json,
     http::StatusCode,
     response::{IntoResponse, Response},
-    Json,
 };
 use serde::Serialize;
 use std::fmt;
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum AppError {
     // Database errors
     Database(sqlx::Error),
@@ -15,6 +16,7 @@ pub enum AppError {
     Unauthorized(String),
     Forbidden(String),
     InvalidCredentials(String),
+    EmailNotVerified(String),
 
     // Resource errors
     NotFound(String),
@@ -29,6 +31,9 @@ pub enum AppError {
 
     // External service errors
     ExternalService(String),
+
+    // Subscription limits
+    LimitExceeded(String),
 
     // Internal errors
     Internal(String),
@@ -53,12 +58,14 @@ impl fmt::Display for AppError {
             AppError::Unauthorized(msg) => write!(f, "Unauthorized: {}", msg),
             AppError::Forbidden(msg) => write!(f, "Forbidden: {}", msg),
             AppError::InvalidCredentials(msg) => write!(f, "Invalid credentials: {}", msg),
+            AppError::EmailNotVerified(msg) => write!(f, "Email not verified: {}", msg),
             AppError::NotFound(msg) => write!(f, "Not found: {}", msg),
             AppError::Conflict(msg) => write!(f, "Conflict: {}", msg),
             AppError::BadRequest(msg) => write!(f, "Bad request: {}", msg),
             AppError::ValidationError(msg) => write!(f, "Validation error: {}", msg),
             AppError::WebSocketError(msg) => write!(f, "WebSocket error: {}", msg),
             AppError::ExternalService(msg) => write!(f, "External service error: {}", msg),
+            AppError::LimitExceeded(msg) => write!(f, "Limit exceeded: {}", msg),
             AppError::Internal(msg) => write!(f, "Internal error: {}", msg),
         }
     }
@@ -77,27 +84,22 @@ impl IntoResponse for AppError {
                     "database error".to_string(),
                 )
             }
-            AppError::Unauthorized(msg) => {
-                (StatusCode::UNAUTHORIZED, "UNAUTHORIZED", msg.clone())
-            }
-            AppError::Forbidden(msg) => {
-                (StatusCode::FORBIDDEN, "FORBIDDEN", msg.clone())
-            }
+            AppError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, "UNAUTHORIZED", msg.clone()),
+            AppError::Forbidden(msg) => (StatusCode::FORBIDDEN, "FORBIDDEN", msg.clone()),
             AppError::InvalidCredentials(msg) => {
                 (StatusCode::UNAUTHORIZED, "INVALID_CREDENTIALS", msg.clone())
             }
-            AppError::NotFound(msg) => {
-                (StatusCode::NOT_FOUND, "NOT_FOUND", msg.clone())
+            AppError::EmailNotVerified(msg) => {
+                (StatusCode::UNAUTHORIZED, "EMAIL_NOT_VERIFIED", msg.clone())
             }
-            AppError::Conflict(msg) => {
-                (StatusCode::CONFLICT, "CONFLICT", msg.clone())
-            }
-            AppError::BadRequest(msg) => {
-                (StatusCode::BAD_REQUEST, "BAD_REQUEST", msg.clone())
-            }
-            AppError::ValidationError(msg) => {
-                (StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR", msg.clone())
-            }
+            AppError::NotFound(msg) => (StatusCode::NOT_FOUND, "NOT_FOUND", msg.clone()),
+            AppError::Conflict(msg) => (StatusCode::CONFLICT, "CONFLICT", msg.clone()),
+            AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, "BAD_REQUEST", msg.clone()),
+            AppError::ValidationError(msg) => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "VALIDATION_ERROR",
+                msg.clone(),
+            ),
             AppError::WebSocketError(msg) => {
                 (StatusCode::BAD_REQUEST, "WEBSOCKET_ERROR", msg.clone())
             }
@@ -108,6 +110,9 @@ impl IntoResponse for AppError {
                     "EXTERNAL_SERVICE_ERROR",
                     "Error service".to_string(),
                 )
+            }
+            AppError::LimitExceeded(msg) => {
+                (StatusCode::PAYMENT_REQUIRED, "LIMIT_EXCEEDED", msg.clone())
             }
             AppError::Internal(msg) => {
                 tracing::error!("Internal error: {}", msg);
@@ -146,6 +151,3 @@ impl From<serde_json::Error> for AppError {
         AppError::BadRequest(format!("JSON parse error: {}", err))
     }
 }
-
-// Result type alias
-pub type AppResult<T> = Result<T, AppError>;

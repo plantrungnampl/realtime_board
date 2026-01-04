@@ -17,7 +17,7 @@ function Pricing() {
             Simple, transparent pricing
           </h1>
           <p className="text-lg text-neutral-400 leading-relaxed">
-            Choose the plan that's right for your team. No hidden fees, cancel anytime.
+            Choose the plan that matches your workspace scale. Limits align with our subscription rules.
           </p>
         </div>
 
@@ -25,15 +25,20 @@ function Pricing() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-24">
           {/* Free Plan */}
           <PricingCard 
-            name="Starter"
+            name="Free"
             price="$0"
-            description="For individuals and hobbyists."
+            description="For personal work and small experiments."
+            highlights={[
+              { label: "Members", value: "3" },
+              { label: "Boards", value: "5" },
+              { label: "Storage", value: "100 MB" },
+            ]}
             features={[
-              "Unlimited public boards",
-              "3 private boards",
-              "Real-time collaboration",
-              "Basic export options",
-              "50MB storage"
+              "Up to 500 elements per board",
+              "File uploads up to 10 MB",
+              "Basic collaboration tools",
+              "30-day version history",
+              "Community support"
             ]}
             buttonText="Start for Free"
             variant="secondary"
@@ -41,35 +46,67 @@ function Pricing() {
 
           {/* Pro Plan */}
           <PricingCard 
-            name="Pro"
-            price="$12"
-            period="/month"
-            description="For professional designers and small teams."
+            name="Starter"
+            price="$10"
+            period="/user/month"
+            description="For small teams coordinating projects."
+            highlights={[
+              { label: "Members", value: "10" },
+              { label: "Boards", value: "25" },
+              { label: "Storage", value: "1 GB" },
+            ]}
             features={[
-              "Unlimited private boards",
-              "High-res export (PDF, SVG)",
-              "Version history (30 days)",
+              "Up to 2,000 elements per board",
+              "File uploads up to 25 MB",
+              "90-day version history",
+              "Advanced permissions",
+              "Export to PDF/PNG"
+            ]}
+            buttonText="Start Starter"
+            variant="secondary"
+          />
+
+          {/* Professional Plan */}
+          <PricingCard 
+            name="Professional"
+            price="$20"
+            period="/user/month"
+            description="For growing teams that need scale."
+            highlights={[
+              { label: "Members", value: "50" },
+              { label: "Boards", value: "Unlimited" },
+              { label: "Storage", value: "10 GB" },
+            ]}
+            features={[
+              "Up to 10,000 elements per board",
+              "File uploads up to 50 MB",
+              "1-year version history",
               "Priority support",
-              "10GB storage",
-              "Custom templates"
+              "Advanced analytics"
             ]}
             isPopular={true}
             buttonText="Get Started"
             variant="default"
           />
+        </div>
 
-          {/* Enterprise Plan */}
+        {/* Enterprise Plan */}
+        <div className="mb-24 max-w-4xl mx-auto">
           <PricingCard 
             name="Enterprise"
             price="Custom"
-            description="For large organizations requiring security & control."
+            description="For large organizations requiring security, governance, and custom SLAs."
+            highlights={[
+              { label: "Members", value: "Unlimited" },
+              { label: "Boards", value: "Unlimited" },
+              { label: "Storage", value: "100 GB+" },
+            ]}
             features={[
-              "Everything in Pro",
-              "SSO (SAML + Google)",
-              "Unlimited version history",
-              "Advanced permission management",
-              "Dedicated success manager",
-              "On-premise deployment options"
+              "Unlimited elements per board",
+              "File uploads up to 100 MB",
+              "SSO (SAML)",
+              "Dedicated support & SLA",
+              "On-premise deployment option"
             ]}
             buttonText="Contact Sales"
             variant="secondary"

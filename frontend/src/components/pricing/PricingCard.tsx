@@ -1,4 +1,3 @@
-import React from 'react'
 import { Button } from '@/components/ui/Button'
 import { Check } from 'lucide-react'
 
@@ -8,6 +7,7 @@ interface PricingCardProps {
   period?: string
   description: string
   features: string[]
+  highlights?: Array<{ label: string; value: string }>
   isPopular?: boolean
   buttonText: string
   variant?: "default" | "secondary" | "ghost" | "link"
@@ -19,6 +19,7 @@ export function PricingCard({
   period = "", 
   description, 
   features, 
+  highlights = [],
   isPopular = false,
   buttonText,
   variant = "default"
@@ -31,7 +32,7 @@ export function PricingCard({
         </div>
       )}
       
-      <div className="mb-8">
+      <div className="mb-6">
         <h3 className="font-heading text-xl font-semibold mb-2">{name}</h3>
         <div className="flex items-baseline gap-1 mb-4">
           <span className="text-4xl font-bold text-white">{price}</span>
@@ -39,6 +40,19 @@ export function PricingCard({
         </div>
         <p className="text-text-secondary text-sm leading-relaxed">{description}</p>
       </div>
+
+      {highlights.length > 0 && (
+        <div className="grid grid-cols-3 gap-3 mb-6">
+          {highlights.map((item) => (
+            <div key={item.label} className="rounded-lg border border-border bg-bg-base px-3 py-2">
+              <div className="text-[11px] uppercase tracking-wider text-text-muted">
+                {item.label}
+              </div>
+              <div className="text-sm font-semibold text-text-primary">{item.value}</div>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="flex-1 mb-8">
         <ul className="space-y-4">

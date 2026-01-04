@@ -45,3 +45,19 @@ Thumbs.db
 .idea/
 *.iml
 .vscode/
+
+# ========== Documentation / Schema ==========
+migrations/
+doc/
+docs/
+schema.md
+
+# AI Agent documentation
+AGENT.md
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+**/AGENT.md
+**/AGENTS.md
+**/CLAUDE.md
+**/GEMINI.md

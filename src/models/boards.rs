@@ -1,27 +1,19 @@
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize, de};
+use serde::{Deserialize, Serialize};
 use sqlx::prelude::FromRow;
 use uuid::Uuid;
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct CreateBoardRequest {
-    // pub created_by: Uuid,
-    pub organization_id: Option<Uuid>,
-    pub name: String,
-    pub description: Option<String>,
-    pub thumbnail_url: Option<String>,
+/// Board member role mapping for core.board_role.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, sqlx::Type, PartialEq)]
+#[serde(rename_all = "lowercase")]
+#[sqlx(type_name = "core.board_role", rename_all = "lowercase")]
+pub enum BoardRole {
+    Owner,
+    Admin,
+    Editor,
+    Commenter,
+    Viewer,
 }
-#[derive(Debug, Deserialize, Serialize, FromRow)]
-pub struct BoardResponse {
-    pub id: Uuid,
-    pub created_by: Uuid,
-    pub organization_id: Option<Uuid>,
-    pub name: String,
-    pub username: String,
-    pub description: Option<String>,
-    pub thumbnail_url: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CanvasSettings {
@@ -34,7 +26,6 @@ pub struct CanvasSettings {
     pub show_rulers: bool,
     pub default_zoom: f64,
 }
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Viewport {
@@ -88,45 +79,4 @@ pub struct Board {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub deleted_at: Option<DateTime<Utc>>,
-}
-#[derive(Debug, Serialize, Deserialize, sqlx::Type, Clone)]
-#[sqlx(type_name = "board.element_type", rename_all = "snake_case")]
-pub enum ElementType {
-    Shape,
-    Text,
-    Drawing,
-}
-#[derive(Debug, Serialize, Deserialize, FromRow, Clone)]
-pub struct BoardElement {
-    pub id: Uuid,
-    pub board_id: Uuid,
-    pub element_type: ElementType,
-    pub position_x: f64, // position_x
-    pub position_y: f64, // position_y
-    pub width: f64,
-    pub height: f64,
-    pub style: sqlx::types::Json<serde_json::Value>,
-    pub properties: sqlx::types::Json<serde_json::Value>,
-}
-// #[derive(Debug, Deserialize, Serialize, Clone)]
-// #[serde(tag = "action", content = "payload")]
-// pub enum WsBoardElementAction {
-//     #[serde(rename = "ELEMENT_CREATE")]
-//     create(BoardElement),
-//     #[serde(rename = "ELEMENT_UPDATE")]
-//     update(BoardElement),
-//     #[serde(rename = "ELEMENT_FINISH")]
-//     finish(BoardElement),
-//     #[serde(rename = "CURSOR_MOVE")]
-//     CursorMove(CursorMove),
-// }
-// cursor realtime
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct CursorMove {
-    pub user_id: Uuid,
-    pub user_name: String,
-    pub position_x: f64,
-    pub position_y: f64,
-    pub color: String,
-    pub status: String,
 }

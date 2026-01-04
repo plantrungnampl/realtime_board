@@ -9,17 +9,33 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as VerifyEmailRouteImport } from './routes/verify-email'
 import { Route as RegisterRouteImport } from './routes/register'
+import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as InvitationsRouteImport } from './routes/invitations'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as RegisterSetupRouteImport } from './routes/register.setup'
+import { Route as OrganizationsNewRouteImport } from './routes/organizations.new'
 import { Route as BoardBoardIdRouteImport } from './routes/board.$boardId'
+import { Route as OrganizationsOrgIdMembersRouteImport } from './routes/organizations.$orgId.members'
 
+const VerifyEmailRoute = VerifyEmailRouteImport.update({
+  id: '/verify-email',
+  path: '/verify-email',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RegisterRoute = RegisterRouteImport.update({
   id: '/register',
   path: '/register',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProfileRoute = ProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PricingRoute = PricingRouteImport.update({
@@ -30,6 +46,11 @@ const PricingRoute = PricingRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InvitationsRoute = InvitationsRouteImport.update({
+  id: '/invitations',
+  path: '/invitations',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardRoute = DashboardRouteImport.update({
@@ -47,39 +68,73 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RegisterSetupRoute = RegisterSetupRouteImport.update({
+  id: '/setup',
+  path: '/setup',
+  getParentRoute: () => RegisterRoute,
+} as any)
+const OrganizationsNewRoute = OrganizationsNewRouteImport.update({
+  id: '/organizations/new',
+  path: '/organizations/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const BoardBoardIdRoute = BoardBoardIdRouteImport.update({
   id: '/board/$boardId',
   path: '/board/$boardId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OrganizationsOrgIdMembersRoute =
+  OrganizationsOrgIdMembersRouteImport.update({
+    id: '/organizations/$orgId/members',
+    path: '/organizations/$orgId/members',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/dashboard': typeof DashboardRoute
+  '/invitations': typeof InvitationsRoute
   '/login': typeof LoginRoute
   '/pricing': typeof PricingRoute
-  '/register': typeof RegisterRoute
+  '/profile': typeof ProfileRoute
+  '/register': typeof RegisterRouteWithChildren
+  '/verify-email': typeof VerifyEmailRoute
   '/board/$boardId': typeof BoardBoardIdRoute
+  '/organizations/new': typeof OrganizationsNewRoute
+  '/register/setup': typeof RegisterSetupRoute
+  '/organizations/$orgId/members': typeof OrganizationsOrgIdMembersRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/dashboard': typeof DashboardRoute
+  '/invitations': typeof InvitationsRoute
   '/login': typeof LoginRoute
   '/pricing': typeof PricingRoute
-  '/register': typeof RegisterRoute
+  '/profile': typeof ProfileRoute
+  '/register': typeof RegisterRouteWithChildren
+  '/verify-email': typeof VerifyEmailRoute
   '/board/$boardId': typeof BoardBoardIdRoute
+  '/organizations/new': typeof OrganizationsNewRoute
+  '/register/setup': typeof RegisterSetupRoute
+  '/organizations/$orgId/members': typeof OrganizationsOrgIdMembersRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/dashboard': typeof DashboardRoute
+  '/invitations': typeof InvitationsRoute
   '/login': typeof LoginRoute
   '/pricing': typeof PricingRoute
-  '/register': typeof RegisterRoute
+  '/profile': typeof ProfileRoute
+  '/register': typeof RegisterRouteWithChildren
+  '/verify-email': typeof VerifyEmailRoute
   '/board/$boardId': typeof BoardBoardIdRoute
+  '/organizations/new': typeof OrganizationsNewRoute
+  '/register/setup': typeof RegisterSetupRoute
+  '/organizations/$orgId/members': typeof OrganizationsOrgIdMembersRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -87,47 +142,84 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/dashboard'
+    | '/invitations'
     | '/login'
     | '/pricing'
+    | '/profile'
     | '/register'
+    | '/verify-email'
     | '/board/$boardId'
+    | '/organizations/new'
+    | '/register/setup'
+    | '/organizations/$orgId/members'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/about'
     | '/dashboard'
+    | '/invitations'
     | '/login'
     | '/pricing'
+    | '/profile'
     | '/register'
+    | '/verify-email'
     | '/board/$boardId'
+    | '/organizations/new'
+    | '/register/setup'
+    | '/organizations/$orgId/members'
   id:
     | '__root__'
     | '/'
     | '/about'
     | '/dashboard'
+    | '/invitations'
     | '/login'
     | '/pricing'
+    | '/profile'
     | '/register'
+    | '/verify-email'
     | '/board/$boardId'
+    | '/organizations/new'
+    | '/register/setup'
+    | '/organizations/$orgId/members'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
   DashboardRoute: typeof DashboardRoute
+  InvitationsRoute: typeof InvitationsRoute
   LoginRoute: typeof LoginRoute
   PricingRoute: typeof PricingRoute
-  RegisterRoute: typeof RegisterRoute
+  ProfileRoute: typeof ProfileRoute
+  RegisterRoute: typeof RegisterRouteWithChildren
+  VerifyEmailRoute: typeof VerifyEmailRoute
   BoardBoardIdRoute: typeof BoardBoardIdRoute
+  OrganizationsNewRoute: typeof OrganizationsNewRoute
+  OrganizationsOrgIdMembersRoute: typeof OrganizationsOrgIdMembersRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/verify-email': {
+      id: '/verify-email'
+      path: '/verify-email'
+      fullPath: '/verify-email'
+      preLoaderRoute: typeof VerifyEmailRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/register': {
       id: '/register'
       path: '/register'
       fullPath: '/register'
       preLoaderRoute: typeof RegisterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/profile': {
+      id: '/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof ProfileRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pricing': {
@@ -142,6 +234,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/invitations': {
+      id: '/invitations'
+      path: '/invitations'
+      fullPath: '/invitations'
+      preLoaderRoute: typeof InvitationsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard': {
@@ -165,6 +264,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/register/setup': {
+      id: '/register/setup'
+      path: '/setup'
+      fullPath: '/register/setup'
+      preLoaderRoute: typeof RegisterSetupRouteImport
+      parentRoute: typeof RegisterRoute
+    }
+    '/organizations/new': {
+      id: '/organizations/new'
+      path: '/organizations/new'
+      fullPath: '/organizations/new'
+      preLoaderRoute: typeof OrganizationsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/board/$boardId': {
       id: '/board/$boardId'
       path: '/board/$boardId'
@@ -172,17 +285,41 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BoardBoardIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/organizations/$orgId/members': {
+      id: '/organizations/$orgId/members'
+      path: '/organizations/$orgId/members'
+      fullPath: '/organizations/$orgId/members'
+      preLoaderRoute: typeof OrganizationsOrgIdMembersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
+
+interface RegisterRouteChildren {
+  RegisterSetupRoute: typeof RegisterSetupRoute
+}
+
+const RegisterRouteChildren: RegisterRouteChildren = {
+  RegisterSetupRoute: RegisterSetupRoute,
+}
+
+const RegisterRouteWithChildren = RegisterRoute._addFileChildren(
+  RegisterRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
   DashboardRoute: DashboardRoute,
+  InvitationsRoute: InvitationsRoute,
   LoginRoute: LoginRoute,
   PricingRoute: PricingRoute,
-  RegisterRoute: RegisterRoute,
+  ProfileRoute: ProfileRoute,
+  RegisterRoute: RegisterRouteWithChildren,
+  VerifyEmailRoute: VerifyEmailRoute,
   BoardBoardIdRoute: BoardBoardIdRoute,
+  OrganizationsNewRoute: OrganizationsNewRoute,
+  OrganizationsOrgIdMembersRoute: OrganizationsOrgIdMembersRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

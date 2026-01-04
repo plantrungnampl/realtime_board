@@ -105,6 +105,20 @@ body {
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
+.light {
+  color-scheme: light;
+  --color-bg-base: var(--color-neutral-50);
+  --color-bg-surface: var(--color-neutral-100);
+  --color-bg-elevated: var(--color-neutral-200);
+  --color-text-primary: var(--color-neutral-900);
+  --color-text-secondary: var(--color-neutral-600);
+  --color-text-muted: var(--color-neutral-500);
+  --color-border: var(--color-neutral-200);
+  --color-accent: var(--color-yellow-600);
+  --color-accent-hover: var(--color-yellow-500);
+  --color-accent-active: var(--color-yellow-700);
+}
+
 .dark {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);

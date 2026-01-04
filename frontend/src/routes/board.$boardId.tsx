@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Stage,
   Layer,
@@ -20,16 +21,13 @@ import {
 import type { Stage as KonvaStage } from "konva/lib/Stage";
 import type { KonvaEventObject } from "konva/lib/Node";
 import { useAppStore } from "@/store/useAppStore";
-import {
-  Undo2,
-  Redo2,
-  RotateCcw,
-  Share2,
-  ChevronLeft,
-} from "lucide-react";
+import { Undo2, Redo2, RotateCcw, ChevronLeft } from "lucide-react";
 import type { BoardElement } from "@/types/board";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
+import { BoardShareDialog } from "@/features/boards/components/BoardShareDialog";
+import { listBoardMembers } from "@/features/boards/api";
+import type { BoardRole } from "@/features/boards/types";
 import {
   TOOLS,
   type ToolType,
@@ -40,7 +38,7 @@ import {
   useBoardRealtime,
   useCanvasDimensions,
   useTextEditor,
-} from "./board.$boardId.logic";
+} from "@/features/boards/boardRoute.logic";
 
 export const Route = createFileRoute("/board/$boardId")({
   component: BoardComponent,
@@ -88,9 +86,27 @@ function BoardComponent() {
   const { boardId } = Route.useParams();
   const { user, isAuthenticated } = useAppStore();
   const navigate = useNavigate();
+  const { t } = useTranslation();
+  const [tool, setTool] = useState<ToolType>("select");
+
+  const roleKey = `${boardId}:${user?.id ?? ""}`;
+  const [boardRoleState, setBoardRoleState] = useState<{
+    key: string;
+    role: BoardRole | null;
+  }>({
+    key: roleKey,
+    role: null,
+  });
+  const boardRole =
+    boardRoleState.key === roleKey ? boardRoleState.role : null;
+  const isRoleLoading = boardRole === null && Boolean(user?.id);
 
   const boardTitle = useBoardMetadata(boardId, isAuthenticated, navigate);
   const dimensions = useCanvasDimensions();
+  const canEdit = boardRole
+    ? ["owner", "admin", "editor"].includes(boardRole)
+    : false;
+  const activeTool = canEdit ? tool : "select";
   const {
     elements,
     cursors,
@@ -103,7 +119,64 @@ function BoardComponent() {
     redo,
     canUndo,
     canRedo,
-  } = useBoardRealtime({ boardId, user });
+  } = useBoardRealtime({ boardId, user, canEdit });
+
+  useEffect(() => {
+    let isMounted = true;
+    if (!user?.id) return () => undefined;
+    const currentKey = roleKey;
+    listBoardMembers(boardId)
+      .then((members) => {
+        if (!isMounted) return;
+        const current = members.find((member) => member.user.id === user.id);
+        setBoardRoleState({
+          key: currentKey,
+          role: current?.role ?? "viewer",
+        });
+      })
+      .catch(() => {
+        if (!isMounted) return;
+        setBoardRoleState({
+          key: currentKey,
+          role: "viewer",
+        });
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [boardId, roleKey, user?.id]);
+
+  const guardedUpsertElement = useCallback(
+    (element: BoardElement) => {
+      if (!canEdit) return;
+      upsertElement(element);
+    },
+    [canEdit, upsertElement],
+  );
+
+  const guardedUpdateElement = useCallback(
+    (id: string, updater: (current: BoardElement) => BoardElement | null) => {
+      if (!canEdit) return;
+      updateElement(id, updater);
+    },
+    [canEdit, updateElement],
+  );
+
+  const guardedStartHistoryEntry = useCallback(() => {
+    if (!canEdit) return;
+    startHistoryEntry();
+  }, [canEdit, startHistoryEntry]);
+
+  const guardedUndo = useCallback(() => {
+    if (!canEdit) return;
+    undo();
+  }, [canEdit, undo]);
+
+  const guardedRedo = useCallback(() => {
+    if (!canEdit) return;
+    redo();
+  }, [canEdit, redo]);
 
   const {
     textEditor,
@@ -115,12 +188,11 @@ function BoardComponent() {
     suppressNextPointerRef,
   } = useTextEditor({
     boardId,
-    upsertElement,
-    updateElement,
-    startHistoryEntry,
+    upsertElement: guardedUpsertElement,
+    updateElement: guardedUpdateElement,
+    startHistoryEntry: guardedStartHistoryEntry,
   });
 
-  const [tool, setTool] = useState<ToolType>("select");
   const [action, setAction] = useState<"none" | "drawing" | "moving">("none");
   const currentShapeId = useRef<string | null>(null);
   const stageRef = useRef<KonvaStage | null>(null);
@@ -192,59 +264,49 @@ function BoardComponent() {
     [elements, stageScale],
   );
 
-  const handleMouseDown = useCallback(
-    (event: KonvaEventObject<MouseEvent>) => {
-      if (textEditor.isOpen) return;
-      if (suppressNextPointerRef.current) {
-        suppressNextPointerRef.current = false;
-        return;
-      }
-      if (action === "drawing") return;
+  const handleMouseDown = (event: KonvaEventObject<MouseEvent>) => {
+    if (textEditor.isOpen) return;
+    if (suppressNextPointerRef.current) {
+      suppressNextPointerRef.current = false;
+      return;
+    }
+    if (action === "drawing") return;
 
-      const position = getPointerPosition(event);
-      if (!position) return;
+    const position = getPointerPosition(event);
+    if (!position) return;
 
-      if (tool === "select") {
-        const hit = findElementAtPoint(position);
-        setSelectedElementId(hit?.id ?? null);
-        setAction("none");
-        return;
-      }
+    if (activeTool === "select") {
+      const hit = findElementAtPoint(position);
+      setSelectedElementId(hit?.id ?? null);
+      setAction("none");
+      return;
+    }
 
-      if (tool === "text") {
-        openTextEditor({
-          x: position.x,
-          y: position.y,
-          value: "",
-          elementId: null,
-          fontSize: DEFAULT_TEXT_STYLE.fontSize,
-          color: DEFAULT_TEXT_STYLE.fill,
-        });
-        setAction("none");
-        return;
-      }
+    if (activeTool === "text") {
+      if (!canEdit) return;
+      openTextEditor({
+        x: position.x,
+        y: position.y,
+        value: "",
+        elementId: null,
+        fontSize: DEFAULT_TEXT_STYLE.fontSize,
+        color: DEFAULT_TEXT_STYLE.fill,
+      });
+      setAction("none");
+      return;
+    }
 
-      startHistoryEntry();
-      const id = crypto.randomUUID();
-      currentShapeId.current = id;
-      setAction("drawing");
+    if (!canEdit) return;
+    guardedStartHistoryEntry();
+    const id = crypto.randomUUID();
+    currentShapeId.current = id;
+    setAction("drawing");
 
-      const newElement = createElementForTool(tool, boardId, id, position);
-      if (newElement) {
-        upsertElement(newElement);
-      }
-    },
-    [
-      action,
-      boardId,
-      findElementAtPoint,
-      openTextEditor,
-      startHistoryEntry,
-      textEditor.isOpen,
-      tool,
-      upsertElement,
-    ],
-  );
+    const newElement = createElementForTool(activeTool, boardId, id, position);
+    if (newElement) {
+      guardedUpsertElement(newElement);
+    }
+  };
 
   const handleMouseMove = useCallback(
     (event: KonvaEventObject<MouseEvent>) => {
@@ -257,7 +319,7 @@ function BoardComponent() {
 
       if (action !== "drawing" || !currentShapeId.current) return;
 
-      updateElement(currentShapeId.current, (currentElement) => {
+      guardedUpdateElement(currentShapeId.current, (currentElement) => {
         if (currentElement.element_type === "Shape") {
           return {
             ...currentElement,
@@ -284,7 +346,7 @@ function BoardComponent() {
         return null;
       });
     },
-    [action, scheduleCursorUpdate, textEditor.isOpen, updateElement],
+    [action, guardedUpdateElement, scheduleCursorUpdate, textEditor.isOpen],
   );
 
   const handleMouseUp = useCallback(() => {
@@ -368,6 +430,7 @@ function BoardComponent() {
     (event: KeyboardEvent) => {
       if (textEditor.isOpen) return;
       if (event.defaultPrevented) return;
+      if (!canEdit) return;
       const target = event.target;
       if (target instanceof HTMLElement) {
         const tagName = target.tagName;
@@ -387,19 +450,19 @@ function BoardComponent() {
       if (key === "z") {
         event.preventDefault();
         if (event.shiftKey) {
-          redo();
+          guardedRedo();
         } else {
-          undo();
+          guardedUndo();
         }
         return;
       }
 
       if (key === "y") {
         event.preventDefault();
-        redo();
+        guardedRedo();
       }
     },
-    [redo, textEditor.isOpen, undo],
+    [canEdit, guardedRedo, guardedUndo, textEditor.isOpen],
   );
 
   useEffect(() => {
@@ -407,11 +470,17 @@ function BoardComponent() {
     return () => window.removeEventListener("keydown", handleGlobalKeyDown);
   }, [handleGlobalKeyDown]);
 
-  useEffect(() => {
+  const ensureSelectionExists = useCallback(() => {
     if (!selectedElementId) return;
     const exists = elements.some((el) => el.id === selectedElementId);
     if (!exists) setSelectedElementId(null);
   }, [elements, selectedElementId]);
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      ensureSelectionExists();
+    });
+  }, [ensureSelectionExists]);
 
   const cursorList = Object.values(cursors);
   const visibleCursors = cursorList.slice(0, 3);
@@ -446,17 +515,7 @@ function BoardComponent() {
       });
     }
     return lines;
-  }, [
-    dimensions.width,
-    stageHeight,
-    stagePosition.x,
-    stagePosition.y,
-    stageScale,
-    worldBottom,
-    worldLeft,
-    worldRight,
-    worldTop,
-  ]);
+  }, [worldBottom, worldLeft, worldRight, worldTop]);
   const textEditorScreenPosition = {
     x: textEditor.x * stageScale + stagePosition.x,
     y: textEditor.y * stageScale + stagePosition.y,
@@ -474,7 +533,14 @@ function BoardComponent() {
             <ChevronLeft className="w-5 h-5" />
           </button>
           <div>
-            <h1 className="font-semibold text-neutral-200">{boardTitle}</h1>
+            <h1 className="font-semibold text-neutral-200 flex items-center gap-2">
+              <span>{boardTitle}</span>
+              {!canEdit && !isRoleLoading && (
+                <span className="inline-flex items-center rounded-full border border-neutral-700 px-2 py-0.5 text-[10px] uppercase tracking-wide text-neutral-300">
+                  {t("board.readOnly")}
+                </span>
+              )}
+            </h1>
             <p className="text-xs text-neutral-500">Last saved just now</p>
           </div>
         </div>
@@ -496,10 +562,7 @@ function BoardComponent() {
               </div>
             )}
           </div>
-          <button className="bg-yellow-500 hover:bg-yellow-400 text-neutral-900 px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2">
-            <Share2 className="w-4 h-4" />
-            Share
-          </button>
+          <BoardShareDialog boardId={boardId} />
           <Avatar className="w-9 h-9 border-2 border-neutral-800">
             <AvatarImage src={user?.avatar_url || undefined} />
             <AvatarFallback className="bg-blue-600 text-white">
@@ -512,15 +575,19 @@ function BoardComponent() {
       {/* Canvas */}
       <div className="flex-1 relative cursor-crosshair">
         <div className="absolute left-4 top-1/2 z-30 flex -translate-y-1/2 flex-col gap-1 rounded-2xl border border-neutral-800 bg-neutral-900/80 p-2 shadow-lg backdrop-blur">
-          {TOOLS.map((t) => (
+          {TOOLS.map((t) => {
+            const isDisabled = !canEdit && t.id !== "select";
+            return (
             <button
               key={t.id}
               onClick={() => setTool(t.id)}
+              disabled={isDisabled}
               className={cn(
                 "group relative flex h-11 w-11 items-center justify-center rounded-xl transition-all",
-                tool === t.id
+                activeTool === t.id && !isDisabled
                   ? "bg-yellow-500 text-neutral-900 shadow-sm"
                   : "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800",
+                isDisabled && "cursor-not-allowed opacity-40 hover:bg-transparent",
               )}
               title={t.label}
             >
@@ -529,15 +596,16 @@ function BoardComponent() {
                 {t.label}
               </span>
             </button>
-          ))}
+          );
+          })}
           <div className="my-1 h-px w-full bg-neutral-800" />
           <button
             type="button"
-            onClick={undo}
-            disabled={!canUndo}
+            onClick={guardedUndo}
+            disabled={!canEdit || !canUndo}
             className={cn(
               "group relative flex h-11 w-11 items-center justify-center rounded-xl transition-colors",
-              canUndo
+              canEdit && canUndo
                 ? "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800"
                 : "text-neutral-700 cursor-not-allowed",
             )}
@@ -550,11 +618,11 @@ function BoardComponent() {
           </button>
           <button
             type="button"
-            onClick={redo}
-            disabled={!canRedo}
+            onClick={guardedRedo}
+            disabled={!canEdit || !canRedo}
             className={cn(
               "group relative flex h-11 w-11 items-center justify-center rounded-xl transition-colors",
-              canRedo
+              canEdit && canRedo
                 ? "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800"
                 : "text-neutral-700 cursor-not-allowed",
             )}

@@ -11,12 +11,22 @@ import {
 import { useNavigate } from "@tanstack/react-router";
 import { CreateBoardDialog } from "./CreateBoardDialog";
 import { useQuery } from "@tanstack/react-query";
-import { getBoardsList } from "@/lib/api";
+import { getBoardsList } from "@/features/boards/api";
 import type { Board } from "@/types/board";
+import { useOrganizationStore } from "@/features/organizations/state/useOrganizationStore";
+import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
+import { getOrganizationUsage } from "@/features/organizations/api";
+import type { OrganizationUsage } from "@/features/organizations/types";
+import { getApiErrorMessage } from "@/shared/api/errors";
 
 export function BoardList() {
   // const user = useAppStore((state) => state.user);
+  const { t } = useTranslation();
   const navigate = useNavigate();
+  const currentOrganization = useOrganizationStore(
+    (state) => state.currentOrganization,
+  );
 
   const {
     data: boards,
@@ -27,14 +37,37 @@ export function BoardList() {
     queryKey: ["boardsList"],
     queryFn: getBoardsList,
   });
-  console.log(boards);
+
+  const {
+    data: usage,
+    isLoading: isUsageLoading,
+    isError: isUsageError,
+    error: usageError,
+  } = useQuery<OrganizationUsage, Error>({
+    queryKey: ["organizationUsage", currentOrganization?.id],
+    queryFn: () => getOrganizationUsage(currentOrganization?.id ?? ""),
+    enabled: Boolean(currentOrganization?.id),
+  });
+
+  const filteredBoards = useMemo(() => {
+    if (!boards) return [];
+    if (currentOrganization) {
+      return boards.filter(
+        (board) => board.organization_id === currentOrganization.id,
+      );
+    }
+    return boards.filter((board) => !board.organization_id);
+  }, [boards, currentOrganization]);
+
+  const boardScopeLabel = currentOrganization?.name ?? "Personal workspace";
+
   if (isLoading) {
     return (
       <div className="flex-1 flex flex-col min-h-0">
         <div className="flex flex-col gap-4 mb-6">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold text-text-primary">
-              Boards in this team
+              Boards in {boardScopeLabel}
             </h2>
             <div className="flex gap-2">
               <Button variant="secondary" size="sm">
@@ -80,7 +113,7 @@ export function BoardList() {
   if (isError) {
     return (
       <div className="text-red-500 p-4">
-        Error loading boards: {error?.message || "Unknown error"}
+        {getApiErrorMessage(error, "Unable to load boards.")}
       </div>
     );
   }
@@ -91,9 +124,21 @@ export function BoardList() {
       <div className="flex flex-col gap-4 mb-6">
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-bold text-text-primary">
-            Boards in this team
+            Boards in {boardScopeLabel}
           </h2>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-3">
+            {currentOrganization && (
+              <UsageWidget
+                usage={usage}
+                isLoading={isUsageLoading}
+                errorMessage={
+                  isUsageError && usageError
+                    ? getApiErrorMessage(usageError, t("org.usageUnavailable"))
+                    : null
+                }
+                t={t}
+              />
+            )}
             <Button variant="secondary" size="sm">
               Explore templates
             </Button>
@@ -164,12 +209,12 @@ export function BoardList() {
 
         {/* Table Body */}
         <div className="flex flex-col">
-          {boards?.length === 0 ? (
+          {filteredBoards.length === 0 ? (
             <div className="p-4 text-center text-text-muted">
               No boards found. Create a new one!
             </div>
           ) : (
-            boards?.map((board) => (
+            filteredBoards.map((board) => (
               <div
                 key={board.id}
                 className="grid grid-cols-12 gap-4 px-4 py-3 items-center hover:bg-bg-surface border-b border-border/50 transition-colors group cursor-pointer"
@@ -228,4 +273,98 @@ export function BoardList() {
       </div>
     </div>
   );
+}
+
+type UsageWidgetProps = {
+  usage: OrganizationUsage | undefined;
+  isLoading: boolean;
+  errorMessage: string | null;
+  t: (key: string, options?: Record<string, string>) => string;
+};
+
+function UsageWidget({ usage, isLoading, errorMessage, t }: UsageWidgetProps) {
+  if (isLoading) {
+    return (
+      <div className="hidden lg:flex items-center gap-3 rounded-lg border border-border bg-bg-base px-3 py-2 text-xs text-text-muted">
+        {t("org.usageLoading")}
+      </div>
+    );
+  }
+
+  if (errorMessage || !usage) {
+    return (
+      <div className="hidden lg:flex items-center gap-3 rounded-lg border border-border bg-bg-base px-3 py-2 text-xs text-text-muted">
+        {errorMessage ?? t("org.usageUnavailable")}
+      </div>
+    );
+  }
+
+  const entries = [
+    {
+      key: "members",
+      label: t("org.usageMembers"),
+      used: usage.members_used,
+      limit: usage.members_limit,
+      warning: usage.members_warning,
+    },
+    {
+      key: "boards",
+      label: t("org.usageBoards"),
+      used: usage.boards_used,
+      limit: usage.boards_limit,
+      warning: usage.boards_warning,
+    },
+    {
+      key: "storage",
+      label: t("org.usageStorage"),
+      used: usage.storage_used_mb,
+      limit: usage.storage_limit_mb,
+      warning: usage.storage_warning,
+      unit: "mb",
+    },
+  ];
+
+  return (
+    <div className="hidden lg:flex items-center gap-4 rounded-lg border border-border bg-bg-base px-3 py-2 text-xs">
+      {entries.map((entry) => (
+        <div key={entry.key} className="flex flex-col leading-tight">
+          <span className="text-text-muted">{entry.label}</span>
+          <span className={entry.warning ? "text-yellow-400" : "text-text-primary"}>
+            {formatUsageLabel(entry.used, entry.limit, entry.unit, t)}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function formatUsageLabel(
+  used: number,
+  limit: number,
+  unit: string | undefined,
+  t: (key: string, options?: Record<string, string>) => string,
+) {
+  const usedLabel = formatUsageValue(used, unit);
+  if (limit <= 0) {
+    return t("org.usageUnlimited", { used: usedLabel });
+  }
+
+  const limitLabel = formatUsageValue(limit, unit);
+  return t("org.usageLimit", { used: usedLabel, limit: limitLabel });
+}
+
+function formatUsageValue(value: number, unit: string | undefined) {
+  if (unit === "mb") {
+    return formatStorage(value);
+  }
+
+  return value.toString();
+}
+
+function formatStorage(value: number) {
+  if (value >= 1024) {
+    return `${(value / 1024).toFixed(1)} GB`;
+  }
+
+  return `${value} MB`;
 }

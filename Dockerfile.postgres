@@ -1,0 +1,19 @@
+FROM postgis/postgis:17-3.5
+
+# Install pg_uuidv7 extension
+RUN apt-get update && apt-get install -y \
+    git \
+    build-essential \
+    postgresql-server-dev-17 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Clone and install pg_uuidv7
+RUN git clone https://github.com/fboulnois/pg_uuidv7.git /tmp/pg_uuidv7 \
+    && cd /tmp/pg_uuidv7 \
+    && make \
+    && make install \
+    && cd / \
+    && rm -rf /tmp/pg_uuidv7
+
+# Clean up
+RUN apt-get purge -y --auto-remove git build-essential postgresql-server-dev-17

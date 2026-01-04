@@ -5,12 +5,23 @@ import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { useAppStore } from '@/store/useAppStore'
 
+type LoginSearch = {
+  redirect?: string
+  email?: string
+}
+
 export const Route = createFileRoute('/login')({
-  beforeLoad: () => {
+  beforeLoad: ({ location }) => {
     const token = localStorage.getItem('token')
     if (token) {
+      const search = location.search as Record<string, unknown> | undefined
+      const redirectTarget = resolveRedirectTarget(
+        typeof search?.redirect === 'string' ? search.redirect : undefined,
+      )
+      const email = typeof search?.email === 'string' ? search.email : undefined
       throw redirect({
-        to: '/dashboard',
+        to: redirectTarget,
+        search: buildRedirectSearch(redirectTarget, email),
       })
     }
   },
@@ -22,16 +33,23 @@ function Login() {
   const login = useAppStore((state) => state.login);
   const isLoading = useAppStore((state) => state.isLoading);
   const error = useAppStore((state) => state.error);
+  const search = Route.useSearch() as LoginSearch;
+  const redirectTarget = resolveRedirectTarget(search.redirect);
 
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(() => search.email ?? "");
   const [password, setPassword] = useState("");
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     try {
       await login({ email, password });
-      navigate({ to: "/dashboard" });
-    } catch (e) {}
+      navigate({
+        to: redirectTarget,
+        search: buildRedirectSearch(redirectTarget, search.email),
+      });
+    } catch (error) {
+      console.warn("login failed", error);
+    }
   }
 
   return (
@@ -86,6 +104,10 @@ function Login() {
           Don&apos;t have an account?{" "}
           <Link
             to="/register"
+            search={{
+              email: search.email,
+              redirect: search.redirect,
+            }}
             className="text-yellow-500 hover:text-yellow-400 font-medium hover:underline underline-offset-4"
           >
             Sign up
@@ -94,4 +116,18 @@ function Login() {
       </div>
     </div>
   );
+}
+
+function resolveRedirectTarget(value?: string) {
+  if (!value) return "/dashboard";
+  if (!value.startsWith("/")) return "/dashboard";
+  if (value.startsWith("//")) return "/dashboard";
+  return value;
+}
+
+function buildRedirectSearch(target: string, email?: string) {
+  if (target === "/invitations" && email && email.trim()) {
+    return { email: email.trim() };
+  }
+  return undefined;
 }

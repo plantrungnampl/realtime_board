@@ -4,56 +4,34 @@ use sqlx::prelude::FromRow;
 use uuid::Uuid;
 
 // enum for subcription
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, sqlx::Type)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, sqlx::Type, Default)]
 #[sqlx(type_name = "core.subscription_tier", rename_all = "lowercase")]
 pub enum SubscriptionTier {
+    #[default]
     Free,
     Starter,
     Professional,
     Enterprise,
 }
-#[derive(Debug, Deserialize, Clone)]
-pub struct LoginRequest {
-    pub email: String,
-    pub password: String,
-}
-#[derive(Debug, Serialize)]
-pub struct LoginResponse {
-    pub token: String,
-    pub user: UserReponse,
-}
-#[derive(Debug, Clone, Deserialize)]
-pub struct RegisterRequest {
-    pub email: String,
-    pub password_hash: String,
-    pub display_name: String,
-    pub username: String,
-}
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UserPreferences {
     pub theme: String,
     pub language: String,
     pub notifications: NotificationSettings,
     pub default_board_settings: Option<DefaultBoardSettings>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct NotificationSettings {
     pub email: bool,
     pub push: bool,
     pub mentions: bool,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct DefaultBoardSettings {
     pub grid_enabled: bool,
     pub snap_to_grid: bool,
-}
-#[derive(Debug, Serialize, Deserialize)]
-pub struct UserReponse {
-    pub id: Uuid,
-    pub email: String,
-    pub username: String,
-    pub display_name: String,
-    pub avatar_url: Option<String>,
 }
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct User {
@@ -92,41 +70,6 @@ impl Default for UserPreferences {
             language: "en".to_string(),
             notifications: NotificationSettings::default(),
             default_board_settings: Some(DefaultBoardSettings::default()),
-        }
-    }
-}
-impl Default for NotificationSettings {
-    fn default() -> Self {
-        Self {
-            email: false,
-            push: false,
-            mentions: false,
-        }
-    }
-}
-impl Default for DefaultBoardSettings {
-    fn default() -> Self {
-        Self {
-            grid_enabled: true,
-            snap_to_grid: true,
-        }
-    }
-}
-
-impl Default for SubscriptionTier {
-    fn default() -> Self {
-        Self::Free
-    }
-}
-
-impl From<User> for UserReponse {
-    fn from(user: User) -> Self {
-        Self {
-            id: user.id,
-            email: user.email,
-            username: user.username.unwrap_or_default(),
-            display_name: user.display_name,
-            avatar_url: user.avatar_url,
         }
     }
 }
