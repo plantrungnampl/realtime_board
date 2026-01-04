@@ -213,6 +213,35 @@ pub async fn get_email_invite_by_id(
     Ok(invite)
 }
 
+/// Returns a pre-signup invite by token + email.
+pub async fn get_email_invite_by_token(
+    pool: &PgPool,
+    invite_token: &str,
+    email: &str,
+) -> Result<Option<OrganizationInviteRecord>, AppError> {
+    let invite = sqlx::query_as::<_, OrganizationInviteRecord>(
+        r#"
+            SELECT
+                id,
+                organization_id,
+                email,
+                role,
+                invited_by,
+                invited_at,
+                invite_expires_at
+            FROM core.organization_invite
+            WHERE invite_token = $1
+            AND LOWER(email) = LOWER($2)
+        "#,
+    )
+    .bind(invite_token)
+    .bind(email)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(invite)
+}
+
 /// Lists pending invitations for a user.
 pub async fn list_pending_invitations(
     pool: &PgPool,
@@ -331,33 +360,6 @@ pub async fn resend_email_invite(
     Ok(())
 }
 
-/// Lists pending pre-signup invites for an email.
-pub async fn list_invites_by_email(
-    pool: &PgPool,
-    email: &str,
-) -> Result<Vec<OrganizationInviteRecord>, AppError> {
-    let rows = sqlx::query_as::<_, OrganizationInviteRecord>(
-        r#"
-            SELECT
-                id,
-                organization_id,
-                email,
-                role,
-                invited_by,
-                invited_at,
-                invite_expires_at
-            FROM core.organization_invite
-            WHERE LOWER(email) = LOWER($1)
-            ORDER BY invited_at DESC NULLS LAST
-        "#,
-    )
-    .bind(email)
-    .fetch_all(pool)
-    .await?;
-
-    Ok(rows)
-}
-
 /// Deletes a pre-signup invite by id.
 pub async fn delete_email_invite(
     tx: &mut Transaction<'_, Postgres>,
@@ -379,24 +381,6 @@ pub async fn delete_email_invite(
     Ok(())
 }
 
-/// Deletes pending pre-signup invites for an email.
-pub async fn delete_invites_by_email(
-    tx: &mut Transaction<'_, Postgres>,
-    email: &str,
-) -> Result<(), AppError> {
-    sqlx::query(
-        r#"
-            DELETE FROM core.organization_invite
-            WHERE LOWER(email) = LOWER($1)
-        "#,
-    )
-    .bind(email)
-    .execute(&mut **tx)
-    .await?;
-
-    Ok(())
-}
-
 /// Adds a member entry derived from a pre-signup invite.
 pub async fn add_member_from_email_invite(
     tx: &mut Transaction<'_, Postgres>,
@@ -405,6 +389,7 @@ pub async fn add_member_from_email_invite(
     role: OrgRole,
     invited_by: Option<Uuid>,
     invited_at: Option<chrono::DateTime<chrono::Utc>>,
+    accepted_at: Option<chrono::DateTime<chrono::Utc>>,
 ) -> Result<(), AppError> {
     sqlx::query(
         r#"
@@ -413,9 +398,10 @@ pub async fn add_member_from_email_invite(
                 user_id,
                 role,
                 invited_by,
-                invited_at
+                invited_at,
+                accepted_at
             )
-            VALUES ($1, $2, $3, $4, COALESCE($5, NOW()))
+            VALUES ($1, $2, $3, $4, COALESCE($5, NOW()), $6)
             ON CONFLICT (organization_id, user_id) DO NOTHING
         "#,
     )
@@ -424,6 +410,7 @@ pub async fn add_member_from_email_invite(
     .bind(role)
     .bind(invited_by)
     .bind(invited_at)
+    .bind(accepted_at)
     .execute(&mut **tx)
     .await?;
 

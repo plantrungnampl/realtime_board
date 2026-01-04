@@ -6,15 +6,19 @@ import {
   useNavigate,
   redirect,
 } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { useAppStore } from '@/store/useAppStore'
+import { validateOrganizationInvite } from '@/features/organizations/api'
+import type { InviteValidationResponse } from '@/features/organizations/types'
+import { getApiErrorMessage } from '@/shared/api/errors'
 
 type RegisterSearch = {
   email?: string
   invite?: string
+  token?: string
   redirect?: string
 }
 
@@ -46,10 +50,50 @@ function Register() {
   const [username, setUsername] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [password, setPassword] = useState('')
-  const inviteToken = typeof search.invite === 'string' ? search.invite.trim() : ''
+  const rawInviteToken =
+    typeof search.invite === 'string'
+      ? search.invite
+      : typeof search.token === 'string'
+        ? search.token
+        : ''
+  const inviteToken = rawInviteToken.trim()
   const inviteEmail = typeof search.email === 'string' ? search.email.trim() : ''
   const isInviteFlow = Boolean(inviteToken && inviteEmail)
   const isEmailLocked = isInviteFlow
+  const [inviteStatus, setInviteStatus] = useState<
+    | { state: 'idle' | 'loading' }
+    | { state: 'valid'; data: InviteValidationResponse }
+    | { state: 'invalid'; message: string }
+  >({ state: 'idle' })
+  const isInviteValid = inviteStatus.state === 'valid'
+  const isInviteLoading = inviteStatus.state === 'loading'
+
+  useEffect(() => {
+    if (!isInviteFlow) {
+      setInviteStatus({ state: 'idle' })
+      return
+    }
+    let active = true
+    setInviteStatus({ state: 'loading' })
+    validateOrganizationInvite(inviteToken, inviteEmail)
+      .then((data) => {
+        if (!active) return
+        setInviteStatus({ state: 'valid', data })
+      })
+      .catch((inviteError) => {
+        if (!active) return
+        setInviteStatus({
+          state: 'invalid',
+          message: getApiErrorMessage(
+            inviteError,
+            'This invitation is invalid or has expired.',
+          ),
+        })
+      })
+    return () => {
+      active = false
+    }
+  }, [inviteEmail, inviteToken, isInviteFlow])
 
   function validateInputs() {
     const trimmedEmail = email.trim()
@@ -71,6 +115,14 @@ function Register() {
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (isInviteFlow && !isInviteValid) {
+      const message =
+        inviteStatus.state === 'invalid'
+          ? inviteStatus.message
+          : 'Please wait for the invitation to be validated.'
+      setLocalError(message)
+      return
+    }
     const validationError = validateInputs()
     if (validationError) {
       setLocalError(validationError)
@@ -84,6 +136,7 @@ function Register() {
         username: normalizedUsername,
         display_name: displayName,
         password_hash: password,
+        invite_token: isInviteValid ? inviteToken : undefined,
       })
       navigate({ to: '/register/setup' })
     } catch (error) {
@@ -112,9 +165,40 @@ function Register() {
             </div>
           )}
           {isInviteFlow && (
-            <div className="p-3 text-sm text-neutral-300 bg-neutral-900/60 border border-neutral-700 rounded-md">
-              This invite was sent to <span className="font-medium">{inviteEmail}</span>.
-              Sign up with the same email to accept it.
+            <div className="p-3 text-sm text-neutral-300 bg-neutral-900/60 border border-neutral-700 rounded-md space-y-1">
+              {isInviteLoading && <div>Validating invitation...</div>}
+              {inviteStatus.state === 'invalid' && (
+                <div className="text-red-400">{inviteStatus.message}</div>
+              )}
+              {isInviteValid && (
+                <>
+                  <div>
+                    You&apos;re invited to{" "}
+                    <span className="font-medium">
+                      {inviteStatus.data.organization.name}
+                    </span>{" "}
+                    as{" "}
+                    <span className="font-medium">
+                      {formatRole(inviteStatus.data.role)}
+                    </span>
+                    .
+                  </div>
+                  <div className="text-neutral-400">
+                    This invite was sent to{" "}
+                    <span className="font-medium">{inviteEmail}</span>. Sign up
+                    with the same email to accept it.
+                  </div>
+                </>
+              )}
+              {!isInviteLoading &&
+                inviteStatus.state !== 'invalid' &&
+                !isInviteValid && (
+                <div>
+                  This invite was sent to{" "}
+                  <span className="font-medium">{inviteEmail}</span>. Sign up
+                  with the same email to accept it.
+                </div>
+              )}
             </div>
           )}
           <div className="space-y-2">
@@ -184,8 +268,16 @@ function Register() {
               }}
             />
           </div>
-          <Button className="w-full" type="submit" disabled={isLoading}>
-            {isLoading ? "Creating account..." : "Sign Up"}
+          <Button
+            className="w-full"
+            type="submit"
+            disabled={isLoading || (isInviteFlow && !isInviteValid)}
+          >
+            {isInviteLoading
+              ? 'Validating invite...'
+              : isLoading
+                ? 'Creating account...'
+                : 'Sign Up'}
           </Button>
         </form>
 
@@ -205,4 +297,9 @@ function Register() {
       </div>
     </div>
   )
+}
+
+function formatRole(role: string) {
+  if (!role) return role
+  return role.charAt(0).toUpperCase() + role.slice(1)
 }

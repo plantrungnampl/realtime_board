@@ -18,6 +18,7 @@ pub struct RegisterRequest {
     pub password_hash: String,
     pub display_name: String,
     pub username: String,
+    pub invite_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -59,6 +60,7 @@ pub struct MessageResponse {
 pub struct UserResponse {
     pub id: Uuid,
     pub email: String,
+    pub email_verified_at: Option<DateTime<Utc>>,
     pub username: String,
     pub display_name: String,
     pub avatar_url: Option<String>,
@@ -104,6 +106,7 @@ pub type UpdatePreferencesRequest = UserPreferencesDto;
 pub struct UserProfileResponse {
     pub id: Uuid,
     pub email: String,
+    pub email_verified_at: Option<DateTime<Utc>>,
     pub username: String,
     pub display_name: String,
     pub avatar_url: Option<String>,
@@ -181,6 +184,7 @@ impl From<User> for UserResponse {
         Self {
             id: user.id,
             email: user.email,
+            email_verified_at: user.email_verified_at,
             username: user.username.unwrap_or_default(),
             display_name: user.display_name,
             avatar_url: user.avatar_url,
@@ -194,6 +198,7 @@ impl From<User> for UserProfileResponse {
         Self {
             id: user.id,
             email: user.email,
+            email_verified_at: user.email_verified_at,
             username: user.username.unwrap_or_default(),
             display_name: user.display_name,
             avatar_url: user.avatar_url,

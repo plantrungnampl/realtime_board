@@ -11,8 +11,6 @@ use crate::{
     repositories::users as user_repo,
     services::email::EmailService,
 };
-use tracing::warn;
-
 pub struct UserServices;
 impl UserServices {
     pub async fn register_user(
@@ -21,7 +19,8 @@ impl UserServices {
         email_service: Option<&EmailService>,
         req: RegisterRequest,
     ) -> Result<LoginResponse, AppError> {
-        if !is_valid_email(&req.email) {
+        let email = req.email.trim().to_string();
+        if !is_valid_email(&email) {
             return Err(AppError::ValidationError(
                 "Email format is invalid".to_string(),
             ));
@@ -34,7 +33,7 @@ impl UserServices {
             ));
         }
 
-        if user_repo::email_exists(pool, &req.email).await? {
+        if user_repo::email_exists(pool, &email).await? {
             return Err(AppError::Conflict("Email already exists".to_string()));
         }
 
@@ -42,33 +41,83 @@ impl UserServices {
             return Err(AppError::Conflict("Username already exists".to_string()));
         }
 
-        let hash_password_user = hash_password(&req.password_hash).unwrap();
+        let invite_token = req
+            .invite_token
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let invite = if let Some(token) = invite_token {
+            let invite = org_repo::get_email_invite_by_token(pool, token, &email)
+                .await?
+                .ok_or(AppError::BadRequest(
+                    "Invitation is invalid or expired".to_string(),
+                ))?;
+            if let Some(expires_at) = invite.invite_expires_at {
+                if expires_at < chrono::Utc::now() {
+                    return Err(AppError::BadRequest(
+                        "Invitation has expired".to_string(),
+                    ));
+                }
+            }
+            Some(invite)
+        } else {
+            None
+        };
 
-        let user = user_repo::insert_user(
-            pool,
-            &req.email,
+        if invite.is_none() && email_service.is_none() {
+            return Err(AppError::ExternalService(
+                "Email service not configured".to_string(),
+            ));
+        }
+
+        let hash_password_user = hash_password(&req.password_hash)
+            .map_err(|e| AppError::Internal(format!("Failed to hash password: {}", e)))?;
+
+        let mut tx = pool.begin().await?;
+        let mut user = user_repo::insert_user_tx(
+            &mut tx,
+            &email,
             &hash_password_user,
             &req.display_name,
             &req.username,
         )
         .await?;
 
+        if let Some(invite) = invite {
+            let verified_at = chrono::Utc::now();
+            user_repo::mark_email_verified_tx(&mut tx, user.id).await?;
+            org_repo::add_member_from_email_invite(
+                &mut tx,
+                invite.organization_id,
+                user.id,
+                invite.role,
+                invite.invited_by,
+                invite.invited_at,
+                Some(verified_at),
+            )
+            .await?;
+            org_repo::delete_email_invite(&mut tx, invite.organization_id, invite.id).await?;
+            user.email_verified_at = Some(verified_at);
+        }
+
+        tx.commit().await?;
+
         let token = jwt_config
             .create_token(user.id, user.email.clone())
             .map_err(|e| AppError::Internal(format!("Failed to create token: {}", e)))?;
-        let verification_token = jwt_config
-            .create_email_verification_token(user.id, user.email.clone())
-            .map_err(|e| AppError::Internal(format!("Failed to create token: {}", e)))?;
 
-        let email_service = email_service.ok_or(AppError::ExternalService(
-            "Email service not configured".to_string(),
-        ))?;
-        email_service
-            .send_verification_email(&user.email, &verification_token)
-            .await?;
-        user_repo::set_verification_sent_at(pool, user.id, chrono::Utc::now()).await?;
-        if let Err(error) = attach_pending_invites(pool, user.id, &user.email).await {
-            warn!("Failed to attach organization invites: {}", error);
+        if user.email_verified_at.is_none() {
+            let verification_token = jwt_config
+                .create_email_verification_token(user.id, user.email.clone())
+                .map_err(|e| AppError::Internal(format!("Failed to create token: {}", e)))?;
+
+            let email_service = email_service.ok_or(AppError::ExternalService(
+                "Email service not configured".to_string(),
+            ))?;
+            email_service
+                .send_verification_email(&user.email, &verification_token)
+                .await?;
+            user_repo::set_verification_sent_at(pool, user.id, chrono::Utc::now()).await?;
         }
 
         Ok(LoginResponse {
@@ -332,34 +381,6 @@ impl UserServices {
         user_repo::mark_email_verified(pool, user_id).await?;
         Ok(())
     }
-}
-
-async fn attach_pending_invites(
-    pool: &sqlx::PgPool,
-    user_id: Uuid,
-    email: &str,
-) -> Result<(), AppError> {
-    let invites = org_repo::list_invites_by_email(pool, email).await?;
-    if invites.is_empty() {
-        return Ok(());
-    }
-
-    let mut tx = pool.begin().await?;
-    for invite in invites.iter() {
-        org_repo::add_member_from_email_invite(
-            &mut tx,
-            invite.organization_id,
-            user_id,
-            invite.role,
-            invite.invited_by,
-            invite.invited_at,
-        )
-        .await?;
-    }
-    org_repo::delete_invites_by_email(&mut tx, email).await?;
-    tx.commit().await?;
-
-    Ok(())
 }
 
 fn is_valid_email(email: &str) -> bool {

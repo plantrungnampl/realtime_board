@@ -73,11 +73,12 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ isLoading: true, error: null });
     try {
       const { token, user } = await authApi.login(data);
+      const requiresEmailVerification = !user.email_verified_at;
       setToken(token);
       set({
         user,
         isAuthenticated: true,
-        requiresEmailVerification: false,
+        requiresEmailVerification,
         isLoading: false,
       });
     } catch (error: unknown) {
@@ -94,11 +95,12 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ isLoading: true, error: null });
     try {
       const response: AuthLoginResponse = await authApi.register(data);
+      const requiresEmailVerification = !response.user.email_verified_at;
       setToken(response.token);
       set({
         user: response.user,
         isAuthenticated: true,
-        requiresEmailVerification: true,
+        requiresEmailVerification,
         isLoading: false,
       });
     } catch (error: unknown) {
@@ -138,7 +140,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({
         user,
         isAuthenticated: true,
-        requiresEmailVerification: true,
+        requiresEmailVerification: !user.email_verified_at,
         isLoading: false,
       });
     } catch (error: unknown) {
@@ -158,7 +160,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({
         user,
         isAuthenticated: true,
-        requiresEmailVerification: true,
+        requiresEmailVerification: !user.email_verified_at,
         isLoading: false,
       });
     } catch (error: unknown) {

@@ -109,6 +109,21 @@ pub struct OrganizationInvitationsResponse {
     pub data: Vec<OrganizationInvitationResponse>,
 }
 
+/// Query parameters for validating pre-signup invites.
+#[derive(Debug, Deserialize)]
+pub struct InviteValidationQuery {
+    pub token: String,
+    pub email: String,
+}
+
+/// Response payload for invite validation.
+#[derive(Debug, Serialize)]
+pub struct InviteValidationResponse {
+    pub organization: OrganizationInvitationOrganization,
+    pub role: OrgRole,
+    pub invite_expires_at: Option<DateTime<Utc>>,
+}
+
 /// Email invite payload for organization pre-signup invites.
 #[derive(Debug, Serialize)]
 pub struct OrganizationEmailInviteResponse {

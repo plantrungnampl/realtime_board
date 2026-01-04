@@ -23,6 +23,9 @@ function RegisterSetup() {
   const user = useAppStore((state) => state.user);
   const isLoading = useAppStore((state) => state.isLoading);
   const error = useAppStore((state) => state.error);
+  const requiresEmailVerification = useAppStore(
+    (state) => state.requiresEmailVerification,
+  );
   const loadProfileSetup = useAppStore((state) => state.loadProfileSetup);
   const completeProfileSetup = useAppStore((state) => state.completeProfileSetup);
   const requestVerification = useAppStore((state) => state.requestVerification);
@@ -162,25 +165,27 @@ function RegisterSetup() {
               onChange={(event) => setBio(event.target.value)}
             />
           </div>
-          <div className="rounded-lg border border-neutral-700 bg-neutral-900/70 px-4 py-3 text-sm text-neutral-300">
-            <div className="flex items-center justify-between gap-3">
-              <span>
-                We sent a verification email. If you did not receive it, resend.
-              </span>
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={handleRequestVerification}
-                  disabled={isLoading || cooldownSeconds > 0}
-                >
-                  {cooldownSeconds > 0
-                    ? `Resend in ${cooldownSeconds}s`
-                    : "Send verification email"}
-                </Button>
+          {requiresEmailVerification && (
+            <div className="rounded-lg border border-neutral-700 bg-neutral-900/70 px-4 py-3 text-sm text-neutral-300">
+              <div className="flex items-center justify-between gap-3">
+                <span>
+                  We sent a verification email. If you did not receive it, resend.
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={handleRequestVerification}
+                    disabled={isLoading || cooldownSeconds > 0}
+                  >
+                    {cooldownSeconds > 0
+                      ? `Resend in ${cooldownSeconds}s`
+                      : "Send verification email"}
+                  </Button>
+                </div>
               </div>
             </div>
-          </div>
+          )}
           <div className="flex items-center justify-between gap-3">
             <Button
               type="button"

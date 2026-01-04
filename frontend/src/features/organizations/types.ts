@@ -82,6 +82,12 @@ export interface OrganizationInvitation {
   invited_at?: string | null;
 }
 
+export interface InviteValidationResponse {
+  organization: OrganizationInvitationOrganization;
+  role: OrganizationRole;
+  invite_expires_at?: string | null;
+}
+
 export interface OrganizationEmailInvite {
   id: string;
   email: string;

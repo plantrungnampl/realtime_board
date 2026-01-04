@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::{
@@ -61,6 +61,30 @@ pub async fn insert_user(
     Ok(user)
 }
 
+pub async fn insert_user_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    email: &str,
+    password_hash: &str,
+    display_name: &str,
+    username: &str,
+) -> Result<User, AppError> {
+    let user = sqlx::query_as::<_, User>(
+        r#"
+            INSERT INTO core.user(email, password_hash, display_name, username)
+            VALUES ($1, $2, $3, $4)
+            RETURNING *
+        "#,
+    )
+    .bind(email)
+    .bind(password_hash)
+    .bind(display_name)
+    .bind(username)
+    .fetch_one(&mut **tx)
+    .await?;
+
+    Ok(user)
+}
+
 pub async fn find_user_by_email(pool: &PgPool, email: &str) -> Result<Option<User>, AppError> {
     let user = sqlx::query_as::<_, User>(
         r#"
@@ -79,6 +103,20 @@ pub async fn update_last_active(pool: &PgPool, user_id: Uuid) -> Result<(), AppE
         .bind(user_id)
         .execute(pool)
         .await?;
+    Ok(())
+}
+
+pub async fn mark_email_verified_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+) -> Result<(), AppError> {
+    sqlx::query(
+        "UPDATE core.user SET email_verified_at = NOW(), updated_at = NOW() WHERE id = $1",
+    )
+    .bind(user_id)
+    .execute(&mut **tx)
+    .await?;
+
     Ok(())
 }
 

@@ -4,6 +4,7 @@ import type {
   CreateOrganizationRequest,
   InviteMembersRequest,
   InviteMembersResponse,
+  InviteValidationResponse,
   Organization,
   OrganizationActionMessage,
   OrganizationEmailInvite,
@@ -156,6 +157,22 @@ export async function declineOrganizationInvitation(
 ): Promise<OrganizationActionMessage> {
   const response = await apiClient.delete<OrganizationActionMessage>(
     `/organizations/${organizationId}/members/${memberId}/decline`,
+  );
+  return response.data;
+}
+
+export async function validateOrganizationInvite(
+  token: string,
+  email: string,
+): Promise<InviteValidationResponse> {
+  const response = await apiClient.get<InviteValidationResponse>(
+    "/organizations/invites/validate",
+    {
+      params: {
+        token,
+        email,
+      },
+    },
   );
   return response.data;
 }

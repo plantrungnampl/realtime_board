@@ -31,7 +31,11 @@ pub fn build_router(state: AppState) -> Router {
     let auth_routes = Router::new()
         .route("/auth/register", post(auth_http::register_handle))
         .route("/auth/login", post(auth_http::login_handle))
-        .route("/auth/verify-email", post(auth_http::verify_email_handle));
+        .route("/auth/verify-email", post(auth_http::verify_email_handle))
+        .route(
+            "/organizations/invites/validate",
+            get(organizations_http::validate_invite_handle),
+        );
 
     let onboarding_routes = Router::new()
         .route(

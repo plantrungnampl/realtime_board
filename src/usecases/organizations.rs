@@ -4,7 +4,7 @@ use uuid::Uuid;
 use crate::{
     dto::organizations::{
         CreateOrganizationRequest, InviteMembersRequest, InviteMembersResponse,
-        OrganizationActionMessage, OrganizationEmailInviteResponse,
+        InviteValidationResponse, OrganizationActionMessage, OrganizationEmailInviteResponse,
         OrganizationEmailInvitesResponse, OrganizationInvitationOrganization,
         OrganizationInvitationResponse, OrganizationInvitationsResponse, OrganizationListResponse,
         OrganizationMemberResponse, OrganizationMemberUser, OrganizationMembersResponse,
@@ -143,6 +143,46 @@ impl OrganizationService {
             .collect();
 
         Ok(OrganizationInvitationsResponse { data })
+    }
+
+    /// Validates a pre-signup invitation token.
+    pub async fn validate_invite(
+        pool: &PgPool,
+        token: &str,
+        email: &str,
+    ) -> Result<InviteValidationResponse, AppError> {
+        let trimmed_token = token.trim();
+        let trimmed_email = email.trim();
+        if trimmed_token.is_empty() || trimmed_email.is_empty() {
+            return Err(AppError::ValidationError(
+                "Token and email are required".to_string(),
+            ));
+        }
+
+        let invite = org_repo::get_email_invite_by_token(pool, trimmed_token, trimmed_email)
+            .await?
+            .ok_or(AppError::NotFound("Invitation not found".to_string()))?;
+        if let Some(expires_at) = invite.invite_expires_at {
+            if expires_at < chrono::Utc::now() {
+                return Err(AppError::BadRequest(
+                    "Invitation has expired".to_string(),
+                ));
+            }
+        }
+
+        let organization = org_repo::find_organization_by_id(pool, invite.organization_id)
+            .await?
+            .ok_or(AppError::NotFound("Organization not found".to_string()))?;
+
+        Ok(InviteValidationResponse {
+            organization: OrganizationInvitationOrganization {
+                id: organization.id,
+                name: organization.name,
+                slug: organization.slug,
+            },
+            role: invite.role,
+            invite_expires_at: invite.invite_expires_at,
+        })
     }
 
     /// Invites members into an organization by email.

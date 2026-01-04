@@ -10,6 +10,7 @@ use crate::{
     auth::middleware::AuthUser,
     dto::organizations::{
         CreateOrganizationRequest, InviteMembersRequest, InviteMembersResponse,
+        InviteValidationQuery, InviteValidationResponse,
         OrganizationActionMessage, OrganizationEmailInvitesResponse, OrganizationListResponse,
         OrganizationMembersResponse, OrganizationResponse, OrganizationUsageResponse,
         SlugAvailabilityQuery, SlugAvailabilityResponse, UpdateMemberRoleRequest,
@@ -137,6 +138,17 @@ pub async fn check_slug_availability_handle(
     Query(query): Query<SlugAvailabilityQuery>,
 ) -> Result<Json<SlugAvailabilityResponse>, AppError> {
     let response = OrganizationService::check_slug_availability(&state.db, &query.slug).await?;
+
+    Ok(Json(response))
+}
+
+/// Validates a pre-signup invite token.
+pub async fn validate_invite_handle(
+    State(state): State<AppState>,
+    Query(query): Query<InviteValidationQuery>,
+) -> Result<Json<InviteValidationResponse>, AppError> {
+    let response =
+        OrganizationService::validate_invite(&state.db, &query.token, &query.email).await?;
 
     Ok(Json(response))
 }

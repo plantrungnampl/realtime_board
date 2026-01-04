@@ -21,6 +21,7 @@ export interface UserPreferences {
 export interface User {
   id: string;
   email: string;
+  email_verified_at?: string | null;
   username: string;
   display_name: string;
   avatar_url?: string | null;
@@ -43,6 +44,7 @@ export interface RegisterRequest {
   password_hash: string;
   display_name: string;
   username: string;
+  invite_token?: string;
 }
 
 export interface UpdateProfileRequest {
