@@ -4,7 +4,7 @@ use sqlx::prelude::FromRow;
 use uuid::Uuid;
 
 // enum for subcription
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, sqlx::Type, Default)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, sqlx::Type, Default, PartialEq)]
 #[sqlx(type_name = "core.subscription_tier", rename_all = "lowercase")]
 pub enum SubscriptionTier {
     #[default]

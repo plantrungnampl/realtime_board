@@ -8,7 +8,12 @@ use tower_http::cors::CorsLayer;
 
 use crate::{
     api::{
-        http::{auth as auth_http, boards as boards_http, organizations as organizations_http},
+        http::{
+            auth as auth_http,
+            boards as boards_http,
+            elements as elements_http,
+            organizations as organizations_http,
+        },
         ws::boards as boards_ws,
     },
     app::state::AppState,
@@ -126,6 +131,32 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/boards/", post(boards_http::create_board_handle))
         .route("/api/boards/list", get(boards_http::get_board_handle))
         .route(
+            "/api/boards/{board_id}",
+            get(boards_http::get_board_detail_handle)
+                .patch(boards_http::update_board_handle)
+                .delete(boards_http::delete_board_handle),
+        )
+        .route(
+            "/api/boards/{board_id}/archive",
+            post(boards_http::archive_board_handle),
+        )
+        .route(
+            "/api/boards/{board_id}/unarchive",
+            post(boards_http::unarchive_board_handle),
+        )
+        .route(
+            "/api/boards/{board_id}/transfer-ownership",
+            post(boards_http::transfer_board_ownership_handle),
+        )
+        .route(
+            "/api/boards/{board_id}/favorite",
+            post(boards_http::toggle_board_favorite_handle),
+        )
+        .route(
+            "/api/boards/{board_id}/restore",
+            post(boards_http::restore_board_handle),
+        )
+        .route(
             "/api/boards/{board_id}/members",
             get(boards_http::list_board_members_handle)
                 .post(boards_http::invite_board_members_handle),
@@ -134,6 +165,19 @@ pub fn build_router(state: AppState) -> Router {
             "/api/boards/{board_id}/members/{member_id}",
             patch(boards_http::update_board_member_role_handle)
                 .delete(boards_http::remove_board_member_handle),
+        )
+        .route(
+            "/api/boards/{board_id}/elements",
+            post(elements_http::create_board_element_handle),
+        )
+        .route(
+            "/api/boards/{board_id}/elements/{element_id}",
+            patch(elements_http::update_board_element_handle)
+                .delete(elements_http::delete_board_element_handle),
+        )
+        .route(
+            "/api/boards/{board_id}/elements/{element_id}/restore",
+            post(elements_http::restore_board_element_handle),
         )
         // Layer order matters: auth must run before verified.
         .layer(middleware::from_fn_with_state(

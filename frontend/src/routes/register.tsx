@@ -6,7 +6,8 @@ import {
   useNavigate,
   redirect,
 } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
@@ -60,40 +61,32 @@ function Register() {
   const inviteEmail = typeof search.email === 'string' ? search.email.trim() : ''
   const isInviteFlow = Boolean(inviteToken && inviteEmail)
   const isEmailLocked = isInviteFlow
-  const [inviteStatus, setInviteStatus] = useState<
+  type InviteStatus =
     | { state: 'idle' | 'loading' }
     | { state: 'valid'; data: InviteValidationResponse }
     | { state: 'invalid'; message: string }
-  >({ state: 'idle' })
+  const inviteQuery = useQuery<InviteValidationResponse, unknown>({
+    queryKey: ['organizationInviteValidation', inviteToken, inviteEmail],
+    queryFn: () => validateOrganizationInvite(inviteToken, inviteEmail),
+    enabled: isInviteFlow,
+  })
+  const inviteStatus: InviteStatus = (() => {
+    if (!isInviteFlow) return { state: 'idle' }
+    if (inviteQuery.isLoading) return { state: 'loading' }
+    if (inviteQuery.data) return { state: 'valid', data: inviteQuery.data }
+    if (inviteQuery.isError) {
+      return {
+        state: 'invalid',
+        message: getApiErrorMessage(
+          inviteQuery.error,
+          'This invitation is invalid or has expired.',
+        ),
+      }
+    }
+    return { state: 'idle' }
+  })()
   const isInviteValid = inviteStatus.state === 'valid'
   const isInviteLoading = inviteStatus.state === 'loading'
-
-  useEffect(() => {
-    if (!isInviteFlow) {
-      setInviteStatus({ state: 'idle' })
-      return
-    }
-    let active = true
-    setInviteStatus({ state: 'loading' })
-    validateOrganizationInvite(inviteToken, inviteEmail)
-      .then((data) => {
-        if (!active) return
-        setInviteStatus({ state: 'valid', data })
-      })
-      .catch((inviteError) => {
-        if (!active) return
-        setInviteStatus({
-          state: 'invalid',
-          message: getApiErrorMessage(
-            inviteError,
-            'This invitation is invalid or has expired.',
-          ),
-        })
-      })
-    return () => {
-      active = false
-    }
-  }, [inviteEmail, inviteToken, isInviteFlow])
 
   function validateInputs() {
     const trimmedEmail = email.trim()
@@ -261,6 +254,7 @@ function Register() {
               required
               type="password"
               autoComplete="new-password"
+              placeholder="••••••••"
               value={password}
               onChange={(event) => {
                 if (localError) setLocalError(null)

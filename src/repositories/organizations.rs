@@ -125,6 +125,28 @@ pub async fn get_member_by_id(
     Ok(member)
 }
 
+/// Returns a member record by user id, including pending invites.
+pub async fn get_member_by_user_id(
+    pool: &PgPool,
+    organization_id: Uuid,
+    user_id: Uuid,
+) -> Result<Option<OrganizationMemberRecord>, AppError> {
+    let member = sqlx::query_as::<_, OrganizationMemberRecord>(
+        r#"
+            SELECT user_id, role, accepted_at
+            FROM core.organization_member
+            WHERE organization_id = $1
+            AND user_id = $2
+        "#,
+    )
+    .bind(organization_id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(member)
+}
+
 /// Lists members of an organization with user info.
 pub async fn list_members(
     pool: &PgPool,
@@ -525,6 +547,31 @@ pub async fn count_owners(pool: &PgPool, organization_id: Uuid) -> Result<i64, A
     .await?;
 
     Ok(count)
+}
+
+/// Finds an organization owner to use as a fallback assignee.
+pub async fn find_owner_user_id(
+    pool: &PgPool,
+    organization_id: Uuid,
+    exclude_user_id: Uuid,
+) -> Result<Option<Uuid>, AppError> {
+    let owner_id = sqlx::query_scalar::<_, Uuid>(
+        r#"
+            SELECT user_id
+            FROM core.organization_member
+            WHERE organization_id = $1
+            AND role = 'owner'
+            AND user_id <> $2
+            ORDER BY created_at ASC
+            LIMIT 1
+        "#,
+    )
+    .bind(organization_id)
+    .bind(exclude_user_id)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(owner_id)
 }
 
 /// Counts all member slots (accepted + pending) for an organization.

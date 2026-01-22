@@ -1,10 +1,8 @@
 import { createRootRouteWithContext, Link, Outlet, useLocation, useNavigate } from '@tanstack/react-router'
-import { TanStackRouterDevtools } from '@tanstack/router-devtools'
-import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import type { QueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/Button'
 import { LogOut, PenTool, User as UserIcon } from 'lucide-react'
-import { useEffect } from 'react'
+import { Suspense, lazy, useEffect } from 'react'
 import { useAppStore } from '@/store/useAppStore'
 import { useThemePreference } from '@/shared/theme'
 import { useTranslation } from 'react-i18next'
@@ -25,6 +23,22 @@ import {
 interface MyRouterContext {
   queryClient: QueryClient
 }
+
+const TanStackRouterDevtools = import.meta.env.DEV
+  ? lazy(() =>
+      import('@tanstack/router-devtools').then((module) => ({
+        default: module.TanStackRouterDevtools,
+      })),
+    )
+  : null
+
+const ReactQueryDevtools = import.meta.env.DEV
+  ? lazy(() =>
+      import('@tanstack/react-query-devtools').then((module) => ({
+        default: module.ReactQueryDevtools,
+      })),
+    )
+  : null
 
 export const Route = createRootRouteWithContext<MyRouterContext>()({
   component: RootComponent,
@@ -54,6 +68,10 @@ function RootComponent() {
 
   const displayName = user?.display_name || user?.username || 'User'
   const avatarFallback = displayName.charAt(0).toUpperCase()
+  const handleLogout = () => {
+    logout()
+    navigate({ to: "/login" })
+  }
 
   // Check if we are on the dashboard or board route to hide the header
   const shouldHideHeader =
@@ -110,7 +128,7 @@ function RootComponent() {
                       <UserIcon className="mr-2 h-4 w-4" />
                       <span>{t("nav.profile")}</span>
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => logout()}>
+                    <DropdownMenuItem onSelect={handleLogout}>
                       <LogOut className="mr-2 h-4 w-4" />
                       <span>{t("nav.logout")}</span>
                     </DropdownMenuItem>
@@ -137,8 +155,12 @@ function RootComponent() {
           <Outlet />
         </main>
       </div>
-      <TanStackRouterDevtools />
-      <ReactQueryDevtools />
+      {TanStackRouterDevtools && ReactQueryDevtools ? (
+        <Suspense fallback={null}>
+          <TanStackRouterDevtools />
+          <ReactQueryDevtools />
+        </Suspense>
+      ) : null}
     </>
   )
 }

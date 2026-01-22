@@ -1,4 +1,4 @@
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::error::AppError;
@@ -126,4 +126,27 @@ pub async fn create_snapshot_and_cleanup(
 
     tx.commit().await?;
     Ok((insert_result.rows_affected(), delete_result.rows_affected()))
+}
+
+pub async fn insert_snapshot(
+    tx: &mut Transaction<'_, Postgres>,
+    board_id: Uuid,
+    snapshot_seq: i64,
+    state_bin: Vec<u8>,
+    created_by: Option<Uuid>,
+) -> Result<(), AppError> {
+    sqlx::query!(
+        r#"
+            INSERT INTO crdt.board_snapshot (board_id, snapshot_seq, state_bin, created_by)
+            VALUES ($1, $2, $3, $4)
+        "#,
+        board_id,
+        snapshot_seq,
+        state_bin,
+        created_by
+    )
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
 }

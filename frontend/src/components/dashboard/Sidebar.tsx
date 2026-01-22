@@ -22,8 +22,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import type { DashboardView } from './dashboardView'
+import { DEFAULT_DASHBOARD_VIEW } from './dashboardView'
 
-export function Sidebar() {
+type SidebarProps = {
+  activeView?: DashboardView;
+  onViewChange?: (view: DashboardView) => void;
+};
+
+export function Sidebar({ activeView, onViewChange }: SidebarProps) {
   const navigate = useNavigate()
   const { t } = useTranslation()
   const currentOrganization = useOrganizationStore((state) => state.currentOrganization)
@@ -36,11 +43,25 @@ export function Sidebar() {
     loadOrganizations().catch(() => undefined)
   }, [loadOrganizations])
 
-  const navItems = [
-    { icon: Home, label: 'Home', active: true },
-    { icon: Clock, label: 'Recent', active: false },
-    { icon: Star, label: 'Starred', active: false },
+  const resolvedView = activeView ?? DEFAULT_DASHBOARD_VIEW
+
+  const navItems: Array<{
+    icon: typeof Home;
+    label: string;
+    view: DashboardView;
+  }> = [
+    { icon: Home, label: 'Home', view: 'home' },
+    { icon: Clock, label: 'Recent', view: 'recent' },
+    { icon: Star, label: 'Starred', view: 'starred' },
   ]
+
+  const handleViewChange = (view: DashboardView) => {
+    if (onViewChange) {
+      onViewChange(view)
+      return
+    }
+    navigate({ to: '/dashboard', search: { view } })
+  }
 
   const orgName = currentOrganization?.name ?? t('org.personalWorkspace')
   const orgInitials = getInitials(orgName)
@@ -148,10 +169,19 @@ export function Sidebar() {
             variant="ghost"
             className={cn(
               "w-full justify-start gap-3 h-10 font-normal",
-              item.active ? "bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 hover:text-blue-400" : "text-text-secondary hover:text-text-primary hover:bg-bg-surface"
+              item.view === resolvedView
+                ? "bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 hover:text-blue-400"
+                : "text-text-secondary hover:text-text-primary hover:bg-bg-surface"
             )}
+            onClick={() => handleViewChange(item.view)}
+            aria-pressed={item.view === resolvedView}
           >
-            <item.icon className={cn("w-4 h-4", item.active ? "text-blue-500" : "text-text-muted")} />
+            <item.icon
+              className={cn(
+                "w-4 h-4",
+                item.view === resolvedView ? "text-blue-500" : "text-text-muted"
+              )}
+            />
             {item.label}
           </Button>
         ))}

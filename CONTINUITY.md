@@ -1,0 +1,240 @@
+Goal (incl. success criteria):
+- Produce a migration plan to move canvas rendering from Konva to PixiJS, including steps, risks, and files to change.
+
+Constraints/Assumptions:
+- Follow AGENTS.md: start analysis in `docs/README.md` and other `docs/*.md`, update docs when code changes, follow design docs for new features.
+- Use ExecPlan for complex features/significant refactors (FR-RTC-05 plan created).
+- Frontend must follow `doc/rules_code_guild_FE.md` and `doc/ZUSTAND_SENIOR_CODE_RULES.md` if Zustand is touched.
+- Use frontend skill guidance + vercel-react-best-practices + ui-ux-pro-max when coding FE.
+- Code changes applied in frontend + docs; no tests run yet.
+
+Key decisions:
+- Recent uses board_member.last_accessed_at updated on board detail fetch; favorites toggle only for existing board members.
+- Quick diagramming routing must update live, avoid obstacles, and allow per-connector routing toggle (straight vs orthogonal).
+- Choose rectilinear routing with obstacle avoidance using a sparse grid/visibility-graph + A*; obstacles include rect-like elements + text (exclude connectors/drawings) with padding clearance; routing updates live with rAF throttling and per-connector mode stored in properties.
+- Connector bindings now support dynamic anchors via `side: "auto"` (chooses side based on target vector).
+- Smart guides (alignment snapping + guide lines) will be disabled in canvas interactions.
+- Dynamic anchors choose side based on dominant axis (left/right vs top/bottom).
+
+State:
+  - Done:
+  - Read docs/README.md per repo rule.
+  - Loaded always-on skills: context-compression, context-fundamentals, tool-design.
+  - Reviewed connector routing implementation in boardCanvas/connectorRouting.ts and routing/orthogonalRouter.ts; noted rAF throttle and dynamic anchor logic.
+  - Reduced connector routing throttle to ~16ms for smoother drag updates.
+  - Added auto-anchor hysteresis with cached sides to reduce flipping.
+  - Updated docs/CHANGELOG.md with connector smoothness entry.
+  - Increased connector anchor gap to avoid border rubbing.
+  - Strengthened auto-anchor hysteresis to prevent side flicker.
+  - Updated docs/CHANGELOG.md with anchor stability entry.
+  - Added connector stub segments and increased hysteresis to reduce border rubbing and anchor flicker.
+  - Updated docs/CHANGELOG.md with stub/hysteresis entry.
+  - Included bound elements in obstacle routing with reduced padding to keep paths off borders.
+  - Updated docs/CHANGELOG.md with bound-element obstacle padding entry.
+  - Reduced connector anchor gap to avoid visible separation from shapes.
+  - Added ratio-based side switching to keep anchors stable on diagonals.
+  - Updated docs/CHANGELOG.md with anchor tuning entry.
+  - Offset connector anchors by connector stroke width to avoid “stabbing” into shapes.
+  - Updated docs/CHANGELOG.md with connector stroke alignment entry.
+  - Added connector stroke width fallback to anchor offset calculations.
+  - Updated docs/CHANGELOG.md with stroke fallback entry.
+  - Auto-bind connector endpoints to shapes on creation for stable anchors.
+  - Updated docs/CHANGELOG.md with connector auto-bind entry.
+  - Added on-load connector rebind/reroute to fix detached segments after refresh.
+  - Updated docs/CHANGELOG.md with connector rebind-on-load entry.
+  - Trigger connector re-route once when elements hydrate after refresh.
+  - Updated docs/CHANGELOG.md with connector load re-route entry.
+  - Added proximity-based binding for connector endpoints on create/load.
+  - Locked initial anchor side when binding to avoid diagonal flicker.
+  - Updated docs/CHANGELOG.md with connector proximity binding entry.
+  - Added smooth live connector preview (no obstacles) with full routing on commit.
+  - Updated docs/CHANGELOG.md with smooth live preview entry.
+  - Added live connector point smoothing during drag.
+  - Updated docs/CHANGELOG.md with live smoothing entry.
+  - Locked auto-anchors during drag to prevent flicker.
+  - Added rounded connector corners for smoother visuals.
+  - Updated docs/CHANGELOG.md with rounded connector entry.
+  - Throttled live connector reroutes by minimum movement distance and kept obstacle avoidance on drag.
+  - Initialized connector dimensions to minimum size to avoid backend normalization warnings.
+  - Reduced live routing frequency and increased smoothing to further cut jitter.
+  - Fixed circle binding by treating circle interior as bindable for connector endpoints.
+  - Spawned subagent to investigate connector detachment after refresh.
+  - Found canvas-related deps in frontend: konva and react-konva in package.json.
+  - Implemented dashboard filter dropdowns (view/owner/sort) and sorting logic in BoardList.
+  - Authored ExecPlan for Interaction & UX enhancements (smart guides, floating toolbar, quick create).
+  - Authored ExecPlan for Recent/Starred dashboard work.
+  - Added is_favorite + last_accessed_at to board list responses and persisted last_accessed_at on board open.
+  - Added favorite toggle endpoint and wired dashboard Recent/Starred filters + star toggle UI.
+  - Updated API docs and changelog for Recent/Starred feature.
+  - Reviewed FR-RTC-05 spec section and core implementation files (CRDT element logic, snapshot/projection, WS updates, frontend CRDT hooks/mutations).
+  - Patched CRDT update/delete semantics, projection immutables, and FE sync origin behavior.
+  - Updated docs/CHANGELOG.md with CRDT conflict resolution fixes.
+  - Reviewed docs/README.md and docs/CHANGELOG.md per repo rules.
+  - Located FR-ELM-05 spec section and resize-related frontend/backed code paths.
+  - Implemented FR-ELM-05 resize fixes (Shift/Alt modifiers, text resize scaling, min bounds) and updated docs/CHANGELOG.md.
+  - Fixed TS payload typing for resize font_size in ElementRenderer props.
+  - Reworked CRDT patch helpers to accept unknown and guard with isRecord; diffRecord now normalizes style via asRecord.
+  - FR-RTC-04 offline sync UX changes implemented (pending validation).
+  - Reviewed FR-RTC-05 spec location in design doc.
+  - Reviewed FR-RTC-05 code paths: Yjs updates store full element objects and REST persistence uses optimistic locking with conflict payloads.
+  - Created ExecPlan `.agent/execplans/FR-RTC-05-crdt-conflict-resolution.md` for full Phase 1–3.
+  - Ran ui-ux-pro-max design-system search; output not directly applicable to this UI-lite change.
+  - Implemented backend CRDT-authoritative flow: field-level element maps, REST mutations apply CRDT, projection worker.
+  - Added CRDT load hydration from DB for missing fields and update log persistence.
+  - Updated docs/CHANGELOG.md and design doc with CRDT-authoritative notes.
+  - Fixed backend compile errors: sqlx upsert uses runtime query bind for enum, apply_with_loaded_doc generic, Yrs ReadTxn imports, map reads via get_map, borrow fixes.
+  - Fixed Yrs map.get key type error in materialize_element.
+  - Frontend refactor: element CRDT helper, deep map observation, deleted_at filtering, removed conflict handling in element mutations.
+  - Added projection guardrails: bypass optimistic lock via session flag, backfill projection fields from DB defaults; added migration.
+  - Added projection fallback to board owner timestamps/creator when CRDT fields missing.
+  - Fixed frontend Yjs warning by attaching element maps to doc before patching (createElementEntry refactor).
+  - Applied presence init fix so awareness uses current user profile (avoid Anonymous cursors after reconnect).
+  - Added rotation normalization in projection to avoid DB constraint errors; updated docs/CHANGELOG.md.
+  - Normalized rotations on frontend before persisting to avoid 422 validation errors.
+  - Added projection guard to normalize non-positive element dimensions.
+  - Added smart guide snapping threshold scaling and colored guide lines for visibility.
+  - Added floating selection toolbar and quick-create (+) handles with connector creation.
+  - Aligned selection overlay to render elements (local overrides) to fix toolbar/handle mis-positioning.
+  - Authored ExecPlan for Quick Diagramming + orthogonal routing with obstacle avoidance and per-connector toggle.
+  - Implemented orthogonal routing with obstacle avoidance, per-connector toggle, and quick-create defaults.
+  - Fixed routing live update hook order crash (clearLocalOverride TDZ).
+  - Added dynamic connector anchors and spawn animation for new elements.
+  - Disabled smart guide alignment snapping and guide lines.
+  - Removed straight-line routing toggle; connectors now render orthogonal paths by default.
+  - Enforced orthogonal routing for connectors without points and on connector tool completion.
+  - Disabled auto top/bottom anchors; orthogonal fallback avoids diagonals.
+  - Added orthogonal fallback rendering for connectors missing points.
+  - Added diagonal guard to re-route non-orthogonal connectors and normalize stored points when rendering.
+  - Offset connector anchors away from shapes and excluded bound elements from obstacles.
+  - Offset connector anchors by half stroke width to avoid overlapping borders.
+  - Dynamic anchors choose side based on dominant axis.
+  - Added ghost quick-create preview with shape/color inheritance and collision-based offset/hide.
+  - Reviewed docs/README.md at session start for refactor task.
+  - Created ExecPlan .agent/execplans/FR-BOARD-ROUTE-REFACTOR.md.
+- Split board.$boardId.tsx UI into BoardCanvasShell, BoardDeleteDialog, UndoDeleteToast components.
+- Updated docs/CHANGELOG.md with board route refactor entry.
+- Moved board status selection and hotkeys into boardRoute helper modules.
+- Moved clamp/isWorkspaceInviteRequired into boardRoute utils/errors modules.
+- Updated docs/CHANGELOG.md with helper split entry.
+- Extracted quick-create logic into boardRoute/hooks/useQuickCreate.ts.
+- Extracted delete/undo selection flow into boardRoute/hooks/useDeleteSelection.ts.
+- Updated docs/CHANGELOG.md with additional refactor entry.
+- Extracted selection UI into boardRoute/hooks/useSelectionUi.ts.
+- Extracted presence/sync UI helpers into boardRoute/hooks/usePresenceUi.ts.
+- Added boardRoute/constants.ts for selection/obstacle sets.
+- Updated docs/CHANGELOG.md with selection/presence hook entry.
+  - Extracted board access, restore flows, public workspace toast, and connector routing into boardRoute hooks.
+  - Updated docs/CHANGELOG.md with additional board route hook split entry.
+  - Created ExecPlan .agent/execplans/FR-BOARD-CANVAS-REFACTOR.md for board canvas refactor.
+  - Split boardCanvas.hooks.ts helpers into boardCanvas/elementUtils.ts, boardCanvas/connectorRouting.ts, and boardCanvas/useBoardViewport.ts.
+  - Added boardCanvas/useCanvasZoom.ts, boardCanvas/useElementHitTest.ts, and boardCanvas/useElementTransformHandlers.ts for deeper splits.
+  - Updated boardCanvas.hooks.ts to use new modules and re-export useBoardViewport.
+  - Fixed TS build errors (connector routing casts, transform handlers, dashboard usage message, element mutation typing).
+  - bun run build now succeeds (chunk size warning only).
+  - Updated docs/CHANGELOG.md with board canvas refactor and build fix entries.
+  - Added manualChunks vendor splitting in Vite and lazy-loaded TanStack devtools in root route.
+  - bun run build now succeeds with split chunks and no chunk size warning.
+  - Updated docs/CHANGELOG.md with bundle splitting entry.
+  - Ran bun run lint; resolved hook dependency warnings and lint now passes.
+  - Updated docs/CHANGELOG.md with lint cleanup entry.
+  - Added WS reconnect throttling/limit and guarded initial sync microtask in useBoardRealtime.
+  - Updated docs/CHANGELOG.md with realtime stability entry.
+  - Stabilized realtime effect by storing onRoleUpdate in a ref to avoid re-init loops.
+  - Updated docs/CHANGELOG.md with realtime init loop fix entry.
+  - bun run lint passes after realtime hook fix.
+  - Added connector point/endpoints validation in BoardCanvasStage to prevent crashes on invalid board data.
+  - Updated docs/CHANGELOG.md with connector render guard entry.
+  - Added drawing/position guards and numeric coercion in BoardCanvasStage to avoid Konva crashes.
+  - Updated docs/CHANGELOG.md with canvas render guard entry.
+  - Added dev-only logging for invalid canvas elements to trace blank-screen issues.
+  - Updated docs/CHANGELOG.md with canvas debug logging entry.
+  - Added backend logging for board state load/hydration to diagnose pending boards.
+  - Updated docs/CHANGELOG.md with realtime load logging entry.
+  - Added hydration query timeout/start log to avoid hanging boards on load.
+  - Updated docs/CHANGELOG.md with hydration timeout entry.
+  - Added detailed replay/hydrate logs and yield to isolate load_board_state hang points.
+  - Updated docs/CHANGELOG.md with realtime load instrumentation entry.
+  - Added per-update replay logging and RTC_SKIP_UPDATE_SEQ escape hatch.
+  - Updated docs/CHANGELOG.md with update replay diagnostics entry.
+  - Added snapshot-on-load trigger when update logs are large to reduce load time.
+  - Updated docs/CHANGELOG.md with snapshot-on-load entry.
+  - Fixed live connector routing throttle to use moved element deltas so connectors follow during drag.
+  - Updated docs/CHANGELOG.md with live connector follow fix entry.
+  - Tuned connector anchor gap by scaling stroke offsets for tighter attachment.
+  - Updated docs/CHANGELOG.md with anchor gap tuning entry.
+  - Added middle mouse panning in Select tool via stage position updates.
+  - Updated docs/CHANGELOG.md with middle mouse panning entry.
+  - Now:
+  - Draft PixiJS migration plan and identify affected modules/deps.
+  - Next:
+  - Review plan scope with user (full swap vs phased).
+
+Open questions (UNCONFIRMED if needed):
+- Migration strategy preference (phased vs big-bang) UNCONFIRMED.
+
+Working set (files/ids/commands):
+ - CONTINUITY.md
+ - frontend/src/features/boards/boardCanvas.hooks.ts
+ - frontend/src/features/boards/routing/orthogonalRouter.ts
+ - frontend/src/features/boards/boardCanvas/connectorRouting.ts
+ - frontend/src/features/boards/boardRoute/hooks/useBoardRealtime.ts
+ - frontend/src/features/boards/boardCanvas.hooks.ts
+ - docs/CHANGELOG.md
+ - frontend/src/routes/board.$boardId.tsx
+ - frontend/src/features/boards/components/BoardQuickCreateHandles.tsx
+ - frontend/src/features/boards/components/BoardCanvasStage.tsx
+ - frontend/src/features/boards/boardRoute/elements.ts
+ - frontend/src/features/boards/components/BoardCanvasShell.tsx
+ - frontend/src/features/boards/components/BoardDeleteDialog.tsx
+ - frontend/src/features/boards/components/UndoDeleteToast.tsx
+ - frontend/src/features/boards/boardRoute/boardStatus.tsx
+ - frontend/src/features/boards/boardRoute/errors.ts
+ - frontend/src/features/boards/boardRoute/hooks/useBoardHotkeys.ts
+ - frontend/src/features/boards/boardRoute/hooks/useQuickCreate.ts
+ - frontend/src/features/boards/boardRoute/hooks/useDeleteSelection.ts
+ - frontend/src/features/boards/boardRoute/hooks/useSelectionUi.ts
+ - frontend/src/features/boards/boardRoute/hooks/usePresenceUi.ts
+ - frontend/src/features/boards/boardRoute/constants.ts
+ - frontend/src/features/boards/boardRoute/hooks/useBoardAccess.ts
+ - frontend/src/features/boards/boardRoute/hooks/useBoardRestoration.ts
+ - frontend/src/features/boards/boardRoute/hooks/usePublicWorkspaceToast.ts
+ - frontend/src/features/boards/boardRoute/hooks/useConnectorRouting.ts
+ - frontend/src/features/boards/boardCanvas.hooks.ts
+ - frontend/src/features/boards/boardCanvas/elementUtils.ts
+ - frontend/src/features/boards/boardCanvas/connectorRouting.ts
+ - frontend/src/features/boards/boardCanvas/useBoardViewport.ts
+ - frontend/src/features/boards/boardCanvas/useCanvasZoom.ts
+ - frontend/src/features/boards/boardCanvas/useElementHitTest.ts
+ - frontend/src/features/boards/boardCanvas/useElementTransformHandlers.ts
+ - frontend/vite.config.ts
+ - frontend/src/routes/__root.tsx
+ - .agent/execplans/FR-BOARD-CANVAS-REFACTOR.md
+ - frontend/src/features/boards/boardRoute.utils.ts
+ - .agent/execplans/FR-BOARD-ROUTE-REFACTOR.md
+ - .agent/execplans/FR-DASH-RECENT-STARRED.md
+ - .agent/execplans/FR-UX-02-interaction-ux.md
+ - .agent/execplans/FR-DIAG-ORTHO-ROUTING.md
+ - docs/README.md
+ - docs/api/API_DOCUMENTATION.md
+ - docs/CHANGELOG.md
+ - doc/realtime-collaborative-board-design.md
+ - src/api/http/boards.rs
+ - src/usecases/boards.rs
+ - src/repositories/boards.rs
+ - src/dto/boards.rs
+ - src/app/router.rs
+ - frontend/src/routes/dashboard.tsx
+ - frontend/src/components/dashboard/Sidebar.tsx
+ - frontend/src/components/dashboard/BoardList.tsx
+ - frontend/src/components/dashboard/dashboardFilters.ts
+ - frontend/src/components/dashboard/dashboardView.ts
+ - frontend/src/i18n.ts
+ - frontend/src/features/boards/components/BoardSelectionToolbar.tsx
+ - frontend/src/features/boards/components/BoardQuickCreateHandles.tsx
+ - frontend/src/features/boards/boardCanvas.hooks.ts
+ - frontend/src/features/boards/components/BoardCanvasStage.tsx
+ - frontend/src/features/boards/routing/orthogonalRouter.ts
+ - frontend/src/routes/board.$boardId.tsx
+ - frontend/src/features/boards/boardCanvas.hooks.ts
+ - frontend/src/features/boards/api.ts
+ - frontend/src/features/boards/types.ts

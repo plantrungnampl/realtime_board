@@ -1,10 +1,15 @@
-import { createFileRoute, redirect } from '@tanstack/react-router'
+import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
 import { useAppStore } from '@/store/useAppStore'
 import { Sidebar } from '@/components/dashboard/Sidebar'
 import { TopBar } from '@/components/dashboard/TopBar'
 import { TemplateGallery } from '@/components/dashboard/TemplateGallery'
 import { BoardList } from '@/components/dashboard/BoardList'
 import { OrganizationInvitations } from '@/features/organizations/components/OrganizationInvitations'
+import { normalizeDashboardView } from '@/components/dashboard/dashboardView'
+import {
+  normalizeOwnerFilter,
+  normalizeSort,
+} from '@/components/dashboard/dashboardFilters'
 
 export const Route = createFileRoute('/dashboard')({
   beforeLoad: async () => {
@@ -33,10 +38,39 @@ export const Route = createFileRoute('/dashboard')({
 })
 
 function Dashboard() {
+  const navigate = useNavigate()
+  const search = Route.useSearch() as {
+    view?: string
+    owner?: string
+    sort?: string
+  }
+  const view = normalizeDashboardView(search.view)
+  const ownerFilter = normalizeOwnerFilter(search.owner)
+  const sortBy = normalizeSort(search.sort)
+
+  const updateSearch = (next: {
+    view?: string
+    owner?: string
+    sort?: string
+  }) => {
+    navigate({
+      to: '/dashboard',
+      search: {
+        view,
+        owner: ownerFilter,
+        sort: sortBy,
+        ...next,
+      },
+    })
+  }
+
   return (
     <div className="flex h-screen bg-bg-base text-text-primary font-body overflow-hidden">
       {/* Left Sidebar */}
-      <Sidebar />
+      <Sidebar
+        activeView={view}
+        onViewChange={(nextView) => updateSearch({ view: nextView })}
+      />
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
@@ -51,7 +85,12 @@ function Dashboard() {
             </div>
 
             {/* Boards List Section */}
-            <BoardList />
+            <BoardList
+              view={view}
+              ownerFilter={ownerFilter}
+              sortBy={sortBy}
+              onFilterChange={(next) => updateSearch(next)}
+            />
           </div>
         </main>
       </div>

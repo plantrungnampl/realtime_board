@@ -21,6 +21,9 @@ pub enum AppError {
     // Resource errors
     NotFound(String),
     Conflict(String),
+    ConflictWithPayload(String, serde_json::Value),
+    BoardArchived(String),
+    BoardDeleted(String),
 
     // Validation errors
     BadRequest(String),
@@ -43,6 +46,8 @@ pub enum AppError {
 struct ErrorResponse {
     success: bool,
     error: ErrorDetail,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    data: Option<serde_json::Value>,
 }
 
 #[derive(Serialize)]
@@ -61,6 +66,9 @@ impl fmt::Display for AppError {
             AppError::EmailNotVerified(msg) => write!(f, "Email not verified: {}", msg),
             AppError::NotFound(msg) => write!(f, "Not found: {}", msg),
             AppError::Conflict(msg) => write!(f, "Conflict: {}", msg),
+            AppError::ConflictWithPayload(msg, _) => write!(f, "Conflict: {}", msg),
+            AppError::BoardArchived(msg) => write!(f, "Board archived: {}", msg),
+            AppError::BoardDeleted(msg) => write!(f, "Board deleted: {}", msg),
             AppError::BadRequest(msg) => write!(f, "Bad request: {}", msg),
             AppError::ValidationError(msg) => write!(f, "Validation error: {}", msg),
             AppError::WebSocketError(msg) => write!(f, "WebSocket error: {}", msg),
@@ -94,6 +102,13 @@ impl IntoResponse for AppError {
             }
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, "NOT_FOUND", msg.clone()),
             AppError::Conflict(msg) => (StatusCode::CONFLICT, "CONFLICT", msg.clone()),
+            AppError::ConflictWithPayload(msg, _) => {
+                (StatusCode::CONFLICT, "CONFLICT", msg.clone())
+            }
+            AppError::BoardArchived(msg) => {
+                (StatusCode::GONE, "BOARD_ARCHIVED", msg.clone())
+            }
+            AppError::BoardDeleted(msg) => (StatusCode::GONE, "BOARD_DELETED", msg.clone()),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, "BAD_REQUEST", msg.clone()),
             AppError::ValidationError(msg) => (
                 StatusCode::UNPROCESSABLE_ENTITY,
@@ -124,12 +139,18 @@ impl IntoResponse for AppError {
             }
         };
 
+        let data = match &self {
+            AppError::ConflictWithPayload(_, payload) => Some(payload.clone()),
+            _ => None,
+        };
+
         let body = ErrorResponse {
             success: false,
             error: ErrorDetail {
                 code: code.to_string(),
                 message,
             },
+            data,
         };
 
         (status, Json(body)).into_response()

@@ -1,5 +1,5 @@
 import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import {
@@ -97,6 +97,7 @@ export const Route = createFileRoute("/profile")({
 function Profile() {
   const navigate = useNavigate();
   const user = useAppStore((state) => state.user);
+  const isAuthenticated = useAppStore((state) => state.isAuthenticated);
   const isLoading = useAppStore((state) => state.isLoading);
   const updateProfile = useAppStore((state) => state.updateProfile);
   const updatePreferences = useAppStore((state) => state.updatePreferences);
@@ -118,6 +119,12 @@ function Profile() {
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      navigate({ to: "/login" });
+    }
+  }, [isAuthenticated, navigate]);
   const [confirmPassword, setConfirmPassword] = useState("");
   const [deletePassword, setDeletePassword] = useState("");
   const [deleteConfirmation, setDeleteConfirmation] = useState("");

@@ -2,7 +2,7 @@ use sqlx::postgres::PgPoolOptions;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
 
-use crate::{app, realtime};
+use crate::{app, realtime, services};
 
 pub async fn run() {
     dotenvy::dotenv().expect("do not search file env");
@@ -17,6 +17,8 @@ pub async fn run() {
 
     let state = app::state::AppState::new(pool);
     realtime::snapshot::spawn_maintenance(state.db.clone(), state.rooms.clone());
+    realtime::projection::spawn_projection(state.db.clone(), state.rooms.clone());
+    services::maintenance::spawn_board_cleanup(state.db.clone());
 
     let app = app::router::build_router(state);
 

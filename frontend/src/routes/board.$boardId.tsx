@@ -1,151 +1,188 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
-  Fragment,
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
-import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  Stage,
-  Layer,
-  Circle,
-  Rect,
-  Line,
-  Text as KonvaText,
-  Group,
-} from "react-konva";
-import type { Stage as KonvaStage } from "konva/lib/Stage";
-import type { KonvaEventObject } from "konva/lib/Node";
 import { useAppStore } from "@/store/useAppStore";
-import { Undo2, Redo2, RotateCcw, ChevronLeft } from "lucide-react";
 import type { BoardElement } from "@/types/board";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { cn } from "@/lib/utils";
-import { BoardShareDialog } from "@/features/boards/components/BoardShareDialog";
-import { listBoardMembers } from "@/features/boards/api";
-import type { BoardRole } from "@/features/boards/types";
+import { BoardHeader } from "@/features/boards/components/BoardHeader";
+import { BoardCanvasShell } from "@/features/boards/components/BoardCanvasShell";
+import { BoardDeleteDialog } from "@/features/boards/components/BoardDeleteDialog";
+import { useBoardElementMutations } from "@/features/boards/hooks/useBoardElementMutations";
+import { resolveRolePermissions } from "@/features/boards/permissions";
+import { usePageBackgroundColor } from "@/features/boards/boardRoute.utils";
+import { getBoardStatusScreen } from "@/features/boards/boardRoute/boardStatus";
+import { useBoardAccess } from "@/features/boards/boardRoute/hooks/useBoardAccess";
+import { useBoardHotkeys } from "@/features/boards/boardRoute/hooks/useBoardHotkeys";
+import { ROUTE_OBSTACLES } from "@/features/boards/boardRoute/constants";
+import { useDeleteSelection } from "@/features/boards/boardRoute/hooks/useDeleteSelection";
+import { useBoardRestoration } from "@/features/boards/boardRoute/hooks/useBoardRestoration";
+import { useConnectorRouting } from "@/features/boards/boardRoute/hooks/useConnectorRouting";
+import { usePresenceUi } from "@/features/boards/boardRoute/hooks/usePresenceUi";
+import { usePublicWorkspaceToast } from "@/features/boards/boardRoute/hooks/usePublicWorkspaceToast";
+import { useQuickCreate } from "@/features/boards/boardRoute/hooks/useQuickCreate";
+import { useSelectionUi } from "@/features/boards/boardRoute/hooks/useSelectionUi";
 import {
-  TOOLS,
-  type ToolType,
-  DEFAULT_TEXT_STYLE,
-  createElementForTool,
-  getPointerPosition,
-  useBoardMetadata,
-  useBoardRealtime,
-  useCanvasDimensions,
-  useTextEditor,
-} from "@/features/boards/boardRoute.logic";
+  useBoardCanvasInteractions,
+  useBoardViewport,
+} from "@/features/boards/boardCanvas.hooks";
+import type { ToolType } from "@/features/boards/boardRoute/tools";
+import { useBoardMetadata } from "@/features/boards/boardRoute/hooks/useBoardMetadata";
+import { useBoardRealtime } from "@/features/boards/boardRoute/hooks/useBoardRealtime";
+import { useCanvasDimensions } from "@/features/boards/boardRoute/hooks/useCanvasDimensions";
+import { useTextEditor } from "@/features/boards/boardRoute/hooks/useTextEditor";
 
 export const Route = createFileRoute("/board/$boardId")({
   component: BoardComponent,
 });
 
 const HEADER_HEIGHT = 56;
-const GRID_SIZE = 40;
-const GRID_MAJOR_EVERY = 5;
-const SCALE_BY = 1.06;
-const MIN_SCALE = 0.2;
-const MAX_SCALE = 4;
-const TEXT_CHAR_WIDTH = 0.6;
-const TEXT_LINE_HEIGHT = 1.2;
-const SELECTION_STROKE = "#FBBF24";
-
-type Point = { x: number; y: number };
-
-const getTextMetrics = (content: string, fontSize: number) => {
-  const lines = content.split("\n");
-  const longestLine = lines.reduce(
-    (max, line) => Math.max(max, line.length),
-    0,
-  );
-  return {
-    width: Math.max(1, longestLine) * fontSize * TEXT_CHAR_WIDTH,
-    height: Math.max(1, lines.length) * fontSize * TEXT_LINE_HEIGHT,
-  };
-};
-
-const distanceToSegment = (point: Point, start: Point, end: Point) => {
-  const dx = end.x - start.x;
-  const dy = end.y - start.y;
-  if (dx === 0 && dy === 0) {
-    return Math.hypot(point.x - start.x, point.y - start.y);
-  }
-  const t =
-    ((point.x - start.x) * dx + (point.y - start.y) * dy) /
-    (dx * dx + dy * dy);
-  const clamped = Math.min(1, Math.max(0, t));
-  const closest = { x: start.x + clamped * dx, y: start.y + clamped * dy };
-  return Math.hypot(point.x - closest.x, point.y - closest.y);
-};
+const UNDO_TIMEOUT_MS = 6000;
+const NUDGE_PERSIST_MS = 200;
 
 function BoardComponent() {
   const { boardId } = Route.useParams();
   const { user, isAuthenticated } = useAppStore();
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const userId = user?.id ?? "";
+  const userEmail = user?.email ?? "";
   const [tool, setTool] = useState<ToolType>("select");
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
-  const roleKey = `${boardId}:${user?.id ?? ""}`;
-  const [boardRoleState, setBoardRoleState] = useState<{
-    key: string;
-    role: BoardRole | null;
-  }>({
-    key: roleKey,
-    role: null,
+  const {
+    boardRole,
+    boardPermissions,
+    isRoleLoading,
+    handleRoleUpdate,
+    handleRoleOverride,
+  } = useBoardAccess({
+    boardId,
+    userId,
+    userEmail,
+    navigate,
+    onEditRestriction: () => setTool("select"),
   });
-  const boardRole =
-    boardRoleState.key === roleKey ? boardRoleState.role : null;
-  const isRoleLoading = boardRole === null && Boolean(user?.id);
 
-  const boardTitle = useBoardMetadata(boardId, isAuthenticated, navigate);
+  const {
+    boardTitle,
+    boardDescription,
+    canvasSettings,
+    isPublic,
+    isArchived,
+    isDeleted,
+    refreshBoardMetadata,
+    applyBoardMetadata,
+  } = useBoardMetadata(
+    boardId,
+    isAuthenticated,
+    navigate,
+  );
   const dimensions = useCanvasDimensions();
-  const canEdit = boardRole
-    ? ["owner", "admin", "editor"].includes(boardRole)
-    : false;
+  const pageBackgroundColor = usePageBackgroundColor(containerRef);
+  const canEdit = boardPermissions?.canEdit
+    ?? (boardRole ? resolveRolePermissions(boardRole).canEdit : false);
   const activeTool = canEdit ? tool : "select";
+  const {
+    showPublicWorkspaceMessage,
+    publicToastVisible,
+  } = usePublicWorkspaceToast({
+    boardId,
+    isPublic,
+  });
+  const nudgeTimeoutsRef = useRef<Map<string, number>>(new Map());
+  const selectionReplaceRef = useRef<((oldId: string, newId: string) => void) | null>(
+    null,
+  );
+  const {
+    archivedStatus,
+    isRestoring,
+    deletedStatus,
+    isRestoringDeleted,
+    handleRestoreBoard,
+    handleRestoreDeletedBoard,
+  } = useBoardRestoration({
+    boardId,
+    refreshBoardMetadata,
+    t,
+  });
+  const stageHeight = dimensions.height - HEADER_HEIGHT;
   const {
     elements,
     cursors,
+    selectionPresence,
+    presenceUsers,
+    queueState,
     upsertElement,
     updateElement,
+    removeElement,
+    applyRemotePatch,
+    getElementById,
     scheduleCursorUpdate,
     clearCursor,
+    scheduleDragPresence,
+    clearDragPresence,
+    scheduleSelectionUpdate,
+    setEditingPresence,
     startHistoryEntry,
     undo,
     redo,
     canUndo,
     canRedo,
-  } = useBoardRealtime({ boardId, user, canEdit });
+    lockedElementIds,
+    syncStatus,
+  } = useBoardRealtime({
+    boardId,
+    user,
+    canEdit,
+    onRoleUpdate: handleRoleUpdate,
+    enabled: !isArchived && !isDeleted,
+  });
 
-  useEffect(() => {
-    let isMounted = true;
-    if (!user?.id) return () => undefined;
-    const currentKey = roleKey;
-    listBoardMembers(boardId)
-      .then((members) => {
-        if (!isMounted) return;
-        const current = members.find((member) => member.user.id === user.id);
-        setBoardRoleState({
-          key: currentKey,
-          role: current?.role ?? "viewer",
-        });
-      })
-      .catch(() => {
-        if (!isMounted) return;
-        setBoardRoleState({
-          key: currentKey,
-          role: "viewer",
-        });
-      });
+  const {
+    syncLabel,
+    syncTone,
+    cursorList,
+    visiblePresence,
+    extraPresenceCount,
+  } = usePresenceUi({
+    cursors,
+    presenceUsers,
+    userId,
+    syncStatus,
+    t,
+  });
 
-    return () => {
-      isMounted = false;
-    };
-  }, [boardId, roleKey, user?.id]);
+  const handleElementReplace = useCallback(
+    (oldId: string, element: BoardElement) => {
+      removeElement(oldId);
+      upsertElement(element);
+      selectionReplaceRef.current?.(oldId, element.id);
+    },
+    [removeElement, upsertElement],
+  );
+
+  const {
+    persistElement,
+    deleteElement,
+    restoreElement,
+    clearPendingDelete,
+  } = useBoardElementMutations({
+    boardId,
+    onPersisted: (elementId, version, updatedAt) => {
+      applyRemotePatch(elementId, {
+        version,
+        ...(updatedAt ? { updated_at: updatedAt } : {}),
+      }, "sync");
+    },
+    onReconciled: (element) => {
+      applyRemotePatch(element.id, element);
+    },
+    onReplaced: handleElementReplace,
+  });
 
   const guardedUpsertElement = useCallback(
     (element: BoardElement) => {
@@ -158,9 +195,10 @@ function BoardComponent() {
   const guardedUpdateElement = useCallback(
     (id: string, updater: (current: BoardElement) => BoardElement | null) => {
       if (!canEdit) return;
+      if (lockedElementIds.has(id)) return;
       updateElement(id, updater);
     },
-    [canEdit, updateElement],
+    [canEdit, lockedElementIds, updateElement],
   );
 
   const guardedStartHistoryEntry = useCallback(() => {
@@ -188,669 +226,378 @@ function BoardComponent() {
     suppressNextPointerRef,
   } = useTextEditor({
     boardId,
+    elements,
     upsertElement: guardedUpsertElement,
     updateElement: guardedUpdateElement,
+    persistElement,
     startHistoryEntry: guardedStartHistoryEntry,
+    setEditingPresence,
   });
 
-  const [action, setAction] = useState<"none" | "drawing" | "moving">("none");
-  const currentShapeId = useRef<string | null>(null);
-  const stageRef = useRef<KonvaStage | null>(null);
-  const [stageScale, setStageScale] = useState(1);
-  const [stagePosition, setStagePosition] = useState({ x: 0, y: 0 });
-  const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
+  const gridSize = canvasSettings.gridSize;
+  const gridEnabled = canvasSettings.gridEnabled;
+  const backgroundColor = pageBackgroundColor;
+  const {
+    stageRef,
+    stageScale,
+    stagePosition,
+    renderElements,
+    localOverrideIds,
+    selectedElementIds,
+    setSelectedElementIds,
+    snapGuides,
+    handleMouseDown,
+    handleMouseMove,
+    handleMouseUp,
+    handleWheel,
+    resetZoom,
+    handleTextChange,
+    handleTextKeyDown,
+    handleElementDragMove,
+    handleElementDragEnd,
+    handleElementTransform,
+    handleElementTransformEnd,
+    handleDrawingDragEnd,
+    textEditorScreenPosition,
+  } = useBoardCanvasInteractions({
+    boardId,
+    activeTool,
+    canEdit,
+    elements,
+    gridEnabled,
+    gridSize,
+    snapToGrid: canvasSettings.snapToGrid,
+    textEditor,
+    setTextEditor,
+    openTextEditor,
+    closeTextEditor,
+    commitTextEditor,
+    suppressNextPointerRef,
+    scheduleCursorUpdate,
+    clearCursor,
+    scheduleSelectionUpdate,
+    scheduleDragPresence,
+    clearDragPresence,
+    lockedElementIds,
+    upsertElement: guardedUpsertElement,
+    updateElement: guardedUpdateElement,
+    removeElement,
+    persistElement,
+    getElementById,
+    startHistoryEntry: guardedStartHistoryEntry,
+  });
+  useEffect(() => {
+    selectionReplaceRef.current = (oldId: string, newId: string) => {
+      setSelectedElementIds((prev) =>
+        prev.map((id) => (id === oldId ? newId : id)),
+      );
+    };
+  }, [setSelectedElementIds]);
+  const { gridLines, worldRect } = useBoardViewport({
+    dimensions,
+    stageHeight,
+    stageScale,
+    stagePosition,
+    gridEnabled,
+    gridSize,
+  });
+  const {
+    editableSelectedElements,
+    primarySelectedElement,
+    selectionBounds,
+    selectionScreenBounds,
+    isPrimaryLocked,
+    supportsFill,
+    supportsStroke,
+    canShowSelectionToolbar,
+    selectionToolbarPosition,
+    canShowQuickCreate,
+  } = useSelectionUi({
+    elements,
+    renderElements,
+    selectedElementIds,
+    lockedElementIds,
+    canEdit,
+    activeTool,
+    textEditorOpen: textEditor.isOpen,
+    stageScale,
+    stagePosition,
+    stageHeight,
+    canvasWidth: dimensions.width,
+  });
+  const { buildConnectorRoute } = useConnectorRouting();
 
-  const findElementAtPoint = useCallback(
-    (point: Point): BoardElement | null => {
-      const threshold = 6 / stageScale;
-      for (let index = elements.length - 1; index >= 0; index -= 1) {
-        const el = elements[index];
-        if (el.element_type === "Shape") {
-          if (el.properties.shapeType === "rectangle") {
-            const x2 = el.position_x + el.width;
-            const y2 = el.position_y + el.height;
-            const minX = Math.min(el.position_x, x2);
-            const maxX = Math.max(el.position_x, x2);
-            const minY = Math.min(el.position_y, y2);
-            const maxY = Math.max(el.position_y, y2);
-            if (
-              point.x >= minX &&
-              point.x <= maxX &&
-              point.y >= minY &&
-              point.y <= maxY
-            ) {
-              return el;
-            }
-          }
+  const {
+    setQuickCreateHover,
+    quickCreatePositions,
+    quickCreateGhost,
+    handleQuickCreate,
+  } = useQuickCreate({
+    boardId,
+    canEdit,
+    isPrimaryLocked,
+    canShowQuickCreate,
+    elements,
+    renderElements,
+    primarySelectedElement,
+    selectionBounds,
+    selectionScreenBounds,
+    canvasWidth: dimensions.width,
+    stageHeight,
+    routeObstacles: ROUTE_OBSTACLES,
+    buildConnectorRoute,
+    persistElement,
+    startHistoryEntry: guardedStartHistoryEntry,
+    upsertElement: guardedUpsertElement,
+    setSelectedElementIds,
+  });
 
-          if (el.properties.shapeType === "circle") {
-            const radius = Math.hypot(el.width || 0, el.height || 0);
-            const dx = point.x - el.position_x;
-            const dy = point.y - el.position_y;
-            if (dx * dx + dy * dy <= radius * radius) {
-              return el;
-            }
-          }
-        }
-
-        if (el.element_type === "Text") {
-          const content = el.properties.content || "";
-          const fontSize = el.style.fontSize ?? DEFAULT_TEXT_STYLE.fontSize;
-          const { width, height } = getTextMetrics(content, fontSize);
-          const padding = 4 / stageScale;
-          if (
-            point.x >= el.position_x - padding &&
-            point.x <= el.position_x + width + padding &&
-            point.y >= el.position_y - padding &&
-            point.y <= el.position_y + height + padding
-          ) {
-            return el;
-          }
-        }
-
-        if (el.element_type === "Drawing") {
-          const points = el.properties.points || [];
-          for (let i = 0; i < points.length - 2; i += 2) {
-            const start = { x: points[i], y: points[i + 1] };
-            const end = { x: points[i + 2], y: points[i + 3] };
-            if (distanceToSegment(point, start, end) <= threshold) {
-              return el;
-            }
-          }
-        }
-      }
-      return null;
-    },
-    [elements, stageScale],
-  );
-
-  const handleMouseDown = (event: KonvaEventObject<MouseEvent>) => {
-    if (textEditor.isOpen) return;
-    if (suppressNextPointerRef.current) {
-      suppressNextPointerRef.current = false;
-      return;
-    }
-    if (action === "drawing") return;
-
-    const position = getPointerPosition(event);
-    if (!position) return;
-
-    if (activeTool === "select") {
-      const hit = findElementAtPoint(position);
-      setSelectedElementId(hit?.id ?? null);
-      setAction("none");
-      return;
-    }
-
-    if (activeTool === "text") {
-      if (!canEdit) return;
-      openTextEditor({
-        x: position.x,
-        y: position.y,
-        value: "",
-        elementId: null,
-        fontSize: DEFAULT_TEXT_STYLE.fontSize,
-        color: DEFAULT_TEXT_STYLE.fill,
-      });
-      setAction("none");
-      return;
-    }
-
-    if (!canEdit) return;
-    guardedStartHistoryEntry();
-    const id = crypto.randomUUID();
-    currentShapeId.current = id;
-    setAction("drawing");
-
-    const newElement = createElementForTool(activeTool, boardId, id, position);
-    if (newElement) {
-      guardedUpsertElement(newElement);
-    }
-  };
-
-  const handleMouseMove = useCallback(
-    (event: KonvaEventObject<MouseEvent>) => {
-      if (textEditor.isOpen) return;
-
-      const position = getPointerPosition(event);
-      if (!position) return;
-
-      scheduleCursorUpdate(position);
-
-      if (action !== "drawing" || !currentShapeId.current) return;
-
-      guardedUpdateElement(currentShapeId.current, (currentElement) => {
-        if (currentElement.element_type === "Shape") {
-          return {
-            ...currentElement,
-            width: position.x - currentElement.position_x,
-            height: position.y - currentElement.position_y,
-          };
-        }
-
-        if (currentElement.element_type === "Drawing") {
-          const newPoints = [
-            ...(currentElement.properties.points || []),
-            position.x,
-            position.y,
-          ];
-          return {
-            ...currentElement,
-            properties: {
-              ...currentElement.properties,
-              points: newPoints,
+  const applySelectionStyle = useCallback(
+    (patch: Partial<BoardElement["style"]>) => {
+      if (editableSelectedElements.length === 0) return;
+      guardedStartHistoryEntry();
+      const updates: BoardElement[] = [];
+      editableSelectedElements.forEach((element) => {
+        guardedUpdateElement(element.id, (current) => {
+          const next = {
+            ...current,
+            style: {
+              ...current.style,
+              ...patch,
             },
           };
-        }
-
-        return null;
+          updates.push(next);
+          return next;
+        });
+      });
+      updates.forEach((element) => {
+        persistElement(element);
       });
     },
-    [action, guardedUpdateElement, scheduleCursorUpdate, textEditor.isOpen],
+    [
+      editableSelectedElements,
+      guardedStartHistoryEntry,
+      guardedUpdateElement,
+      persistElement,
+    ],
   );
 
-  const handleMouseUp = useCallback(() => {
-    setAction("none");
-    currentShapeId.current = null;
+  const clearNudgeTimers = useCallback(() => {
+    const timers = nudgeTimeoutsRef.current;
+    timers.forEach((timerId) => window.clearTimeout(timerId));
+    timers.clear();
   }, []);
 
-  const handleTextChange = useCallback(
-    (event: ChangeEvent<HTMLTextAreaElement>) => {
-      const value = event.target.value;
-      setTextEditor((prev) => ({
-        ...prev,
-        value,
-      }));
-    },
-    [setTextEditor],
-  );
-
-  const handleTextKeyDown = useCallback(
-    (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
-      if (event.key === "Enter" && !event.shiftKey) {
-        event.preventDefault();
-        commitTextEditor();
-        return;
-      }
-
-      if (event.key === "Escape") {
-        event.preventDefault();
-        closeTextEditor();
-      }
-    },
-    [closeTextEditor, commitTextEditor],
-  );
-
-  const handleWheel = useCallback(
-    (event: KonvaEventObject<WheelEvent>) => {
-      event.evt.preventDefault();
-      if (!event.evt.ctrlKey && !event.evt.metaKey) {
-        setStagePosition((prev) => ({
-          x: prev.x - event.evt.deltaX,
-          y: prev.y - event.evt.deltaY,
-        }));
-        return;
-      }
-      const stage = stageRef.current;
-      if (!stage) return;
-      const pointer = stage.getPointerPosition();
-      if (!pointer) return;
-
-      const oldScale = stage.scaleX() || 1;
-      const oldPosition = stage.position();
-      const scaleDirection = event.evt.deltaY > 0 ? -1 : 1;
-      const scaleFactor = scaleDirection > 0 ? SCALE_BY : 1 / SCALE_BY;
-      const nextScale = Math.min(
-        MAX_SCALE,
-        Math.max(MIN_SCALE, oldScale * scaleFactor),
-      );
-
-      const mousePointTo = {
-        x: (pointer.x - oldPosition.x) / oldScale,
-        y: (pointer.y - oldPosition.y) / oldScale,
-      };
-
-      const nextPosition = {
-        x: pointer.x - mousePointTo.x * nextScale,
-        y: pointer.y - mousePointTo.y * nextScale,
-      };
-
-      setStageScale(nextScale);
-      setStagePosition(nextPosition);
-    },
-    [],
-  );
-
-  const resetZoom = useCallback(() => {
-    setStageScale(1);
-    setStagePosition({ x: 0, y: 0 });
-  }, []);
-
-  const handleGlobalKeyDown = useCallback(
-    (event: KeyboardEvent) => {
-      if (textEditor.isOpen) return;
-      if (event.defaultPrevented) return;
-      if (!canEdit) return;
-      const target = event.target;
-      if (target instanceof HTMLElement) {
-        const tagName = target.tagName;
-        if (
-          tagName === "INPUT" ||
-          tagName === "TEXTAREA" ||
-          target.isContentEditable
-        ) {
-          return;
-        }
-      }
-
-      const isModifier = event.metaKey || event.ctrlKey;
-      if (!isModifier) return;
-
-      const key = event.key.toLowerCase();
-      if (key === "z") {
-        event.preventDefault();
-        if (event.shiftKey) {
-          guardedRedo();
-        } else {
-          guardedUndo();
-        }
-        return;
-      }
-
-      if (key === "y") {
-        event.preventDefault();
-        guardedRedo();
-      }
-    },
-    [canEdit, guardedRedo, guardedUndo, textEditor.isOpen],
-  );
-
   useEffect(() => {
-    window.addEventListener("keydown", handleGlobalKeyDown);
-    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
-  }, [handleGlobalKeyDown]);
+    return () => {
+      clearNudgeTimers();
+    };
+  }, [clearNudgeTimers]);
 
-  const ensureSelectionExists = useCallback(() => {
-    if (!selectedElementId) return;
-    const exists = elements.some((el) => el.id === selectedElementId);
-    if (!exists) setSelectedElementId(null);
-  }, [elements, selectedElementId]);
+  const {
+    deleteDialogOpen,
+    pendingDeleteElements,
+    undoDeleteState,
+    requestDeleteSelection,
+    confirmDeleteSelection,
+    handleUndoDelete,
+    handleDeleteDialogOpenChange,
+  } = useDeleteSelection({
+    canEdit,
+    textEditorOpen: textEditor.isOpen,
+    elements,
+    editableSelectedElements,
+    lockedElementIds,
+    setSelectedElementIds,
+    removeElement,
+    upsertElement,
+    deleteElement,
+    restoreElement,
+    persistElement,
+    applyRemotePatch,
+    clearPendingDelete,
+    undoTimeoutMs: UNDO_TIMEOUT_MS,
+  });
 
-  useEffect(() => {
-    queueMicrotask(() => {
-      ensureSelectionExists();
-    });
-  }, [ensureSelectionExists]);
+  const scheduleNudgePersist = useCallback(
+    (element: BoardElement) => {
+      const timers = nudgeTimeoutsRef.current;
+      const existing = timers.get(element.id);
+      if (existing) {
+        window.clearTimeout(existing);
+      }
+      const timerId = window.setTimeout(() => {
+        timers.delete(element.id);
+        persistElement(element);
+      }, NUDGE_PERSIST_MS);
+      timers.set(element.id, timerId);
+    },
+    [persistElement],
+  );
 
-  const cursorList = Object.values(cursors);
-  const visibleCursors = cursorList.slice(0, 3);
-  const extraCursorCount = Math.max(0, cursorList.length - 3);
-  const stageHeight = dimensions.height - HEADER_HEIGHT;
-  const worldLeft = (-stagePosition.x) / stageScale;
-  const worldTop = (-stagePosition.y) / stageScale;
-  const worldRight = (dimensions.width - stagePosition.x) / stageScale;
-  const worldBottom = (stageHeight - stagePosition.y) / stageScale;
-  const selectionStrokeWidth = 2 / stageScale;
-  const selectionDash = [6 / stageScale, 4 / stageScale];
-  const selectionPadding = 6 / stageScale;
-  const gridLines = useMemo(() => {
-    const lines: Array<{ points: number[]; major: boolean }> = [];
-    const startX = Math.floor(worldLeft / GRID_SIZE) * GRID_SIZE;
-    const endX = Math.ceil(worldRight / GRID_SIZE) * GRID_SIZE;
-    const startY = Math.floor(worldTop / GRID_SIZE) * GRID_SIZE;
-    const endY = Math.ceil(worldBottom / GRID_SIZE) * GRID_SIZE;
+  useBoardHotkeys({
+    enabled: canEdit,
+    textEditorOpen: textEditor.isOpen,
+    deleteDialogOpen,
+    editableSelectedElements,
+    elements,
+    gridEnabled,
+    gridSize,
+    snapToGrid: canvasSettings.snapToGrid,
+    onDeleteSelection: requestDeleteSelection,
+    startHistoryEntry: guardedStartHistoryEntry,
+    updateElement,
+    scheduleNudgePersist,
+    onUndo: guardedUndo,
+    onRedo: guardedRedo,
+  });
 
-    for (let x = startX; x <= endX; x += GRID_SIZE) {
-      const index = Math.round(x / GRID_SIZE);
-      lines.push({
-        points: [x, worldTop, x, worldBottom],
-        major: index % GRID_MAJOR_EVERY === 0,
-      });
-    }
-    for (let y = startY; y <= endY; y += GRID_SIZE) {
-      const index = Math.round(y / GRID_SIZE);
-      lines.push({
-        points: [worldLeft, y, worldRight, y],
-        major: index % GRID_MAJOR_EVERY === 0,
-      });
-    }
-    return lines;
-  }, [worldBottom, worldLeft, worldRight, worldTop]);
-  const textEditorScreenPosition = {
-    x: textEditor.x * stageScale + stagePosition.x,
-    y: textEditor.y * stageScale + stagePosition.y,
-  };
+  const canDragElements = canEdit && activeTool === "select" && !textEditor.isOpen;
+
+  const statusScreen = getBoardStatusScreen({
+    isDeleted,
+    isArchived,
+    queueState,
+    archivedStatus,
+    deletedStatus,
+    isRestoring,
+    isRestoringDeleted,
+    onRestoreBoard: handleRestoreBoard,
+    onRestoreDeletedBoard: handleRestoreDeletedBoard,
+    onBackToDashboard: () => navigate({ to: "/dashboard" }),
+    onRetryQueue: () => window.location.reload(),
+    t,
+  });
+
+  if (statusScreen) {
+    return statusScreen;
+  }
 
   return (
-    <div className="w-screen h-screen overflow-hidden bg-neutral-900 flex flex-col">
+    <div
+      ref={containerRef}
+      className="relative w-screen h-screen overflow-hidden bg-neutral-900 flex flex-col"
+    >
+      <BoardDeleteDialog
+        open={deleteDialogOpen}
+        pendingCount={pendingDeleteElements.length}
+        onOpenChange={handleDeleteDialogOpenChange}
+        onConfirm={confirmDeleteSelection}
+      />
       {/* Header */}
-      <header className="h-14 border-b border-neutral-800 bg-neutral-900/50 backdrop-blur-sm px-4 flex items-center justify-between z-50">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => navigate({ to: "/" })}
-            className="p-2 hover:bg-neutral-800 rounded-lg text-neutral-400 hover:text-neutral-200 transition-colors"
-          >
-            <ChevronLeft className="w-5 h-5" />
-          </button>
-          <div>
-            <h1 className="font-semibold text-neutral-200 flex items-center gap-2">
-              <span>{boardTitle}</span>
-              {!canEdit && !isRoleLoading && (
-                <span className="inline-flex items-center rounded-full border border-neutral-700 px-2 py-0.5 text-[10px] uppercase tracking-wide text-neutral-300">
-                  {t("board.readOnly")}
-                </span>
-              )}
-            </h1>
-            <p className="text-xs text-neutral-500">Last saved just now</p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <div className="flex -space-x-2">
-            {visibleCursors.map((cursor) => (
-              <div
-                key={cursor.client_id}
-                className="w-8 h-8 rounded-full border-2 border-neutral-900 flex items-center justify-center text-xs text-neutral-900"
-                style={{ backgroundColor: cursor.color }}
-              >
-                {cursor.user_name.slice(0, 2).toUpperCase()}
-              </div>
-            ))}
-            {extraCursorCount > 0 && (
-              <div className="w-8 h-8 rounded-full bg-neutral-800 border-2 border-neutral-900 flex items-center justify-center text-xs text-neutral-400">
-                +{extraCursorCount}
-              </div>
-            )}
-          </div>
-          <BoardShareDialog boardId={boardId} />
-          <Avatar className="w-9 h-9 border-2 border-neutral-800">
-            <AvatarImage src={user?.avatar_url || undefined} />
-            <AvatarFallback className="bg-blue-600 text-white">
-              {user?.display_name?.slice(0, 2).toUpperCase() || "ME"}
-            </AvatarFallback>
-          </Avatar>
-        </div>
-      </header>
+      <BoardHeader
+        boardId={boardId}
+        boardTitle={boardTitle}
+        boardDescription={boardDescription}
+        isPublic={isPublic}
+        isArchived={isArchived}
+        canEdit={canEdit}
+        isRoleLoading={isRoleLoading}
+        boardRole={boardRole}
+        visiblePresence={visiblePresence}
+        extraPresenceCount={extraPresenceCount}
+        user={user}
+        backLabel={t("org.backToDashboard")}
+        readOnlyLabel={t("board.readOnly")}
+        syncLabel={syncLabel}
+        syncTone={syncTone}
+        onBack={() => navigate({ to: "/" })}
+        onBoardUpdated={applyBoardMetadata}
+        onRefresh={refreshBoardMetadata}
+        onRoleOverride={handleRoleOverride}
+      />
 
       {/* Canvas */}
-      <div className="flex-1 relative cursor-crosshair">
-        <div className="absolute left-4 top-1/2 z-30 flex -translate-y-1/2 flex-col gap-1 rounded-2xl border border-neutral-800 bg-neutral-900/80 p-2 shadow-lg backdrop-blur">
-          {TOOLS.map((t) => {
-            const isDisabled = !canEdit && t.id !== "select";
-            return (
-            <button
-              key={t.id}
-              onClick={() => setTool(t.id)}
-              disabled={isDisabled}
-              className={cn(
-                "group relative flex h-11 w-11 items-center justify-center rounded-xl transition-all",
-                activeTool === t.id && !isDisabled
-                  ? "bg-yellow-500 text-neutral-900 shadow-sm"
-                  : "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800",
-                isDisabled && "cursor-not-allowed opacity-40 hover:bg-transparent",
-              )}
-              title={t.label}
-            >
-              <t.icon className="h-5 w-5" />
-              <span className="pointer-events-none absolute left-full top-1/2 ml-3 -translate-y-1/2 translate-x-1 whitespace-nowrap rounded-md border border-neutral-700 bg-neutral-900/95 px-2 py-1 text-xs text-neutral-100 opacity-0 shadow-md transition-all group-hover:translate-x-0 group-hover:opacity-100">
-                {t.label}
-              </span>
-            </button>
-          );
-          })}
-          <div className="my-1 h-px w-full bg-neutral-800" />
-          <button
-            type="button"
-            onClick={guardedUndo}
-            disabled={!canEdit || !canUndo}
-            className={cn(
-              "group relative flex h-11 w-11 items-center justify-center rounded-xl transition-colors",
-              canEdit && canUndo
-                ? "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800"
-                : "text-neutral-700 cursor-not-allowed",
-            )}
-            title="Undo"
-          >
-            <Undo2 className="h-5 w-5" />
-            <span className="pointer-events-none absolute left-full top-1/2 ml-3 -translate-y-1/2 translate-x-1 whitespace-nowrap rounded-md border border-neutral-700 bg-neutral-900/95 px-2 py-1 text-xs text-neutral-100 opacity-0 shadow-md transition-all group-hover:translate-x-0 group-hover:opacity-100">
-              Undo
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={guardedRedo}
-            disabled={!canEdit || !canRedo}
-            className={cn(
-              "group relative flex h-11 w-11 items-center justify-center rounded-xl transition-colors",
-              canEdit && canRedo
-                ? "text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800"
-                : "text-neutral-700 cursor-not-allowed",
-            )}
-            title="Redo"
-          >
-            <Redo2 className="h-5 w-5" />
-            <span className="pointer-events-none absolute left-full top-1/2 ml-3 -translate-y-1/2 translate-x-1 whitespace-nowrap rounded-md border border-neutral-700 bg-neutral-900/95 px-2 py-1 text-xs text-neutral-100 opacity-0 shadow-md transition-all group-hover:translate-x-0 group-hover:opacity-100">
-              Redo
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={resetZoom}
-            className="group relative flex h-11 w-11 items-center justify-center rounded-xl text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-200"
-            title="Reset zoom"
-          >
-            <RotateCcw className="h-5 w-5" />
-            <span className="pointer-events-none absolute left-full top-1/2 ml-3 -translate-y-1/2 translate-x-1 whitespace-nowrap rounded-md border border-neutral-700 bg-neutral-900/95 px-2 py-1 text-xs text-neutral-100 opacity-0 shadow-md transition-all group-hover:translate-x-0 group-hover:opacity-100">
-              Reset zoom
-            </span>
-          </button>
-        </div>
-        {textEditor.isOpen && (
-          <textarea
-            ref={textAreaRef}
-            value={textEditor.value}
-            onChange={handleTextChange}
-            onBlur={() => commitTextEditor(true)}
-            onKeyDown={handleTextKeyDown}
-            rows={1}
-            spellCheck={false}
-            className="absolute z-20 min-w-[120px] max-w-[420px] resize-none overflow-hidden bg-neutral-900/90 text-neutral-100 border border-neutral-700 rounded-md px-2 py-1 shadow-lg"
-            style={{
-              top: textEditorScreenPosition.y,
-              left: textEditorScreenPosition.x,
-              fontSize: textEditor.fontSize * stageScale,
-              color: textEditor.color,
-            }}
-          />
-        )}
-        <Stage
-          ref={stageRef}
-          width={dimensions.width}
-          height={stageHeight}
-          scaleX={stageScale}
-          scaleY={stageScale}
-          x={stagePosition.x}
-          y={stagePosition.y}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={clearCursor}
-          onWheel={handleWheel}
-        >
-          <Layer>
-            <Rect
-              x={worldLeft}
-              y={worldTop}
-              width={worldRight - worldLeft}
-              height={worldBottom - worldTop}
-              fill="#141414"
-            />
-            {gridLines.map((line, index) => (
-              <Line
-                key={`grid-${index}`}
-                points={line.points}
-                stroke={line.major ? "#2F2F2F" : "#222222"}
-                strokeWidth={(line.major ? 1.2 : 1) / stageScale}
-                listening={false}
-              />
-            ))}
-
-            {elements.map((el) => {
-              const isSelected = selectedElementId === el.id;
-              if (el.element_type === "Shape") {
-                if (el.properties.shapeType === "rectangle") {
-                  const rectX = Math.min(el.position_x, el.position_x + el.width);
-                  const rectY = Math.min(el.position_y, el.position_y + el.height);
-                  const rectWidth = Math.abs(el.width);
-                  const rectHeight = Math.abs(el.height);
-                  return (
-                    <Fragment key={el.id}>
-                      <Rect
-                        x={el.position_x}
-                        y={el.position_y}
-                        width={el.width}
-                        height={el.height}
-                        stroke={el.style.stroke}
-                        strokeWidth={el.style.strokeWidth}
-                        fill={el.style.fill}
-                      />
-                      {isSelected && (
-                        <Rect
-                          x={rectX - selectionPadding}
-                          y={rectY - selectionPadding}
-                          width={rectWidth + selectionPadding * 2}
-                          height={rectHeight + selectionPadding * 2}
-                          stroke={SELECTION_STROKE}
-                          strokeWidth={selectionStrokeWidth}
-                          dash={selectionDash}
-                          listening={false}
-                        />
-                      )}
-                    </Fragment>
-                  );
-                }
-                if (el.properties.shapeType === "circle") {
-                  const radius = Math.hypot(el.width || 0, el.height || 0);
-                  return (
-                    <Fragment key={el.id}>
-                      <Circle
-                        x={el.position_x}
-                        y={el.position_y}
-                        radius={radius}
-                        stroke={el.style.stroke}
-                        strokeWidth={el.style.strokeWidth}
-                        fill={el.style.fill}
-                      />
-                      {isSelected && (
-                        <Circle
-                          x={el.position_x}
-                          y={el.position_y}
-                          radius={radius + selectionPadding}
-                          stroke={SELECTION_STROKE}
-                          strokeWidth={selectionStrokeWidth}
-                          dash={selectionDash}
-                          listening={false}
-                        />
-                      )}
-                    </Fragment>
-                  );
-                }
-              }
-
-              if (el.element_type === "Drawing") {
-                return (
-                  <Fragment key={el.id}>
-                    <Line
-                      points={el.properties.points}
-                      stroke={el.style.stroke}
-                      strokeWidth={el.style.strokeWidth}
-                      lineCap="round"
-                      lineJoin="round"
-                    />
-                    {isSelected && (
-                      <Line
-                        points={el.properties.points}
-                        stroke={SELECTION_STROKE}
-                        strokeWidth={(el.style.strokeWidth ?? 1) + selectionStrokeWidth}
-                        lineCap="round"
-                        lineJoin="round"
-                        dash={selectionDash}
-                        listening={false}
-                      />
-                    )}
-                  </Fragment>
-                );
-              }
-
-              if (el.element_type === "Text") {
-                const content = el.properties.content || "";
-                const fontSize = el.style.fontSize ?? DEFAULT_TEXT_STYLE.fontSize;
-                const { width, height } = getTextMetrics(content, fontSize);
-                return (
-                  <Fragment key={el.id}>
-                    <KonvaText
-                      x={el.position_x}
-                      y={el.position_y}
-                      text={content}
-                      fontSize={fontSize}
-                      fill={el.style.fill}
-                      onDblClick={(event) => {
-                        event.cancelBubble = true;
-                        openTextEditor({
-                          x: el.position_x,
-                          y: el.position_y,
-                          value: content,
-                          elementId: el.id,
-                          fontSize,
-                          color: el.style.fill ?? DEFAULT_TEXT_STYLE.fill,
-                        });
-                      }}
-                    />
-                    {isSelected && (
-                      <Rect
-                        x={el.position_x - selectionPadding}
-                        y={el.position_y - selectionPadding}
-                        width={width + selectionPadding * 2}
-                        height={height + selectionPadding * 2}
-                        stroke={SELECTION_STROKE}
-                        strokeWidth={selectionStrokeWidth}
-                        dash={selectionDash}
-                        listening={false}
-                      />
-                    )}
-                  </Fragment>
-                );
-              }
-
-              return null;
-            })}
-
-            {cursorList
-              .filter((cursor) => cursor.x !== null && cursor.y !== null)
-              .map((cursor) => (
-                <Group
-                  key={cursor.client_id}
-                  x={cursor.x ?? 0}
-                  y={cursor.y ?? 0}
-                >
-                  <Circle
-                    radius={4}
-                    fill={cursor.color}
-                    stroke="#171717"
-                    strokeWidth={1}
-                  />
-                  <KonvaText
-                    text={cursor.user_name}
-                    y={10}
-                    x={-10}
-                    fill={cursor.color}
-                    fontSize={10}
-                  />
-                </Group>
-              ))}
-          </Layer>
-        </Stage>
-      </div>
+      <BoardCanvasShell
+        toolbarProps={{
+          activeTool,
+          canEdit,
+          canUndo,
+          canRedo,
+          onToolChange: setTool,
+          onUndo: guardedUndo,
+          onRedo: guardedRedo,
+          onResetZoom: resetZoom,
+        }}
+        selectionToolbarProps={{
+          position: selectionToolbarPosition,
+          visible: canShowSelectionToolbar,
+          supportsFill,
+          supportsStroke,
+          fill: primarySelectedElement?.style.fill,
+          stroke: primarySelectedElement?.style.stroke,
+          strokeWidth: primarySelectedElement?.style.strokeWidth,
+          onFillChange: (color) => applySelectionStyle({ fill: color }),
+          onStrokeChange: (color) => applySelectionStyle({ stroke: color }),
+          onStrokeWidthChange: (width) =>
+            applySelectionStyle({ strokeWidth: width }),
+        }}
+        quickCreateProps={{
+          positions: quickCreatePositions,
+          visible: canShowQuickCreate,
+          onCreate: handleQuickCreate,
+          onHoverChange: setQuickCreateHover,
+        }}
+        textEditorProps={{
+          isOpen: textEditor.isOpen,
+          value: textEditor.value,
+          screenPosition: textEditorScreenPosition,
+          fontSize: textEditor.fontSize,
+          color: textEditor.color,
+          backgroundColor: textEditor.backgroundColor,
+          editorWidth: textEditor.editorWidth,
+          editorHeight: textEditor.editorHeight,
+          stageScale,
+          textAreaRef,
+          onChange: handleTextChange,
+          onBlur: () => commitTextEditor(true),
+          onKeyDown: handleTextKeyDown,
+        }}
+        publicToastProps={{
+          isEnabled: showPublicWorkspaceMessage,
+          isVisible: publicToastVisible,
+          message: "This board is public in this workspace.",
+        }}
+        undoDeleteToastProps={undoDeleteState ? {
+          label:
+            undoDeleteState.elements.length > 1
+              ? "Elements deleted."
+              : "Element deleted.",
+          actionLabel: undoDeleteState.isRestoring ? "Restoring..." : "Undo",
+          isRestoring: undoDeleteState.isRestoring,
+          onUndo: handleUndoDelete,
+        } : null}
+        canvasProps={{
+          stageRef,
+          width: dimensions.width,
+          height: stageHeight,
+          stageScale,
+          stagePosition,
+          onMouseDown: handleMouseDown,
+          onMouseMove: handleMouseMove,
+          onMouseUp: handleMouseUp,
+          onMouseLeave: clearCursor,
+          onWheel: handleWheel,
+          worldRect,
+          backgroundColor,
+          gridLines,
+          snapGuides,
+          elements: renderElements,
+          ghostElement: quickCreateGhost,
+          selectedElementIds,
+          selectionPresence,
+          cursorList,
+          isDragEnabled: canDragElements,
+          localOverrideIds,
+          lockedElementIds,
+          onElementDragMove: handleElementDragMove,
+          onElementDragEnd: handleElementDragEnd,
+          onElementTransform: handleElementTransform,
+          onElementTransformEnd: handleElementTransformEnd,
+          onDrawingDragEnd: handleDrawingDragEnd,
+          onOpenTextEditor: openTextEditor,
+        }}
+      />
     </div>
   );
 }

@@ -55,3 +55,13 @@ export function getApiErrorMessage(error: unknown, fallback: string): string {
 
   return fallback;
 }
+
+export function getApiErrorCode(error: unknown): string | null {
+  if (axios.isAxiosError(error)) {
+    const payload = error.response?.data as ApiErrorPayload | undefined;
+    if (payload && typeof payload.error?.code === "string") {
+      return payload.error.code;
+    }
+  }
+  return null;
+}

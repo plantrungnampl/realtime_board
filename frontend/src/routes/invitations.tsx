@@ -9,6 +9,7 @@ import { useAppStore } from "@/store/useAppStore";
 
 type InvitationSearch = {
   email?: string;
+  notice?: string;
 };
 
 export const Route = createFileRoute("/invitations")({
@@ -55,6 +56,7 @@ function InvitationsPage() {
   const hasMismatch =
     Boolean(invitedEmail && signedInEmail) && invitedEmail !== signedInEmail;
   const displayInvitedEmail = search.email?.trim() || invitedEmail || "";
+  const notice = search.notice?.trim();
 
   const handleSwitchAccount = () => {
     const nextSearch = buildLoginSearch(displayInvitedEmail);
@@ -87,6 +89,17 @@ function InvitationsPage() {
                 {t("org.backToDashboard")}
               </Button>
             </div>
+
+            {notice === "workspace-invite-required" && !hasMismatch ? (
+              <section className="rounded-2xl border border-border bg-surface p-5 space-y-2">
+                <div className="text-sm font-semibold text-text-primary">
+                  {t("org.invitationRequiredTitle")}
+                </div>
+                <p className="text-sm text-text-secondary">
+                  {t("org.invitationRequiredMessage")}
+                </p>
+              </section>
+            ) : null}
 
             {hasMismatch ? (
               <section className="rounded-2xl border border-border bg-surface p-5 space-y-3">

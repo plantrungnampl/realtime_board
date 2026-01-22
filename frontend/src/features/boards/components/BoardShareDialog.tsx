@@ -8,7 +8,16 @@ import {
   removeBoardMember,
   updateBoardMemberRole,
 } from "@/features/boards/api";
-import type { BoardMember, BoardRole } from "@/features/boards/types";
+import {
+  buildPermissionOverrides,
+  hasCustomPermissionOverrides,
+  resolveEffectivePermissions,
+} from "@/features/boards/permissions";
+import type {
+  BoardMember,
+  BoardPermissions,
+  BoardRole,
+} from "@/features/boards/types";
 import { useAppStore } from "@/store/useAppStore";
 import { Button } from "@/components/ui/Button";
 import {
@@ -49,16 +58,41 @@ export function BoardShareDialog({ boardId }: BoardShareDialogProps) {
   const [isInviting, setIsInviting] = useState(false);
 
   const [actionMemberId, setActionMemberId] = useState<string | null>(null);
-  const [actionType, setActionType] = useState<"role" | "remove" | null>(null);
+  const [actionType, setActionType] = useState<"role" | "remove" | "permissions" | null>(null);
+  const [expandedMemberId, setExpandedMemberId] = useState<string | null>(null);
+  const [permissionDrafts, setPermissionDrafts] = useState<
+    Record<string, BoardPermissions>
+  >({});
 
   const currentMember = members.find((member) => member.user.id === user?.id);
   const currentRole = currentMember?.role;
-  const canManageMembers = currentRole === "owner" || currentRole === "admin";
+  const currentPermissions = currentMember
+    ? resolveEffectivePermissions(
+        currentMember.role,
+        currentMember.custom_permissions,
+        currentMember.effective_permissions ?? null,
+      )
+    : null;
+  const canManageMembers = currentPermissions?.canManageMembers
+    ?? (currentRole === "owner" || currentRole === "admin");
   const canAssignOwner = currentRole === "owner";
 
   const roleOptions = useMemo<BoardRole[]>(
     () => ["owner", "admin", "editor", "commenter", "viewer"],
     [],
+  );
+
+  const permissionOptions = useMemo<
+    Array<{ key: keyof BoardPermissions; label: string }>
+  >(
+    () => [
+      { key: "canView", label: t("board.permissionView") },
+      { key: "canEdit", label: t("board.permissionEdit") },
+      { key: "canComment", label: t("board.permissionComment") },
+      { key: "canManageMembers", label: t("board.permissionManageMembers") },
+      { key: "canManageBoard", label: t("board.permissionManageBoard") },
+    ],
+    [t],
   );
 
   const inviteRoleOptions = useMemo<BoardRole[]>(() => {
@@ -74,6 +108,8 @@ export function BoardShareDialog({ boardId }: BoardShareDialogProps) {
     try {
       const data = await listBoardMembers(boardId);
       setMembers(data);
+      setExpandedMemberId(null);
+      setPermissionDrafts({});
     } catch (error) {
       setMembers([]);
       setStatus({
@@ -223,6 +259,93 @@ export function BoardShareDialog({ boardId }: BoardShareDialogProps) {
     }
   };
 
+  const togglePermissionsEditor = (
+    member: BoardMember,
+    effectivePermissions: BoardPermissions,
+  ) => {
+    if (!canManageMembers) return;
+    setExpandedMemberId((prev) => (prev === member.id ? null : member.id));
+    setPermissionDrafts((prev) => {
+      if (prev[member.id]) {
+        return prev;
+      }
+      return {
+        ...prev,
+        [member.id]: effectivePermissions,
+      };
+    });
+  };
+
+  const updatePermissionDraft = (
+    memberId: string,
+    key: keyof BoardPermissions,
+    value: boolean,
+    fallback: BoardPermissions,
+  ) => {
+    setPermissionDrafts((prev) => ({
+      ...prev,
+      [memberId]: {
+        ...(prev[memberId] ?? fallback),
+        [key]: value,
+      },
+    }));
+  };
+
+  const handleSavePermissions = async (
+    member: BoardMember,
+    permissions: BoardPermissions,
+  ) => {
+    if (!canManageMembers) return;
+    setStatus(null);
+    setActionMemberId(member.id);
+    setActionType("permissions");
+    try {
+      await updateBoardMemberRole(boardId, member.id, {
+        role: member.role,
+        custom_permissions: buildPermissionOverrides(permissions),
+      });
+      await loadMembers();
+      setStatus({
+        tone: "success",
+        message: t("board.memberPermissionsUpdated"),
+      });
+    } catch (error) {
+      setStatus({
+        tone: "error",
+        message: getErrorMessage(error, t("board.memberPermissionsUpdateError")),
+      });
+    } finally {
+      setActionMemberId(null);
+      setActionType(null);
+    }
+  };
+
+  const handleResetPermissions = async (member: BoardMember) => {
+    if (!canManageMembers) return;
+    setStatus(null);
+    setActionMemberId(member.id);
+    setActionType("permissions");
+    try {
+      await updateBoardMemberRole(boardId, member.id, {
+        role: member.role,
+        custom_permissions: {},
+      });
+      await loadMembers();
+      setStatus({
+        tone: "success",
+        message: t("board.memberPermissionsReset"),
+      });
+    } catch (error) {
+      setStatus({
+        tone: "error",
+        message: getErrorMessage(error, t("board.memberPermissionsUpdateError")),
+      });
+    } finally {
+      setActionMemberId(null);
+      setActionType(null);
+    }
+  };
+
   const handleRemove = async (member: BoardMember) => {
     if (!canManageMembers) return;
     if (member.user.id === user?.id) return;
@@ -270,6 +393,9 @@ export function BoardShareDialog({ boardId }: BoardShareDialogProps) {
             </h3>
             <p className="text-sm text-text-secondary">
               {t("board.inviteMembersSubtitle")}
+            </p>
+            <p className="text-xs text-text-muted">
+              {t("board.inviteNoteExisting")} {t("board.inviteNoteWorkspace")}
             </p>
           </div>
 
@@ -422,10 +548,23 @@ export function BoardShareDialog({ boardId }: BoardShareDialogProps) {
                 const isSelf = member.user.id === user?.id;
                 const isOwner = member.role === "owner";
                 const isBusy = actionMemberId === member.id;
+                const effectivePermissions = resolveEffectivePermissions(
+                  member.role,
+                  member.custom_permissions,
+                  member.effective_permissions ?? null,
+                );
                 const canEditRole =
                   canManageMembers && (!isOwner || canAssignOwner) && !isSelf;
                 const canRemove =
                   canManageMembers && !isSelf && (!isOwner || canAssignOwner);
+                const canEditPermissions = canEditRole;
+                const hasOverrides = hasCustomPermissionOverrides(
+                  member.custom_permissions,
+                );
+                const canResetPermissions = canEditPermissions && hasOverrides;
+                const isExpanded = expandedMemberId === member.id;
+                const draftPermissions =
+                  permissionDrafts[member.id] ?? effectivePermissions;
 
                 return (
                   <div
@@ -493,6 +632,117 @@ export function BoardShareDialog({ boardId }: BoardShareDialogProps) {
                           </Button>
                         )}
                       </div>
+                    </div>
+
+                    <div className="mt-4 rounded-lg border border-border/60 bg-bg-surface/50 p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-xs font-semibold text-text-secondary">
+                          {t("board.memberPermissionsLabel")}
+                        </div>
+                        {hasOverrides && (
+                          <span className="rounded-full border border-border bg-bg-base px-2 py-0.5 text-[10px] uppercase tracking-wide text-text-muted">
+                            {t("board.memberPermissionsCustom")}
+                          </span>
+                        )}
+                        {canEditPermissions && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-2 text-xs"
+                            onClick={() =>
+                              togglePermissionsEditor(
+                                member,
+                                effectivePermissions,
+                              )
+                            }
+                            disabled={isBusy && actionType === "permissions"}
+                          >
+                            {isExpanded
+                              ? t("board.permissionsHide")
+                              : t("board.permissionsCustomize")}
+                          </Button>
+                        )}
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {permissionOptions.map((option) => {
+                          const allowed = effectivePermissions[option.key];
+                          return (
+                            <span
+                              key={option.key}
+                              className={
+                                allowed
+                                  ? "rounded-full border border-border bg-bg-base px-2 py-1 text-[11px] text-text-primary"
+                                  : "rounded-full border border-border/60 bg-bg-surface px-2 py-1 text-[11px] text-text-muted"
+                              }
+                            >
+                              {option.label}
+                            </span>
+                          );
+                        })}
+                      </div>
+
+                      {isExpanded && (
+                        <div className="mt-3 space-y-3">
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            {permissionOptions.map((option) => (
+                              <label
+                                key={option.key}
+                                className="flex items-center justify-between rounded-md border border-border bg-bg-base px-3 py-2 text-xs text-text-secondary"
+                              >
+                                <span>{option.label}</span>
+                                <input
+                                  type="checkbox"
+                                  checked={draftPermissions[option.key]}
+                                  onChange={(event) =>
+                                    updatePermissionDraft(
+                                      member.id,
+                                      option.key,
+                                      event.target.checked,
+                                      effectivePermissions,
+                                    )
+                                  }
+                                  className="h-4 w-4 accent-yellow-500"
+                                  disabled={
+                                    !canEditPermissions
+                                    || (isBusy && actionType === "permissions")
+                                  }
+                                />
+                              </label>
+                            ))}
+                          </div>
+                          <div className="flex flex-wrap items-center justify-end gap-2">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleResetPermissions(member)}
+                              disabled={
+                                !canResetPermissions
+                                || (isBusy && actionType === "permissions")
+                              }
+                            >
+                              {t("board.permissionsReset")}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={() =>
+                                handleSavePermissions(
+                                  member,
+                                  draftPermissions,
+                                )
+                              }
+                              disabled={
+                                !canEditPermissions
+                                || (isBusy && actionType === "permissions")
+                              }
+                            >
+                              {t("board.permissionsSave")}
+                            </Button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
