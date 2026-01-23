@@ -19,7 +19,7 @@ pub struct Room {
     pub tx: broadcast::Sender<Bytes>,
     pub text_tx: broadcast::Sender<String>,
     pub board_id: Uuid,
-    pub sessions: Arc<RwLock<DashSet<Uuid>>>,
+    pub sessions: Arc<DashSet<Uuid>>,
     pub queue: Arc<Mutex<VecDeque<QueuedSession>>>,
     pub awareness: Arc<RwLock<Awareness>>,
     pub edit_permissions: Arc<DashMap<Uuid, bool>>,
@@ -36,7 +36,7 @@ impl Room {
         let awareness = Arc::new(RwLock::new(Awareness::new(Doc::new())));
         let pending_updates = Arc::new(Mutex::new(Vec::new()));
         let last_save = Mutex::new(Instant::now());
-        let sessions = Arc::new(RwLock::new(DashSet::new()));
+        let sessions = Arc::new(DashSet::new());
         let edit_permissions = Arc::new(DashMap::new());
         let queue = Arc::new(Mutex::new(VecDeque::new()));
         let last_active = Mutex::new(Instant::now());
@@ -80,6 +80,23 @@ impl Room {
     pub async fn pop_next_queued(&self) -> Option<QueuedSession> {
         let mut queue = self.queue.lock().await;
         queue.pop_front()
+    }
+
+    pub async fn push_update(&self, update: Vec<u8>, db: PgPool) {
+        let mut pending = self.pending_updates.lock().await;
+        pending.push(update);
+
+        if pending.len() >= 50 {
+            let updates: Vec<Vec<u8>> = pending.drain(..).collect();
+            let board_id = self.board_id;
+
+            // Update last_save timestamp
+            *self.last_save.lock().await = Instant::now();
+
+            tokio::spawn(async move {
+                snapshot::save_update_logs(board_id, None, updates, db).await;
+            });
+        }
     }
 }
 

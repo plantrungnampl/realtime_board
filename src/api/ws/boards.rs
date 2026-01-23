@@ -218,9 +218,19 @@ pub async fn handle_socket(
             if !wait_for_join(&mut join_rx).await {
                 return;
             }
-            while let Ok(msg) = rx.recv().await {
-                if out_tx_clone.send(Message::Binary(msg)).is_err() {
-                    break;
+            loop {
+                match rx.recv().await {
+                    Ok(msg) => {
+                        if out_tx_clone.send(Message::Binary(msg)).is_err() {
+                            break;
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                        tracing::warn!("Client lagged, skipped {} messages", skipped);
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        break;
+                    }
                 }
             }
         }
@@ -234,9 +244,19 @@ pub async fn handle_socket(
             if !wait_for_join(&mut join_rx).await {
                 return;
             }
-            while let Ok(msg) = text_rx.recv().await {
-                if out_tx_text.send(Message::Text(msg.into())).is_err() {
-                    break;
+            loop {
+                match text_rx.recv().await {
+                    Ok(msg) => {
+                        if out_tx_text.send(Message::Text(msg.into())).is_err() {
+                            break;
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                        tracing::warn!("Client lagged (text), skipped {} messages", skipped);
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        break;
+                    }
                 }
             }
         }
@@ -346,11 +366,8 @@ pub async fn handle_socket(
             return;
         }
 
-        {
-            let sessions = room_clone.sessions.write().await;
-            sessions.insert(session_id);
-            *room_clone.last_active.lock().await = Instant::now();
-        }
+        room_clone.sessions.insert(session_id);
+        *room_clone.last_active.lock().await = Instant::now();
         room_clone.edit_permissions.insert(user_id, can_edit);
         let _ = join_tx.send(true);
 
@@ -473,8 +490,7 @@ pub async fn handle_socket(
                                     );
                                 });
                             }
-                            let mut pending = room_clone.pending_updates.lock().await;
-                            pending.push(payload.to_vec());
+                            room_clone.push_update(payload.to_vec(), db.clone()).await;
                         }
                         protocol::OP_AWARENESS => match AwarenessUpdate::decode_v1(payload) {
                             Ok(update) => {
@@ -588,30 +604,27 @@ pub async fn handle_socket(
             }
         }
 
-        {
-            let sessions = room_clone.sessions.write().await;
-            sessions.remove(&session_id);
-            room_clone.edit_permissions.remove(&user_id);
-            *room_clone.last_active.lock().await = Instant::now();
-            let remaining = sessions.len();
-            tracing::info!(
-                "Session {} left room {}. Remaining: {}",
-                session_id,
-                board_id,
-                remaining
-            );
-            if remaining == 0 {
-                let pending_updates = {
-                    let mut pending = room_clone.pending_updates.lock().await;
-                    if pending.is_empty() {
-                        Vec::new()
-                    } else {
-                        pending.drain(..).collect()
-                    }
-                };
-                if !pending_updates.is_empty() {
-                    snapshot::save_update_logs(board_id, None, pending_updates, db.clone()).await;
+        room_clone.sessions.remove(&session_id);
+        room_clone.edit_permissions.remove(&user_id);
+        *room_clone.last_active.lock().await = Instant::now();
+        let remaining = room_clone.sessions.len();
+        tracing::info!(
+            "Session {} left room {}. Remaining: {}",
+            session_id,
+            board_id,
+            remaining
+        );
+        if remaining == 0 {
+            let pending_updates = {
+                let mut pending = room_clone.pending_updates.lock().await;
+                if pending.is_empty() {
+                    Vec::new()
+                } else {
+                    pending.drain(..).collect()
                 }
+            };
+            if !pending_updates.is_empty() {
+                snapshot::save_update_logs(board_id, None, pending_updates, db.clone()).await;
             }
         }
 
