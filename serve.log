@@ -1,0 +1,109 @@
+ INFO  Accepting connections at http://localhost:3000
+ HTTP  1/23/2026 2:40:09 AM ::1 GET /board/123
+ HTTP  1/23/2026 2:40:09 AM ::1 Returned 200 in 44 ms
+ HTTP  1/23/2026 2:40:09 AM ::1 GET /assets/index-ToDePMRP.js
+ HTTP  1/23/2026 2:40:09 AM ::1 GET /assets/index-Cm1goSHN.css
+ HTTP  1/23/2026 2:40:09 AM ::1 GET /assets/vendor-Ce7kMd6v.js
+ HTTP  1/23/2026 2:40:09 AM ::1 GET /assets/tanstack-D2cdXHKD.js
+ HTTP  1/23/2026 2:40:09 AM ::1 GET /assets/i18n-D9BzPN_n.js
+ HTTP  1/23/2026 2:40:09 AM ::1 GET /assets/radix-Dc_FVRD7.js
+ HTTP  1/23/2026 2:40:09 AM ::1 Returned 200 in 17 ms
+ HTTP  1/23/2026 2:40:09 AM ::1 Returned 200 in 15 ms
+ HTTP  1/23/2026 2:40:09 AM ::1 Returned 200 in 15 ms
+ HTTP  1/23/2026 2:40:09 AM ::1 Returned 200 in 20 ms
+ HTTP  1/23/2026 2:40:09 AM ::1 Returned 200 in 20 ms
+ HTTP  1/23/2026 2:40:09 AM ::1 Returned 200 in 35 ms
+ HTTP  1/23/2026 2:40:09 AM ::1 GET /assets/konva-Bb96HYu9.js
+ HTTP  1/23/2026 2:40:09 AM ::1 GET /assets/react-CnT2aYAm.js
+ HTTP  1/23/2026 2:40:09 AM ::1 GET /assets/yjs-_F5r-4wf.js
+ HTTP  1/23/2026 2:40:09 AM ::1 Returned 200 in 54 ms
+ HTTP  1/23/2026 2:40:09 AM ::1 Returned 200 in 47 ms
+ HTTP  1/23/2026 2:40:09 AM ::1 Returned 200 in 63 ms
+ HTTP  1/23/2026 2:41:15 AM ::1 GET /board/123
+ HTTP  1/23/2026 2:41:15 AM ::1 Returned 200 in 2 ms
+ HTTP  1/23/2026 2:41:15 AM ::1 GET /assets/index-ToDePMRP.js
+ HTTP  1/23/2026 2:41:15 AM ::1 GET /assets/index-Cm1goSHN.css
+ HTTP  1/23/2026 2:41:15 AM ::1 GET /assets/vendor-Ce7kMd6v.js
+ HTTP  1/23/2026 2:41:15 AM ::1 GET /assets/tanstack-D2cdXHKD.js
+ HTTP  1/23/2026 2:41:15 AM ::1 GET /assets/i18n-D9BzPN_n.js
+ HTTP  1/23/2026 2:41:15 AM ::1 Returned 200 in 2 ms
+ HTTP  1/23/2026 2:41:15 AM ::1 Returned 200 in 2 ms
+ HTTP  1/23/2026 2:41:15 AM ::1 Returned 200 in 2 ms
+ HTTP  1/23/2026 2:41:15 AM ::1 GET /assets/radix-Dc_FVRD7.js
+ HTTP  1/23/2026 2:41:15 AM ::1 Returned 200 in 3 ms
+ HTTP  1/23/2026 2:41:15 AM ::1 Returned 200 in 2 ms
+ HTTP  1/23/2026 2:41:15 AM ::1 Returned 200 in 2 ms
+ HTTP  1/23/2026 2:41:15 AM ::1 GET /assets/konva-Bb96HYu9.js
+ HTTP  1/23/2026 2:41:15 AM ::1 GET /assets/react-CnT2aYAm.js
+ HTTP  1/23/2026 2:41:15 AM ::1 Returned 200 in 9 ms
+ HTTP  1/23/2026 2:41:15 AM ::1 Returned 200 in 9 ms
+ HTTP  1/23/2026 2:41:15 AM ::1 GET /assets/yjs-_F5r-4wf.js
+ HTTP  1/23/2026 2:41:15 AM ::1 Returned 200 in 0 ms
+ HTTP  1/23/2026 2:41:15 AM ::1 GET /ws/boards/123?token=fake-token
+ HTTP  1/23/2026 2:41:15 AM ::1 Returned 200 in 2 ms
+ HTTP  1/23/2026 2:41:15 AM ::1 GET /users/me
+ HTTP  1/23/2026 2:41:15 AM ::1 Returned 200 in 0 ms
+ HTTP  1/23/2026 2:41:16 AM ::1 GET /ws/boards/123?token=fake-token
+ HTTP  1/23/2026 2:41:16 AM ::1 Returned 200 in 1 ms
+ HTTP  1/23/2026 2:41:18 AM ::1 GET /ws/boards/123?token=fake-token
+ HTTP  1/23/2026 2:41:18 AM ::1 Returned 200 in 1 ms
+ HTTP  1/23/2026 2:41:22 AM ::1 GET /ws/boards/123?token=fake-token
+ HTTP  1/23/2026 2:41:22 AM ::1 Returned 200 in 1 ms
+ HTTP  1/23/2026 2:42:13 AM ::1 GET /board/123
+ HTTP  1/23/2026 2:42:13 AM ::1 Returned 200 in 1 ms
+ HTTP  1/23/2026 2:42:13 AM ::1 GET /assets/index-ToDePMRP.js
+ HTTP  1/23/2026 2:42:13 AM ::1 GET /assets/index-Cm1goSHN.css
+ HTTP  1/23/2026 2:42:13 AM ::1 GET /assets/vendor-Ce7kMd6v.js
+ HTTP  1/23/2026 2:42:13 AM ::1 GET /assets/tanstack-D2cdXHKD.js
+ HTTP  1/23/2026 2:42:13 AM ::1 GET /assets/i18n-D9BzPN_n.js
+ HTTP  1/23/2026 2:42:13 AM ::1 GET /assets/radix-Dc_FVRD7.js
+ HTTP  1/23/2026 2:42:13 AM ::1 Returned 200 in 6 ms
+ HTTP  1/23/2026 2:42:13 AM ::1 Returned 200 in 6 ms
+ HTTP  1/23/2026 2:42:13 AM ::1 Returned 200 in 4 ms
+ HTTP  1/23/2026 2:42:13 AM ::1 Returned 200 in 5 ms
+ HTTP  1/23/2026 2:42:13 AM ::1 Returned 200 in 5 ms
+ HTTP  1/23/2026 2:42:13 AM ::1 Returned 200 in 5 ms
+ HTTP  1/23/2026 2:42:13 AM ::1 GET /assets/konva-Bb96HYu9.js
+ HTTP  1/23/2026 2:42:13 AM ::1 Returned 200 in 10 ms
+ HTTP  1/23/2026 2:42:13 AM ::1 GET /assets/react-CnT2aYAm.js
+ HTTP  1/23/2026 2:42:13 AM ::1 GET /assets/yjs-_F5r-4wf.js
+ HTTP  1/23/2026 2:42:13 AM ::1 Returned 200 in 13 ms
+ HTTP  1/23/2026 2:42:13 AM ::1 Returned 200 in 14 ms
+ HTTP  1/23/2026 2:42:14 AM ::1 GET /ws/boards/123?token=fake-token
+ HTTP  1/23/2026 2:42:14 AM ::1 Returned 200 in 2 ms
+ HTTP  1/23/2026 2:42:14 AM ::1 GET /api/boards/123
+ HTTP  1/23/2026 2:42:14 AM ::1 GET /users/me
+ HTTP  1/23/2026 2:42:14 AM ::1 Returned 200 in 2 ms
+ HTTP  1/23/2026 2:42:14 AM ::1 Returned 200 in 2 ms
+ HTTP  1/23/2026 2:42:15 AM ::1 GET /ws/boards/123?token=fake-token
+ HTTP  1/23/2026 2:42:15 AM ::1 Returned 200 in 2 ms
+ HTTP  1/23/2026 2:42:17 AM ::1 GET /ws/boards/123?token=fake-token
+ HTTP  1/23/2026 2:42:17 AM ::1 Returned 200 in 1 ms
+ HTTP  1/23/2026 2:42:47 AM ::1 GET /board/123
+ HTTP  1/23/2026 2:42:47 AM ::1 Returned 200 in 1 ms
+ HTTP  1/23/2026 2:42:47 AM ::1 GET /assets/index-ToDePMRP.js
+ HTTP  1/23/2026 2:42:47 AM ::1 GET /assets/index-Cm1goSHN.css
+ HTTP  1/23/2026 2:42:47 AM ::1 GET /assets/vendor-Ce7kMd6v.js
+ HTTP  1/23/2026 2:42:47 AM ::1 GET /assets/tanstack-D2cdXHKD.js
+ HTTP  1/23/2026 2:42:47 AM ::1 GET /assets/i18n-D9BzPN_n.js
+ HTTP  1/23/2026 2:42:47 AM ::1 GET /assets/radix-Dc_FVRD7.js
+ HTTP  1/23/2026 2:42:47 AM ::1 Returned 200 in 4 ms
+ HTTP  1/23/2026 2:42:47 AM ::1 Returned 200 in 4 ms
+ HTTP  1/23/2026 2:42:47 AM ::1 Returned 200 in 5 ms
+ HTTP  1/23/2026 2:42:47 AM ::1 Returned 200 in 5 ms
+ HTTP  1/23/2026 2:42:47 AM ::1 Returned 200 in 4 ms
+ HTTP  1/23/2026 2:42:47 AM ::1 Returned 200 in 5 ms
+ HTTP  1/23/2026 2:42:47 AM ::1 GET /assets/konva-Bb96HYu9.js
+ HTTP  1/23/2026 2:42:47 AM ::1 Returned 200 in 2 ms
+ HTTP  1/23/2026 2:42:47 AM ::1 GET /assets/react-CnT2aYAm.js
+ HTTP  1/23/2026 2:42:47 AM ::1 GET /assets/yjs-_F5r-4wf.js
+ HTTP  1/23/2026 2:42:47 AM ::1 Returned 200 in 2 ms
+ HTTP  1/23/2026 2:42:47 AM ::1 Returned 200 in 3 ms
+ HTTP  1/23/2026 2:42:47 AM ::1 GET /ws/boards/123?token=fake-token
+ HTTP  1/23/2026 2:42:47 AM ::1 Returned 200 in 1 ms
+ HTTP  1/23/2026 2:42:47 AM ::1 GET /api/boards/123
+ HTTP  1/23/2026 2:42:47 AM ::1 Returned 200 in 1 ms
+ HTTP  1/23/2026 2:42:47 AM ::1 GET /users/me
+ HTTP  1/23/2026 2:42:47 AM ::1 Returned 200 in 1 ms
+
+ INFO  Gracefully shutting down. Please wait...

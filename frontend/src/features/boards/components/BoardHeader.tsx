@@ -81,6 +81,17 @@ export function BoardHeader({
 
   const syncToneClass = syncToneStyle();
 
+  const getStatusLabel = (status: PresenceUser["status"]) => {
+    switch (status) {
+      case "idle":
+        return "Idle";
+      case "away":
+        return "Away";
+      default:
+        return "Active";
+    }
+  };
+
   return (
     <header className="h-14 border-b border-neutral-800 bg-neutral-900/50 backdrop-blur-sm px-4 flex items-center justify-between z-50">
       <div className="flex items-center gap-4">
@@ -119,10 +130,16 @@ export function BoardHeader({
       </div>
 
       <div className="flex items-center gap-3">
-        <div className="flex -space-x-2">
+        <div
+          className="flex -space-x-2"
+          role="list"
+          aria-label="Active users"
+        >
           {visiblePresence.map((user) => (
             <div
               key={user.user_id}
+              role="listitem"
+              aria-label={`${user.display_name}: ${getStatusLabel(user.status)}`}
               className="relative w-8 h-8 rounded-full border-2 border-neutral-900 overflow-hidden flex items-center justify-center text-[10px] font-semibold text-neutral-900"
               style={{ backgroundColor: user.color ?? "#EAB308" }}
               title={user.display_name}
@@ -137,6 +154,7 @@ export function BoardHeader({
                 user.display_name.slice(0, 2).toUpperCase()
               )}
               <span
+                aria-hidden="true"
                 className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border border-neutral-900 ${statusDotClass(
                   user.status,
                 )}`}
@@ -144,7 +162,10 @@ export function BoardHeader({
             </div>
           ))}
           {extraPresenceCount > 0 && (
-            <div className="w-8 h-8 rounded-full bg-neutral-800 border-2 border-neutral-900 flex items-center justify-center text-xs text-neutral-400">
+            <div
+              className="w-8 h-8 rounded-full bg-neutral-800 border-2 border-neutral-900 flex items-center justify-center text-xs text-neutral-400"
+              aria-label={`${extraPresenceCount} more users`}
+            >
               +{extraPresenceCount}
             </div>
           )}

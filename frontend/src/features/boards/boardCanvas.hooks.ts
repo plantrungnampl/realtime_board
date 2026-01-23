@@ -723,7 +723,6 @@ export function useBoardCanvasInteractions({
         const connector = currentElement as ConnectorElement;
         let normalized = normalizeConnectorBounds(currentElement) as ConnectorElement;
         const bindSnapshot = buildElementsSnapshot();
-        const bindElementIndex = buildElementIndex(bindSnapshot);
         const startTarget = findBindableElement(
           normalized.properties.start,
           bindSnapshot,
