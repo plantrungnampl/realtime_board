@@ -12,8 +12,8 @@ use crate::{
 };
 
 use super::{
-    helpers::{ensure_manager, require_member_role, resolve_fallback_owner_id},
     OrganizationService,
+    helpers::{ensure_manager, require_member_role, resolve_fallback_owner_id},
 };
 
 impl OrganizationService {

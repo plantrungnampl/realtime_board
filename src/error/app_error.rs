@@ -105,9 +105,7 @@ impl IntoResponse for AppError {
             AppError::ConflictWithPayload(msg, _) => {
                 (StatusCode::CONFLICT, "CONFLICT", msg.clone())
             }
-            AppError::BoardArchived(msg) => {
-                (StatusCode::GONE, "BOARD_ARCHIVED", msg.clone())
-            }
+            AppError::BoardArchived(msg) => (StatusCode::GONE, "BOARD_ARCHIVED", msg.clone()),
             AppError::BoardDeleted(msg) => (StatusCode::GONE, "BOARD_DELETED", msg.clone()),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, "BAD_REQUEST", msg.clone()),
             AppError::ValidationError(msg) => (

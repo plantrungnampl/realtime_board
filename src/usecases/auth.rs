@@ -54,9 +54,7 @@ impl UserServices {
                 ))?;
             if let Some(expires_at) = invite.invite_expires_at {
                 if expires_at < chrono::Utc::now() {
-                    return Err(AppError::BadRequest(
-                        "Invitation has expired".to_string(),
-                    ));
+                    return Err(AppError::BadRequest("Invitation has expired".to_string()));
                 }
             }
             Some(invite)

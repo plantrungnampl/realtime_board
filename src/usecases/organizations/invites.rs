@@ -15,11 +15,11 @@ use crate::{
 };
 
 use super::{
+    OrganizationService,
     helpers::{
         collect_invite_emails, ensure_manager, ensure_member_capacity, normalize_invite_role,
         require_member_role, split_invite_targets,
     },
-    OrganizationService,
 };
 
 impl OrganizationService {
@@ -65,9 +65,7 @@ impl OrganizationService {
             .ok_or(AppError::NotFound("Invitation not found".to_string()))?;
         if let Some(expires_at) = invite.invite_expires_at {
             if expires_at < chrono::Utc::now() {
-                return Err(AppError::BadRequest(
-                    "Invitation has expired".to_string(),
-                ));
+                return Err(AppError::BadRequest("Invitation has expired".to_string()));
             }
         }
 

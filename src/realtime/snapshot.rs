@@ -217,10 +217,7 @@ pub async fn load_board_state(
     Ok(())
 }
 
-pub async fn build_state_update(
-    pool: &PgPool,
-    board_id: Uuid,
-) -> Result<Vec<u8>, AppError> {
+pub async fn build_state_update(pool: &PgPool, board_id: Uuid) -> Result<Vec<u8>, AppError> {
     let doc = Arc::new(Mutex::new(Doc::new()));
     load_board_state(pool, doc.clone(), board_id)
         .await
@@ -324,9 +321,7 @@ async fn hydrate_missing_fields_from_db(
     Ok(())
 }
 
-pub fn build_state_update_from_elements(
-    elements: &[BoardElement],
-) -> Result<Vec<u8>, AppError> {
+pub fn build_state_update_from_elements(elements: &[BoardElement]) -> Result<Vec<u8>, AppError> {
     if elements.is_empty() {
         return Ok(Vec::new());
     }

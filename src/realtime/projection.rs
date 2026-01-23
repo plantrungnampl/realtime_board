@@ -80,10 +80,8 @@ async fn project_elements(
         .await?;
 
     let defaults = element_repo::list_projection_defaults(db, board_id).await?;
-    let defaults_map: HashMap<Uuid, element_repo::ElementProjectionDefaults> = defaults
-        .into_iter()
-        .map(|row| (row.id, row))
-        .collect();
+    let defaults_map: HashMap<Uuid, element_repo::ElementProjectionDefaults> =
+        defaults.into_iter().map(|row| (row.id, row)).collect();
     for element in elements {
         let defaults = defaults_map.get(&element.id);
         match to_projected_params(board_id, element, defaults, &fallback) {
@@ -91,11 +89,7 @@ async fn project_elements(
                 element_repo::upsert_projected_element(&mut tx, params).await?;
             }
             Err(error) => {
-                tracing::warn!(
-                    "Skipping projection for board {}: {}",
-                    board_id,
-                    error
-                );
+                tracing::warn!("Skipping projection for board {}: {}", board_id, error);
             }
         }
     }
@@ -111,18 +105,12 @@ fn to_projected_params(
 ) -> Result<element_repo::ProjectedElementParams, AppError> {
     let rotation = normalize_rotation(element.rotation);
     let (width, height) = normalize_dimensions(board_id, element.id, element.width, element.height);
-    let created_by = defaults
-        .map(|row| row.created_by)
-        .or(element.created_by);
-    let created_at = defaults
-        .map(|row| row.created_at)
-        .or(element.created_at);
+    let created_by = defaults.map(|row| row.created_by).or(element.created_by);
+    let created_at = defaults.map(|row| row.created_at).or(element.created_at);
     let updated_at = element
         .updated_at
         .or_else(|| defaults.map(|row| row.updated_at));
-    let version = element
-        .version
-        .or_else(|| defaults.map(|row| row.version));
+    let version = element.version.or_else(|| defaults.map(|row| row.version));
 
     let created_by = created_by.unwrap_or(fallback.created_by);
     let created_at = created_at.unwrap_or(fallback.created_at);
@@ -188,9 +176,5 @@ fn normalize_rotation(value: f64) -> f64 {
     if normalized < 0.0 {
         normalized += 360.0;
     }
-    if normalized >= 360.0 {
-        0.0
-    } else {
-        normalized
-    }
+    if normalized >= 360.0 { 0.0 } else { normalized }
 }

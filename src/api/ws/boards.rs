@@ -151,11 +151,7 @@ pub async fn ws_handler(
         }
         Err(error) => {
             tracing::error!("Failed to load board {}: {}", board_id, error);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to load board",
-            )
-                .into_response();
+            return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load board").into_response();
         }
     };
     let room = room::get_or_load_room(&state.rooms, &state.db, board_id).await;
@@ -407,10 +403,9 @@ pub async fn handle_socket(
             }
         }
 
-        let current_users =
-            PresenceService::list_active_users(&db, redis_clone.as_ref(), board_id)
-                .await
-                .unwrap_or_default();
+        let current_users = PresenceService::list_active_users(&db, redis_clone.as_ref(), board_id)
+            .await
+            .unwrap_or_default();
         if let Some(msg) = build_text_message(
             "board:joined",
             json!({
@@ -527,9 +522,10 @@ pub async fn handle_socket(
                                 .await
                                 .is_ok()
                             {
-                                if let Some(msg) =
-                                    build_text_message("heartbeat:ack", json!({"server_time": Utc::now().timestamp_millis()}))
-                                {
+                                if let Some(msg) = build_text_message(
+                                    "heartbeat:ack",
+                                    json!({"server_time": Utc::now().timestamp_millis()}),
+                                ) {
                                     let _ = out_tx_recv.send(msg);
                                 }
                             }

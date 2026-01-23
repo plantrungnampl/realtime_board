@@ -55,11 +55,7 @@ impl Room {
         }
     }
 
-    pub async fn enqueue_session(
-        &self,
-        session_id: Uuid,
-        user_id: Uuid,
-    ) -> (Arc<Notify>, usize) {
+    pub async fn enqueue_session(&self, session_id: Uuid, user_id: Uuid) -> (Arc<Notify>, usize) {
         let notify = Arc::new(Notify::new());
         let mut queue = self.queue.lock().await;
         queue.push_back(QueuedSession {

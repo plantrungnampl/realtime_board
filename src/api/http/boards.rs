@@ -34,13 +34,9 @@ pub async fn get_board_handle(
     Query(query): Query<BoardListQuery>,
 ) -> Result<Json<Vec<BoardResponse>>, AppError> {
     let user_id = auth_user.user_id;
-    let board = BoardService::get_board(
-        &state.db,
-        user_id,
-        query.organization_id,
-        query.is_template,
-    )
-    .await?;
+    let board =
+        BoardService::get_board(&state.db, user_id, query.organization_id, query.is_template)
+            .await?;
     Ok(Json(board))
 }
 
@@ -88,8 +84,7 @@ pub async fn transfer_board_ownership_handle(
     Json(req): Json<TransferBoardOwnershipRequest>,
 ) -> Result<Json<BoardActionMessage>, AppError> {
     let response =
-        BoardService::transfer_board_ownership(&state.db, board_id, auth_user.user_id, req)
-            .await?;
+        BoardService::transfer_board_ownership(&state.db, board_id, auth_user.user_id, req).await?;
     Ok(Json(response))
 }
 
@@ -107,8 +102,7 @@ pub async fn restore_board_handle(
     Extension(auth_user): Extension<AuthUser>,
     Path(board_id): Path<uuid::Uuid>,
 ) -> Result<Json<BoardActionMessage>, AppError> {
-    let response =
-        BoardService::restore_board(&state.db, board_id, auth_user.user_id).await?;
+    let response = BoardService::restore_board(&state.db, board_id, auth_user.user_id).await?;
     Ok(Json(response))
 }
 
@@ -178,17 +172,18 @@ pub async fn remove_board_member_handle(
     Ok(Json(result.message))
 }
 
-fn apply_board_member_change(
-    state: &AppState,
-    board_id: uuid::Uuid,
-    change: &BoardMemberChange,
-) {
+fn apply_board_member_change(state: &AppState, board_id: uuid::Uuid, change: &BoardMemberChange) {
     let Some(room_ref) = state.rooms.get(&board_id) else {
         return;
     };
     let room = room_ref.value().clone();
     update_room_permissions(&room, change.member_user_id, change.permissions);
-    broadcast_role_update(&room, change.member_user_id, change.role, change.permissions);
+    broadcast_role_update(
+        &room,
+        change.member_user_id,
+        change.role,
+        change.permissions,
+    );
 }
 
 fn update_room_permissions(
@@ -197,8 +192,7 @@ fn update_room_permissions(
     permissions: Option<BoardPermissions>,
 ) {
     if let Some(permissions) = permissions {
-        room.edit_permissions
-            .insert(user_id, permissions.can_edit);
+        room.edit_permissions.insert(user_id, permissions.can_edit);
         return;
     }
     room.edit_permissions.remove(&user_id);

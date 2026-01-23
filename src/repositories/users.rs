@@ -110,12 +110,10 @@ pub async fn mark_email_verified_tx(
     tx: &mut Transaction<'_, Postgres>,
     user_id: Uuid,
 ) -> Result<(), AppError> {
-    sqlx::query(
-        "UPDATE core.user SET email_verified_at = NOW(), updated_at = NOW() WHERE id = $1",
-    )
-    .bind(user_id)
-    .execute(&mut **tx)
-    .await?;
+    sqlx::query("UPDATE core.user SET email_verified_at = NOW(), updated_at = NOW() WHERE id = $1")
+        .bind(user_id)
+        .execute(&mut **tx)
+        .await?;
 
     Ok(())
 }

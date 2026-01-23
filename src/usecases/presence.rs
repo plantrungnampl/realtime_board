@@ -36,7 +36,9 @@ impl PresenceService {
             if let Ok(mut conn) = redis.get_multiplexed_async_connection().await {
                 let key = cache_key(board_id);
                 if let Ok(payload) = serde_json::to_string(&users) {
-                    let _: Result<(), _> = conn.set_ex(key, payload, PRESENCE_CACHE_TTL_SECS.try_into().unwrap()).await;
+                    let _: Result<(), _> = conn
+                        .set_ex(key, payload, PRESENCE_CACHE_TTL_SECS.try_into().unwrap())
+                        .await;
                 }
             }
         }

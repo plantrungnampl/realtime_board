@@ -9,9 +9,7 @@ use tower_http::cors::CorsLayer;
 use crate::{
     api::{
         http::{
-            auth as auth_http,
-            boards as boards_http,
-            elements as elements_http,
+            auth as auth_http, boards as boards_http, elements as elements_http,
             organizations as organizations_http,
         },
         ws::boards as boards_ws,
@@ -33,9 +31,16 @@ pub fn build_router(state: AppState) -> Router {
         ])
         .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT]);
 
-    let auth_routes = Router::new()
+    let rate_limited_routes = Router::new()
         .route("/auth/register", post(auth_http::register_handle))
         .route("/auth/login", post(auth_http::login_handle))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            crate::auth::rate_limit::rate_limit_middleware,
+        ));
+
+    let auth_routes = Router::new()
+        .merge(rate_limited_routes)
         .route("/auth/verify-email", post(auth_http::verify_email_handle))
         .route(
             "/organizations/invites/validate",
