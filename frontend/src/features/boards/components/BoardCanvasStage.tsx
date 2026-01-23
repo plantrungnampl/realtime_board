@@ -340,7 +340,8 @@ type ElementRendererProps = {
 
 type SelectionOverlayLayerProps = {
   selectionPresence: SelectionPresence[];
-  elements: BoardElement[];
+  elementMap: Map<string, BoardElement>;
+  overrides: Map<string, BoardElement>;
   selectionStrokeWidth: number;
   selectionDash: number[];
   selectionPadding: number;
@@ -1290,7 +1291,8 @@ const ElementRenderer = memo(function ElementRenderer({
 
 const SelectionOverlayLayer = memo(function SelectionOverlayLayer({
   selectionPresence,
-  elements,
+  elementMap,
+  overrides,
   selectionStrokeWidth,
   selectionDash,
   selectionPadding,
@@ -1298,12 +1300,11 @@ const SelectionOverlayLayer = memo(function SelectionOverlayLayer({
 }: SelectionOverlayLayerProps) {
   const selectionOverlays = useMemo(() => {
     if (selectionPresence.length === 0) return [];
-    const elementMap = new Map(elements.map((element) => [element.id, element]));
     const overlays: SelectionOverlay[] = [];
     selectionPresence.forEach((presence) => {
       let labelUsed = false;
       presence.element_ids.forEach((elementId) => {
-        const element = elementMap.get(elementId);
+        const element = overrides.get(elementId) ?? elementMap.get(elementId);
         if (!element) return;
         const isEditing = presence.editing?.element_id === elementId;
         overlays.push({
@@ -1319,7 +1320,7 @@ const SelectionOverlayLayer = memo(function SelectionOverlayLayer({
       });
     });
     return overlays;
-  }, [elements, selectionPresence]);
+  }, [elementMap, overrides, selectionPresence]);
 
   return (
     <>
@@ -1631,9 +1632,12 @@ export function BoardCanvasStage({
       window.removeEventListener("blur", resetModifiers);
     };
   }, []);
-  const renderElements = useMemo(() => {
-    if (cursorList.length === 0) return elements;
-    const elementMap = new Map(elements.map((element) => [element.id, element]));
+  const elementMap = useMemo(() => {
+    return new Map(elements.map((element) => [element.id, element]));
+  }, [elements]);
+
+  const cursorOverrides = useMemo(() => {
+    if (cursorList.length === 0) return new Map();
     const overrides = new Map<string, BoardElement>();
     const EPSILON = 0.5; // Threshold for position changes to reduce flickering
 
@@ -1672,9 +1676,8 @@ export function BoardCanvasStage({
       }
       overrides.set(drag.element_id, next);
     });
-    if (overrides.size === 0) return elements;
-    return elements.map((element) => overrides.get(element.id) ?? element);
-  }, [cursorList, elements, localOverrideIds]);
+    return overrides;
+  }, [cursorList, elementMap, localOverrideIds]);
   const visibleCursors = useMemo(
     () => cursorList.filter((cursor) => cursor.x !== null && cursor.y !== null),
     [cursorList],
@@ -1714,10 +1717,10 @@ export function BoardCanvasStage({
           />
         ))}
 
-        {renderElements.map((element) => (
+        {elements.map((element) => (
           <ElementRenderer
             key={element.id}
-            element={element}
+            element={cursorOverrides.get(element.id) ?? element}
             isSelected={selectedSet.has(element.id)}
             isLocked={lockedElementIds.has(element.id)}
             isDragEnabled={isDragEnabled}
@@ -1744,7 +1747,8 @@ export function BoardCanvasStage({
 
         <SelectionOverlayLayer
           selectionPresence={selectionPresence}
-          elements={renderElements}
+          elementMap={elementMap}
+          overrides={cursorOverrides}
           selectionStrokeWidth={selectionStrokeWidth}
           selectionDash={selectionDash}
           selectionPadding={selectionPadding}

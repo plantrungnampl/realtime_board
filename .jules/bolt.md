@@ -1,0 +1,3 @@
+## 2025-02-18 - Optimized Canvas Rendering Loop
+**Learning:** In the collaborative canvas (`BoardCanvasStage`), re-mapping the entire `elements` array on every cursor movement (60fps) to apply remote drag overrides was causing unnecessary overhead (O(N) allocation + iteration).
+**Action:** When handling frequent updates like cursors, avoid re-creating the main data structure. Instead, compute a sparse map of overrides (O(C) where C is number of cursors) and use a stable memoized map of base elements for O(1) lookups during rendering. This decoupled the large `elements` list from the high-frequency `cursorList` updates.
