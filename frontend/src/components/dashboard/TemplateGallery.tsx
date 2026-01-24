@@ -1,9 +1,10 @@
+import type { ComponentType } from 'react'
 import { Plus, Layout, FileText, GitGraph, GitMerge, Lightbulb, Users, Timer } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { cn } from '@/lib/utils'
 
 interface TemplateCardProps {
-  icon: React.ElementType
+  icon: ComponentType<{ className?: string }>
   title: string
   color: string
   isBlank?: boolean

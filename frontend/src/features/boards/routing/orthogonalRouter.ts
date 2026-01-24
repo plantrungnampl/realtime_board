@@ -33,6 +33,30 @@ type State = {
   dir: Direction;
 };
 
+const popLowestFScore = (
+  open: State[],
+  fScore: Map<StateKey, number>,
+): State | null => {
+  if (open.length === 0) return null;
+  let bestIndex = 0;
+  let bestScore = fScore.get(open[0].key) ?? Number.POSITIVE_INFINITY;
+  for (let i = 1; i < open.length; i += 1) {
+    const score = fScore.get(open[i].key) ?? Number.POSITIVE_INFINITY;
+    if (score < bestScore) {
+      bestScore = score;
+      bestIndex = i;
+    }
+  }
+  // Perf: avoid per-iteration sort by scanning for the best state in O(n).
+  const lastIndex = open.length - 1;
+  const best = open[bestIndex];
+  if (bestIndex !== lastIndex) {
+    open[bestIndex] = open[lastIndex];
+  }
+  open.pop();
+  return best;
+};
+
 const DEFAULT_PADDING = 12;
 const DEFAULT_MARGIN = 320;
 const DEFAULT_BEND_PENALTY = 20;
@@ -273,6 +297,7 @@ export const routeOrthogonalPath = (
   }
 
   const open: State[] = [];
+  const openKeys = new Set<StateKey>();
   const gScore = new Map<StateKey, number>();
   const fScore = new Map<StateKey, number>();
   const cameFrom = new Map<StateKey, StateKey>();
@@ -282,14 +307,15 @@ export const routeOrthogonalPath = (
   gScore.set(startStateKey, 0);
   fScore.set(startStateKey, heuristic(startNode, endNode));
   open.push({ key: startStateKey, node: startNode, dir: null });
+  openKeys.add(startStateKey);
   nodeMap.set(startStateKey, startNode);
 
   const visited = new Set<StateKey>();
 
   while (open.length > 0) {
-    open.sort((a, b) => (fScore.get(a.key) ?? 0) - (fScore.get(b.key) ?? 0));
-    const current = open.shift();
+    const current = popLowestFScore(open, fScore);
     if (!current) break;
+    openKeys.delete(current.key);
     if (current.node.x === endNode.x && current.node.y === endNode.y) {
       const path = reconstructPath(cameFrom, current.key, nodeMap);
       const compressed = compressPoints(path);
@@ -316,8 +342,10 @@ export const routeOrthogonalPath = (
         gScore.set(nextKey, tentativeG);
         fScore.set(nextKey, tentativeG + heuristic(neighbor, endNode));
         nodeMap.set(nextKey, neighbor);
-        if (!open.find((state) => state.key === nextKey)) {
+        // Perf: track open membership to avoid O(n) scans per neighbor.
+        if (!openKeys.has(nextKey)) {
           open.push({ key: nextKey, node: neighbor, dir });
+          openKeys.add(nextKey);
         }
       }
     });

@@ -6,7 +6,6 @@ import type {
   Dispatch,
   SetStateAction,
 } from "react";
-import type { KonvaEventObject } from "konva/lib/Node";
 import type { BoardElement, ConnectorElement } from "@/types/board";
 import {
   DEFAULT_TEXT_STYLE,
@@ -15,10 +14,7 @@ import {
   getNextZIndex,
 } from "@/features/boards/boardRoute/elements";
 import type { ToolType } from "@/features/boards/boardRoute/tools";
-import {
-  getPointerPosition,
-  type Point,
-} from "@/features/boards/boardRoute.utils";
+import { type Point } from "@/features/boards/boardRoute.utils";
 import type {
   TextEditorState,
   UpdateElementFn,
@@ -78,11 +74,34 @@ type UseBoardCanvasInteractionsOptions = {
   startHistoryEntry: () => void;
 };
 
+export type CanvasPointerEvent = {
+  screen: Point;
+  world: Point;
+  button: number;
+  shiftKey: boolean;
+  altKey: boolean;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  originalEvent: MouseEvent | PointerEvent;
+};
+
+export type CanvasWheelEvent = {
+  screen: Point;
+  deltaX: number;
+  deltaY: number;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  originalEvent: WheelEvent;
+};
+
 const ROUTE_RAF_MS = 48;
 const POSITION_CHANGE_THRESHOLD = 0.5;
 const BIND_DISTANCE = 12;
 const LIVE_ROUTE_SMOOTHING = 0.5;
 const LIVE_ROUTE_MIN_DELTA = 10;
+
+type ConnectorBindings = NonNullable<ConnectorElement["properties"]["bindings"]>;
+type ConnectorBindingSide = NonNullable<ConnectorBindings["start"]>["side"];
 
 const distanceToRect = (
   point: Point,
@@ -96,7 +115,7 @@ const distanceToRect = (
 const distanceToCircle = (point: Point, center: Point, radius: number) =>
   Math.max(0, Math.hypot(point.x - center.x, point.y - center.y) - radius);
 
-const resolveBindingSide = (element: BoardElement, target: Point) => {
+const resolveBindingSide = (element: BoardElement, target: Point): ConnectorBindingSide => {
   const bounds = getElementBounds(element);
   const dx = target.x - bounds.centerX;
   const dy = target.y - bounds.centerY;
@@ -112,7 +131,8 @@ const findBindableElement = (
   connectorId: string,
   maxDistance = BIND_DISTANCE,
 ): BoardElement | null => {
-  let best: { element: BoardElement; distance: number } | null = null;
+  let bestElement: BoardElement | null = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
   snapshot.forEach((element) => {
     if (element.id === connectorId) return;
     if (element.element_type === "Connector" || element.element_type === "Drawing") {
@@ -127,20 +147,14 @@ const findBindableElement = (
       distance = distanceToRect(point, getElementBounds(element));
     }
     if (distance > maxDistance) return;
-    if (!best || distance < best.distance) {
-      best = { element, distance };
+    if (distance < bestDistance) {
+      bestElement = element;
+      bestDistance = distance;
     }
   });
-  return best?.element ?? null;
+  return bestElement;
 };
 
-const getScreenPointerPosition = (
-  event: KonvaEventObject<MouseEvent>,
-): Point | null => {
-  const stage = event.target.getStage();
-  if (!stage) return null;
-  return stage.getPointerPosition();
-};
 
 export function useBoardCanvasInteractions({
   boardId,
@@ -220,7 +234,7 @@ export function useBoardCanvasInteractions({
     isPanningRef.current = false;
     panStartRef.current = null;
     panStageStartRef.current = null;
-    const container = stageRef.current?.container();
+    const container = stageRef.current;
     if (container) {
       container.style.cursor = "";
     }
@@ -304,7 +318,7 @@ export function useBoardCanvasInteractions({
       connector: BoardElement,
       snapshot: BoardElement[],
       elementIndex: Map<string, BoardElement>,
-      options?: { avoidObstacles?: boolean },
+      options?: { avoidObstacles?: boolean; lockAutoSide?: boolean },
     ) => applyConnectorRouting(connector, snapshot, elementIndex, options),
     [],
   );
@@ -507,7 +521,7 @@ export function useBoardCanvasInteractions({
   );
 
   const handleMouseDown = useCallback(
-    (event: KonvaEventObject<MouseEvent>) => {
+    (event: CanvasPointerEvent) => {
       if (textEditor.isOpen) return;
       if (suppressNextPointerRef.current) {
         suppressNextPointerRef.current = false;
@@ -516,27 +530,24 @@ export function useBoardCanvasInteractions({
       if (action === "drawing") return;
       pendingCreationRef.current = null;
 
-      const position = getPointerPosition(event);
-      if (!position) return;
+      const position = event.world;
       lastPointerRef.current = position;
       const withinCanvas = isWithinCanvas(position);
 
       if (activeTool === "select") {
-        if (event.evt.button === 1) {
-          event.evt.preventDefault();
-          event.cancelBubble = true;
-          const screenPosition = getScreenPointerPosition(event);
-          if (!withinCanvas || !screenPosition) return;
+        if (event.button === 1) {
+          event.originalEvent.preventDefault();
+          if (!withinCanvas) return;
           isPanningRef.current = true;
-          panStartRef.current = screenPosition;
+          panStartRef.current = event.screen;
           panStageStartRef.current = stagePositionRef.current;
-          const container = stageRef.current?.container();
+          const container = stageRef.current;
           if (container) {
             container.style.cursor = "grabbing";
           }
           return;
         }
-        const isMultiSelect = event.evt.shiftKey;
+        const isMultiSelect = event.shiftKey;
         if (!withinCanvas) {
           if (!isMultiSelect) {
             setSelectedElementIds([]);
@@ -604,20 +615,18 @@ export function useBoardCanvasInteractions({
   );
 
   const handleMouseMove = useCallback(
-    (event: KonvaEventObject<MouseEvent>) => {
+    (event: CanvasPointerEvent) => {
       if (textEditor.isOpen) return;
 
-      const position = getPointerPosition(event);
-      if (!position) return;
+      const position = event.world;
 
       if (isPanningRef.current) {
-        const screenPosition = getScreenPointerPosition(event);
         const panStart = panStartRef.current;
         const stageStart = panStageStartRef.current;
-        if (!screenPosition || !panStart || !stageStart) return;
+        if (!panStart || !stageStart) return;
         setStagePositionDirect({
-          x: stageStart.x + (screenPosition.x - panStart.x),
-          y: stageStart.y + (screenPosition.y - panStart.y),
+          x: stageStart.x + (event.screen.x - panStart.x),
+          y: stageStart.y + (event.screen.y - panStart.y),
         });
         return;
       }
@@ -723,7 +732,6 @@ export function useBoardCanvasInteractions({
         const connector = currentElement as ConnectorElement;
         let normalized = normalizeConnectorBounds(currentElement) as ConnectorElement;
         const bindSnapshot = buildElementsSnapshot();
-        const bindElementIndex = buildElementIndex(bindSnapshot);
         const startTarget = findBindableElement(
           normalized.properties.start,
           bindSnapshot,

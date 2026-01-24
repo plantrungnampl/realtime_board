@@ -1,6 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { KonvaEventObject } from "konva/lib/Node";
-import type { Stage as KonvaStage } from "konva/lib/Stage";
 
 const SCALE_BY = 1.06;
 const MIN_SCALE = 0.2;
@@ -18,7 +16,7 @@ export const useCanvasZoom = (options: UseCanvasZoomOptions = {}) => {
       (options.clampStagePosition ?? ((value) => value))(position),
     [options.clampStagePosition],
   );
-  const stageRef = useRef<KonvaStage | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
   const [stageScale, setStageScale] = useState(1);
   const [stagePosition, setStagePosition] = useState({ x: 0, y: 0 });
   const stageScaleRef = useRef(stageScale);
@@ -104,13 +102,20 @@ export const useCanvasZoom = (options: UseCanvasZoomOptions = {}) => {
   );
 
   const handleWheel = useCallback(
-    (event: KonvaEventObject<WheelEvent>) => {
-      event.evt.preventDefault();
-      if (!event.evt.ctrlKey && !event.evt.metaKey) {
+    (event: {
+      screen: { x: number; y: number };
+      deltaX: number;
+      deltaY: number;
+      ctrlKey: boolean;
+      metaKey: boolean;
+      originalEvent: WheelEvent;
+    }) => {
+      event.originalEvent.preventDefault();
+      if (!event.ctrlKey && !event.metaKey) {
         cancelZoomAnimation();
         const nextPosition = clampStagePosition({
-          x: stagePositionRef.current.x - event.evt.deltaX,
-          y: stagePositionRef.current.y - event.evt.deltaY,
+          x: stagePositionRef.current.x - event.deltaX,
+          y: stagePositionRef.current.y - event.deltaY,
         });
         stagePositionRef.current = nextPosition;
         zoomTargetRef.current = {
@@ -120,14 +125,10 @@ export const useCanvasZoom = (options: UseCanvasZoomOptions = {}) => {
         setStagePosition(nextPosition);
         return;
       }
-      const stage = stageRef.current;
-      if (!stage) return;
-      const pointer = stage.getPointerPosition();
-      if (!pointer) return;
 
-      const oldScale = stage.scaleX() || 1;
-      const oldPosition = stage.position();
-      const scaleDirection = event.evt.deltaY > 0 ? -1 : 1;
+      const oldScale = stageScaleRef.current || 1;
+      const oldPosition = stagePositionRef.current;
+      const scaleDirection = event.deltaY > 0 ? -1 : 1;
       const scaleFactor = scaleDirection > 0 ? SCALE_BY : 1 / SCALE_BY;
       const nextScale = Math.min(
         MAX_SCALE,
@@ -135,13 +136,13 @@ export const useCanvasZoom = (options: UseCanvasZoomOptions = {}) => {
       );
 
       const mousePointTo = {
-        x: (pointer.x - oldPosition.x) / oldScale,
-        y: (pointer.y - oldPosition.y) / oldScale,
+        x: (event.screen.x - oldPosition.x) / oldScale,
+        y: (event.screen.y - oldPosition.y) / oldScale,
       };
 
       const nextPosition = {
-        x: pointer.x - mousePointTo.x * nextScale,
-        y: pointer.y - mousePointTo.y * nextScale,
+        x: event.screen.x - mousePointTo.x * nextScale,
+        y: event.screen.y - mousePointTo.y * nextScale,
       };
 
       setZoomTarget(nextScale, clampStagePosition(nextPosition));

@@ -1,28 +1,28 @@
 import { useEffect, useState } from "react";
 import type { RefObject } from "react";
-import type { KonvaEventObject } from "konva/lib/Node";
-
 export type Point = { x: number; y: number };
 
 const TEXT_CHAR_WIDTH = 0.6;
 const TEXT_LINE_HEIGHT = 1.2;
 const DEFAULT_PAGE_BACKGROUND = "#141414";
 
-export const getPointerPosition = (
-  event: KonvaEventObject<MouseEvent>,
-): Point | null => {
-  const stage = event.target.getStage();
-  if (!stage) return null;
-  const pointer = stage.getPointerPosition();
-  if (!pointer) return null;
-  const scaleX = stage.scaleX() || 1;
-  const scaleY = stage.scaleY() || 1;
-  const position = stage.position();
-  return {
-    x: (pointer.x - position.x) / scaleX,
-    y: (pointer.y - position.y) / scaleY,
-  };
-};
+export const screenToWorld = (
+  screen: Point,
+  stageScale: number,
+  stagePosition: Point,
+): Point => ({
+  x: (screen.x - stagePosition.x) / stageScale,
+  y: (screen.y - stagePosition.y) / stageScale,
+});
+
+export const worldToScreen = (
+  world: Point,
+  stageScale: number,
+  stagePosition: Point,
+): Point => ({
+  x: world.x * stageScale + stagePosition.x,
+  y: world.y * stageScale + stagePosition.y,
+});
 
 export const getTextMetrics = (content: string, fontSize: number) => {
   const lines = content.split("\n");

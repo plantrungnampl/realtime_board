@@ -19,7 +19,7 @@ export default defineConfig({
           if (!id.includes("node_modules")) return;
           if (id.includes("react")) return "react";
           if (id.includes("@tanstack")) return "tanstack";
-          if (id.includes("konva") || id.includes("react-konva")) return "konva";
+          if (id.includes("pixi.js") || id.includes("@pixi")) return "pixi";
           if (id.includes("yjs") || id.includes("y-websocket") || id.includes("y-indexeddb")) {
             return "yjs";
           }

@@ -4,6 +4,7 @@ import { RouterProvider, createRouter } from '@tanstack/react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import './index.css'
 import './i18n'
+import { clientLogger } from './lib/logger'
 
 // Import the generated route tree
 import { routeTree } from './routeTree.gen'
@@ -22,6 +23,8 @@ const router = createRouter({
   // This will ensure that the loader is always called when the route is preloaded or visited
   defaultPreloadStaleTime: 0,
 })
+
+clientLogger.init()
 
 // Register the router instance for type safety
 declare module '@tanstack/react-router' {

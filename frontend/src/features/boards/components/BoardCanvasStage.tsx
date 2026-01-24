@@ -1,24 +1,27 @@
-import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef } from "react";
 import type { RefObject } from "react";
+import { Application, extend, useApplication, useTick } from "@pixi/react";
 import {
-  Stage,
-  Layer,
-  Circle,
-  Rect,
-  Line,
-  Path,
-  Text as KonvaText,
-  Group,
-  Transformer,
-} from "react-konva";
-import type { KonvaEventObject } from "konva/lib/Node";
-import type { Stage as KonvaStage } from "konva/lib/Stage";
-import type Konva from "konva";
+  Container as PixiContainer,
+  FederatedPointerEvent,
+  Graphics as PixiGraphics,
+  Rectangle,
+  Text as PixiText,
+} from "pixi.js";
 import type { BoardElement } from "@/types/board";
 import type { CursorBroadcast, SelectionPresence } from "@/features/boards/types";
 import { DEFAULT_TEXT_STYLE } from "@/features/boards/boardRoute/elements";
 import { getTextMetrics } from "@/features/boards/boardRoute.utils";
 import type { SnapGuide } from "@/features/boards/elementMove.utils";
+import { getElementBounds, getAnchorPosition } from "@/features/boards/elementMove.utils";
+import { normalizeOrthogonalPoints } from "@/features/boards/boardCanvas/connectorRouting";
+import type { CanvasPointerEvent, CanvasWheelEvent } from "@/features/boards/boardCanvas.hooks";
+
+extend({
+  Container: PixiContainer,
+  Graphics: PixiGraphics,
+  Text: PixiText,
+});
 
 type TextEditorPayload = {
   x: number;
@@ -34,16 +37,16 @@ type TextEditorPayload = {
 };
 
 type BoardCanvasStageProps = {
-  stageRef: RefObject<KonvaStage | null>;
+  stageRef: RefObject<HTMLDivElement | null>;
   width: number;
   height: number;
   stageScale: number;
   stagePosition: { x: number; y: number };
-  onMouseDown: (event: KonvaEventObject<MouseEvent>) => void;
-  onMouseMove: (event: KonvaEventObject<MouseEvent>) => void;
-  onMouseUp: (event: KonvaEventObject<MouseEvent>) => void;
+  onMouseDown: (event: CanvasPointerEvent) => void;
+  onMouseMove: (event: CanvasPointerEvent) => void;
+  onMouseUp: () => void;
   onMouseLeave: () => void;
-  onWheel: (event: KonvaEventObject<WheelEvent>) => void;
+  onWheel: (event: CanvasWheelEvent) => void;
   worldRect: { x: number; y: number; width: number; height: number };
   backgroundColor: string;
   gridLines: Array<{ points: number[]; major: boolean }>;
@@ -90,1390 +93,1152 @@ type BoardCanvasStageProps = {
   onOpenTextEditor: (payload: TextEditorPayload) => void;
 };
 
-const CURSOR_SMOOTH_DURATION = 0.12;
+const CURSOR_SMOOTHING = 0.2;
 const MIN_TRANSFORM_SIZE = 12;
+const DEG_TO_RAD = Math.PI / 180;
+const RAD_TO_DEG = 180 / Math.PI;
 
-const CursorMarker = memo(function CursorMarker({
-  cursor,
-}: {
-  cursor: CursorBroadcast;
-}) {
-  const groupRef = useRef<Konva.Group | null>(null);
-
-  useEffect(() => {
-    const node = groupRef.current;
-    if (!node) return;
-    node.to({
-      x: cursor.x ?? 0,
-      y: cursor.y ?? 0,
-      duration: CURSOR_SMOOTH_DURATION,
-    });
-  }, [cursor.x, cursor.y]);
-
-  return (
-    <Group ref={groupRef} x={cursor.x ?? 0} y={cursor.y ?? 0} listening={false}>
-      <Circle radius={4} fill={cursor.color} stroke="#171717" strokeWidth={1} />
-      <KonvaText
-        text={cursor.user_name}
-        y={10}
-        x={-10}
-        fill={cursor.color}
-        fontSize={10}
-      />
-    </Group>
-  );
-});
-
-const SELECTION_STROKE = "#FBBF24";
+const SELECTION_STROKE = "#60A5FA";
 const SNAP_GUIDE_COLORS = {
-  vertical: "#EF4444",
-  horizontal: "#3B82F6",
-};
-const MEDIA_LABELS: Record<string, string> = {
-  Image: "Image",
-  Video: "Video",
-  Embed: "Embed",
-  Document: "Document",
-  Component: "Component",
+  vertical: "#7DD3FC",
+  horizontal: "#F472B6",
 };
 
-type ElementBounds = { x: number; y: number; width: number; height: number };
+const coerceNumber = (value: number | null | undefined, fallback: number) =>
+  Number.isFinite(value) ? (value as number) : fallback;
 
-const invalidElementWarnings = new Set<string>();
+const clampColor = (value: number, fallback: number) =>
+  Number.isFinite(value) && value >= 0 && value <= 0xffffff ? value : fallback;
 
-const warnInvalidElementOnce = (
-  element: BoardElement,
-  reason: string,
-) => {
-  if (!import.meta.env.DEV) return;
-  const key = `${element.id}:${reason}`;
-  if (invalidElementWarnings.has(key)) return;
-  invalidElementWarnings.add(key);
-  console.warn(
-    `[BoardCanvas] Skipping invalid ${element.element_type} ${element.id}: ${reason}`,
-    element,
-  );
-};
-
-const isFiniteNumber = (value: unknown): value is number =>
-  typeof value === "number" && Number.isFinite(value);
-
-const coerceNumber = (value: unknown, fallback: number) =>
-  isFiniteNumber(value) ? value : fallback;
-
-function isValidPointArray(
-  points: unknown[],
-  minLength = 4,
-): points is number[] {
-  return (
-    points.length >= minLength
-    && points.length % 2 === 0
-    && points.every(isFiniteNumber)
-  );
-}
-
-const isValidDrawingPoints = (points: unknown[]): points is number[] =>
-  isValidPointArray(points, 2);
-
-const getRectBounds = (element: BoardElement): ElementBounds => {
-  const hasValidMetrics =
-    isFiniteNumber(element.position_x)
-    && isFiniteNumber(element.position_y)
-    && isFiniteNumber(element.width)
-    && isFiniteNumber(element.height);
-  if (!hasValidMetrics) {
-    warnInvalidElementOnce(element, "invalid rect metrics");
+const parseColor = (value?: string, fallback = 0x000000) => {
+  if (!value) return fallback;
+  if (value.startsWith("#")) {
+    return clampColor(Number.parseInt(value.slice(1), 16), fallback);
   }
-  const positionX = coerceNumber(element.position_x, 0);
-  const positionY = coerceNumber(element.position_y, 0);
+  if (value.startsWith("rgb")) {
+    const parts = value.match(/\d+(\.\d+)?/g);
+    if (!parts || parts.length < 3) return fallback;
+    const [r, g, b] = parts.map((part) => Math.max(0, Math.min(255, Number(part))));
+    return clampColor((r << 16) + (g << 8) + b, fallback);
+  }
+  const hex = Number.parseInt(value.replace(/[^0-9A-Fa-f]/g, ""), 16);
+  return clampColor(Number.isFinite(hex) ? hex : fallback, fallback);
+};
+
+const isValidDrawingPoints = (points: number[]) =>
+  points.length >= 4 && points.every((value) => Number.isFinite(value));
+
+const isValidPointArray = (points: number[]) =>
+  points.length >= 2 && points.every((value) => Number.isFinite(value));
+
+const buildOrthogonalFallbackPoints = (start: { x: number; y: number }, end: { x: number; y: number }) =>
+  [start.x, start.y, end.x, start.y, end.x, end.y];
+
+const getRectBounds = (element: BoardElement) => {
   const width = coerceNumber(element.width, 0);
   const height = coerceNumber(element.height, 0);
-  const rectX = Math.min(positionX, positionX + width);
-  const rectY = Math.min(positionY, positionY + height);
-  const rectWidth = Math.abs(width);
-  const rectHeight = Math.abs(height);
-  return { x: rectX, y: rectY, width: rectWidth, height: rectHeight };
-};
-
-const getDrawingBounds = (element: BoardElement): ElementBounds | null => {
-  if (element.element_type !== "Drawing") return null;
-  const points = element.properties.points;
-  if (!Array.isArray(points) || !isValidDrawingPoints(points)) {
-    warnInvalidElementOnce(element, "invalid drawing points");
-    return null;
-  }
-  let minX = points[0];
-  let maxX = points[0];
-  let minY = points[1];
-  let maxY = points[1];
-  for (let i = 2; i < points.length; i += 2) {
-    const x = points[i];
-    const y = points[i + 1];
-    minX = Math.min(minX, x);
-    maxX = Math.max(maxX, x);
-    minY = Math.min(minY, y);
-    maxY = Math.max(maxY, y);
-  }
-  const positionX = coerceNumber(element.position_x, 0);
-  const positionY = coerceNumber(element.position_y, 0);
+  const x = coerceNumber(element.position_x, 0) + Math.min(0, width);
+  const y = coerceNumber(element.position_y, 0) + Math.min(0, height);
   return {
-    x: positionX + minX,
-    y: positionY + minY,
-    width: Math.max(0, maxX - minX),
-    height: Math.max(0, maxY - minY),
+    x,
+    y,
+    width: Math.abs(width),
+    height: Math.abs(height),
   };
 };
 
-const getElementBounds = (element: BoardElement): ElementBounds | null => {
-  if (element.element_type === "Shape") {
-    if (element.properties.shapeType === "circle") {
-      const radius = Math.hypot(element.width || 0, element.height || 0);
-      const positionX = coerceNumber(element.position_x, 0);
-      const positionY = coerceNumber(element.position_y, 0);
-      return {
-        x: positionX - radius,
-        y: positionY - radius,
-        width: radius * 2,
-        height: radius * 2,
-      };
-    }
-    return getRectBounds(element);
-  }
-  if (element.element_type === "Text") {
-    const content = element.properties.content || "";
-    const fontSize = element.style.fontSize ?? DEFAULT_TEXT_STYLE.fontSize;
-    const { width, height } = getTextMetrics(content, fontSize);
-    const positionX = coerceNumber(element.position_x, 0);
-    const positionY = coerceNumber(element.position_y, 0);
-    return {
-      x: positionX,
-      y: positionY,
-      width,
-      height,
-    };
-  }
-  if (element.element_type === "Connector") {
-    const points = resolveConnectorPoints(element);
-    if (!points || points.length < 4) return null;
-    let minX = points[0];
-    let maxX = points[0];
-    let minY = points[1];
-    let maxY = points[1];
-    for (let i = 2; i < points.length; i += 2) {
-      const x = points[i];
-      const y = points[i + 1];
-      minX = Math.min(minX, x);
-      maxX = Math.max(maxX, x);
-      minY = Math.min(minY, y);
-      maxY = Math.max(maxY, y);
-    }
-    return {
-      x: minX,
-      y: minY,
-      width: Math.max(0, maxX - minX),
-      height: Math.max(0, maxY - minY),
-    };
-  }
-  if (element.element_type === "Drawing") {
-    return getDrawingBounds(element);
-  }
-  return getRectBounds(element);
-};
+const toRectBounds = (bounds: { left: number; right: number; top: number; bottom: number }) => ({
+  x: bounds.left,
+  y: bounds.top,
+  width: bounds.right - bounds.left,
+  height: bounds.bottom - bounds.top,
+});
 
-type SelectionOverlay = {
-  key: string;
-  element: BoardElement;
-  color: string;
-  label?: string;
-  isEditing: boolean;
-};
-
-type ElementRendererProps = {
-  element: BoardElement;
-  isSelected: boolean;
-  isLocked: boolean;
-  isDragEnabled: boolean;
-  selectionStrokeWidth: number;
-  selectionDash: number[];
-  selectionPadding: number;
-  stageScale: number;
-  registerElementRef: (id: string, node: Konva.Node | null) => void;
-  onElementDragMove: (
-    id: string,
-    position: { x: number; y: number },
-    modifiers?: { allowSnap?: boolean },
-  ) => void;
-  onElementDragEnd: (
-    id: string,
-    position: { x: number; y: number },
-    modifiers?: { allowSnap?: boolean },
-  ) => void;
-  onElementTransform: (
-    id: string,
-    payload: {
-      position_x: number;
-      position_y: number;
-      width: number;
-      height: number;
-      rotation: number;
-      font_size?: number;
-    },
-  ) => void;
-  onElementTransformEnd: (
-    id: string,
-    payload: {
-      position_x: number;
-      position_y: number;
-      width: number;
-      height: number;
-      rotation: number;
-      font_size?: number;
-    },
-  ) => void;
-  onDrawingDragEnd: (
-    id: string,
-    position: { x: number; y: number },
-    modifiers?: { allowSnap?: boolean },
-  ) => void;
-  onOpenTextEditor: (payload: TextEditorPayload) => void;
-};
-
-type SelectionOverlayLayerProps = {
-  selectionPresence: SelectionPresence[];
-  elements: BoardElement[];
-  selectionStrokeWidth: number;
-  selectionDash: number[];
-  selectionPadding: number;
-  stageScale: number;
-};
-
-function buildOrthogonalFallbackPoints(
-  start: { x: number; y: number },
-  end: { x: number; y: number },
-) {
-  if (start.x === end.x || start.y === end.y) {
-    return [start.x, start.y, end.x, end.y];
-  }
-  const mid = { x: end.x, y: start.y };
-  return [start.x, start.y, mid.x, mid.y, end.x, end.y];
-}
-
-function normalizeOrthogonalPoints(points?: number[]) {
-  if (!points || points.length < 4) return points ?? [];
-  const normalized: number[] = [points[0], points[1]];
-  for (let i = 2; i < points.length; i += 2) {
-    const lastX = normalized[normalized.length - 2];
-    const lastY = normalized[normalized.length - 1];
-    const nextX = points[i];
-    const nextY = points[i + 1];
-    if (lastX !== nextX && lastY !== nextY) {
-      normalized.push(nextX, lastY);
-    }
-    normalized.push(nextX, nextY);
-  }
-  const reduced: number[] = [];
-  for (let i = 0; i < normalized.length; i += 2) {
-    const x = normalized[i];
-    const y = normalized[i + 1];
-    const len = reduced.length;
-    if (len >= 4) {
-      const prevX = reduced[len - 2];
-      const prevY = reduced[len - 1];
-      const prevPrevX = reduced[len - 4];
-      const prevPrevY = reduced[len - 3];
-      const collinear =
-        (prevPrevX === prevX && prevX === x)
-        || (prevPrevY === prevY && prevY === y);
-      if (collinear) {
-        reduced[len - 2] = x;
-        reduced[len - 1] = y;
-        continue;
-      }
-    }
-    reduced.push(x, y);
-  }
-  return reduced;
-}
-
-const CONNECTOR_CORNER_RADIUS = 12;
-
-const roundPoint = (value: number) => Math.round(value * 100) / 100;
-
-function buildRoundedPath(points: number[], radius: number) {
-  if (points.length < 4) return "";
-  const coords = [];
-  for (let i = 0; i < points.length; i += 2) {
-    coords.push({ x: points[i], y: points[i + 1] });
-  }
-  if (coords.length < 2) return "";
-  let path = `M ${roundPoint(coords[0].x)} ${roundPoint(coords[0].y)}`;
-  for (let i = 1; i < coords.length - 1; i += 1) {
-    const prev = coords[i - 1];
-    const curr = coords[i];
-    const next = coords[i + 1];
-    const collinear =
-      (prev.x === curr.x && curr.x === next.x)
-      || (prev.y === curr.y && curr.y === next.y);
-    if (collinear) {
-      path += ` L ${roundPoint(curr.x)} ${roundPoint(curr.y)}`;
-      continue;
-    }
-    const v1x = prev.x - curr.x;
-    const v1y = prev.y - curr.y;
-    const v2x = next.x - curr.x;
-    const v2y = next.y - curr.y;
-    const len1 = Math.hypot(v1x, v1y);
-    const len2 = Math.hypot(v2x, v2y);
-    if (len1 === 0 || len2 === 0) {
-      path += ` L ${roundPoint(curr.x)} ${roundPoint(curr.y)}`;
-      continue;
-    }
-    const r = Math.min(radius, len1 / 2, len2 / 2);
-    const p1 = {
-      x: curr.x + (v1x / len1) * r,
-      y: curr.y + (v1y / len1) * r,
-    };
-    const p2 = {
-      x: curr.x + (v2x / len2) * r,
-      y: curr.y + (v2y / len2) * r,
-    };
-    path +=
-      ` L ${roundPoint(p1.x)} ${roundPoint(p1.y)}` +
-      ` Q ${roundPoint(curr.x)} ${roundPoint(curr.y)} ${roundPoint(p2.x)} ${roundPoint(p2.y)}`;
-  }
-  const last = coords[coords.length - 1];
-  path += ` L ${roundPoint(last.x)} ${roundPoint(last.y)}`;
-  return path;
-}
-
-function resolveConnectorEndpoints(element: BoardElement) {
+const resolveConnectorEndpoints = (element: BoardElement) => {
   if (element.element_type !== "Connector") return null;
   const start = element.properties?.start;
   const end = element.properties?.end;
-  if (!start || !end) {
-    warnInvalidElementOnce(element, "missing connector endpoints");
-    return null;
-  }
-  if (
-    !isFiniteNumber(start.x)
-    || !isFiniteNumber(start.y)
-    || !isFiniteNumber(end.x)
-    || !isFiniteNumber(end.y)
-  ) {
-    warnInvalidElementOnce(element, "invalid connector endpoints");
+  if (!start || !end) return null;
+  if (!Number.isFinite(start.x) || !Number.isFinite(start.y) || !Number.isFinite(end.x) || !Number.isFinite(end.y)) {
     return null;
   }
   return { start, end };
-}
+};
 
-function resolveConnectorPoints(element: BoardElement) {
+const resolveConnectorPoints = (element: BoardElement) => {
   if (element.element_type !== "Connector") return null;
   const storedPoints = element.properties?.points;
   if (Array.isArray(storedPoints)) {
-    if (!isValidPointArray(storedPoints)) {
-      warnInvalidElementOnce(element, "invalid connector points");
-      return null;
-    }
+    if (!isValidPointArray(storedPoints)) return null;
     return normalizeOrthogonalPoints(storedPoints);
   }
   const endpoints = resolveConnectorEndpoints(element);
   if (!endpoints) return null;
   return buildOrthogonalFallbackPoints(endpoints.start, endpoints.end);
-}
+};
 
-const resolveRectDragPosition = (element: BoardElement, x: number, y: number) => {
-  const width = coerceNumber(element.width, 0);
-  const height = coerceNumber(element.height, 0);
+const setStrokeStyle = (graphics: PixiGraphics, width: number, color: number, alpha = 1) => {
+  graphics.setStrokeStyle({ width, color, alpha, alignment: 0.5 });
+};
+
+const setFillStyle = (graphics: PixiGraphics, color: number, alpha = 1) => {
+  graphics.setFillStyle({ color, alpha });
+};
+
+const drawPolyline = (graphics: PixiGraphics, points: number[], strokeWidth: number, strokeColor: number) => {
+  if (points.length < 4) return;
+  setStrokeStyle(graphics, strokeWidth, strokeColor);
+  graphics.moveTo(points[0], points[1]);
+  for (let i = 2; i < points.length; i += 2) {
+    graphics.lineTo(points[i], points[i + 1]);
+  }
+  graphics.stroke();
+};
+
+const CursorMarker = memo(function CursorMarker({ cursor }: { cursor: CursorBroadcast }) {
+  const groupRef = useRef<PixiContainer | null>(null);
+  const targetRef = useRef({ x: cursor.x ?? 0, y: cursor.y ?? 0 });
+  useEffect(() => {
+    targetRef.current = { x: cursor.x ?? 0, y: cursor.y ?? 0 };
+  }, [cursor.x, cursor.y]);
+  useTick(() => {
+    const node = groupRef.current;
+    if (!node) return;
+    node.position.set(
+      node.position.x + (targetRef.current.x - node.position.x) * CURSOR_SMOOTHING,
+      node.position.y + (targetRef.current.y - node.position.y) * CURSOR_SMOOTHING,
+    );
+  });
+  return (
+    <pixiContainer ref={groupRef} x={cursor.x ?? 0} y={cursor.y ?? 0} eventMode="passive">
+      <pixiGraphics
+        draw={(graphics) => {
+          graphics.clear();
+          setFillStyle(graphics, parseColor(cursor.color, 0xffffff));
+          setStrokeStyle(graphics, 1, 0x171717);
+          graphics.circle(0, 0, 4);
+          graphics.fill();
+          graphics.stroke();
+        }}
+      />
+      <pixiText
+        text={cursor.user_name}
+        x={-10}
+        y={10}
+        style={{
+          fontSize: 11,
+          fill: cursor.color,
+        }}
+      />
+    </pixiContainer>
+  );
+});
+
+const buildCanvasPointerEvent = (
+  event: FederatedPointerEvent,
+  viewportRef: React.MutableRefObject<PixiContainer | null>,
+): CanvasPointerEvent => {
+  const screen = { x: event.global.x, y: event.global.y };
+  const viewport = viewportRef.current;
+  const worldPoint = viewport ? viewport.toLocal(event.global) : event.global;
   return {
-    x: width >= 0 ? x : x - width,
-    y: height >= 0 ? y : y - height,
+    screen,
+    world: { x: worldPoint.x, y: worldPoint.y },
+    button: event.button ?? 0,
+    shiftKey: event.shiftKey,
+    altKey: event.altKey,
+    ctrlKey: event.ctrlKey,
+    metaKey: event.metaKey,
+    originalEvent: event.originalEvent as unknown as MouseEvent | PointerEvent,
   };
 };
 
-const GHOST_OPACITY = 0.35;
-const GHOST_DASH = [6, 6];
-
-const GhostElementRenderer = memo(function GhostElementRenderer({
-  element,
-  stageScale,
-}: {
-  element: BoardElement;
-  stageScale: number;
-}) {
-  const dash = GHOST_DASH.map((value) => value / stageScale);
-  if (element.element_type === "Shape") {
-    if (element.properties.shapeType === "circle") {
-      const radius = Math.hypot(element.width || 0, element.height || 0);
-      const positionX = coerceNumber(element.position_x, 0);
-      const positionY = coerceNumber(element.position_y, 0);
-      return (
-        <Circle
-          x={positionX}
-          y={positionY}
-          radius={radius}
-          stroke={element.style.stroke}
-          strokeWidth={element.style.strokeWidth}
-          fill={element.style.fill}
-          dash={dash}
-          opacity={GHOST_OPACITY}
-          listening={false}
-        />
-      );
-    }
-    const rectBounds = getRectBounds(element);
-    return (
-      <Rect
-        x={rectBounds.x}
-        y={rectBounds.y}
-        width={rectBounds.width}
-        height={rectBounds.height}
-        stroke={element.style.stroke}
-        strokeWidth={element.style.strokeWidth}
-        fill={element.style.fill}
-        dash={dash}
-        opacity={GHOST_OPACITY}
-        listening={false}
-      />
-    );
-  }
-  if (element.element_type === "Frame" || element.element_type === "StickyNote") {
-    const rectBounds = getRectBounds(element);
-    return (
-      <Rect
-        x={rectBounds.x}
-        y={rectBounds.y}
-        width={rectBounds.width}
-        height={rectBounds.height}
-        stroke={element.style.stroke}
-        strokeWidth={element.style.strokeWidth}
-        fill={element.style.fill}
-        cornerRadius={element.style.cornerRadius ?? 0}
-        dash={dash}
-        opacity={GHOST_OPACITY}
-        listening={false}
-      />
-    );
-  }
-  return null;
+const rotatePoint = (point: { x: number; y: number }, angle: number) => ({
+  x: point.x * Math.cos(angle) - point.y * Math.sin(angle),
+  y: point.x * Math.sin(angle) + point.y * Math.cos(angle),
 });
 
-const ElementRenderer = memo(function ElementRenderer({
-  element,
-  isSelected,
-  isLocked,
-  isDragEnabled,
-  selectionStrokeWidth,
-  selectionDash,
-  selectionPadding,
+function PixiScene({
   stageScale,
-  registerElementRef,
+  stagePosition,
+  worldRect,
+  backgroundColor,
+  gridLines,
+  snapGuides,
+  elements,
+  ghostElement,
+  selectedElementIds,
+  selectionPresence,
+  cursorList,
+  localOverrideIds,
+  lockedElementIds,
+  isDragEnabled,
+  onMouseDown,
+  onMouseMove,
+  onMouseUp,
   onElementDragMove,
   onElementDragEnd,
   onElementTransform,
   onElementTransformEnd,
   onDrawingDragEnd,
   onOpenTextEditor,
-}: ElementRendererProps) {
-  const rectBounds = getRectBounds(element);
-  const rectX = rectBounds.x;
-  const rectY = rectBounds.y;
-  const rectWidth = rectBounds.width;
-  const rectHeight = rectBounds.height;
-  const handleRef = useCallback(
-    (node: Konva.Node | null) => {
-      registerElementRef(element.id, node);
+}: Omit<BoardCanvasStageProps, "stageRef" | "onMouseLeave" | "onWheel">) {
+  const { app } = useApplication();
+  const viewportRef = useRef<PixiContainer | null>(null);
+  const elementRefs = useRef<Map<string, PixiContainer>>(new Map());
+  const transformStateRef = useRef<{
+    id: string;
+    pointerId: number;
+    kind: "resize" | "rotate";
+    handle?: "nw" | "ne" | "se" | "sw";
+    origin: { x: number; y: number };
+    width: number;
+    height: number;
+    rotation: number;
+    startAngle?: number;
+    center?: { x: number; y: number };
+    fontSize?: number;
+    element: BoardElement;
+  } | null>(null);
+  const dragStateRef = useRef<{
+    id: string;
+    pointerId: number;
+    offset: { x: number; y: number };
+  } | null>(null);
+  const lastTapRef = useRef<{ id: string; time: number } | null>(null);
+
+  const selectedSet = useMemo(
+    () => new Set(selectedElementIds),
+    [selectedElementIds],
+  );
+  const primarySelectedId =
+    selectedElementIds.length === 1 ? selectedElementIds[0] : null;
+  const canTransform = primarySelectedId
+    ? !lockedElementIds.has(primarySelectedId)
+    : false;
+  const elementMap = useMemo(
+    () => new Map(elements.map((element) => [element.id, element])),
+    [elements],
+  );
+  const primarySelectedElement = primarySelectedId ? elementMap.get(primarySelectedId) : null;
+
+  const renderElements = useMemo(() => {
+    if (cursorList.length === 0) return elements;
+    const overrides = new Map<string, BoardElement>();
+    const EPSILON = 0.5;
+    cursorList.forEach((cursor) => {
+      const drag = cursor.dragging;
+      if (!drag) return;
+      if (localOverrideIds.has(drag.element_id)) return;
+      const element = elementMap.get(drag.element_id);
+      if (!element) return;
+      const hasSignificantChange =
+        (typeof drag.position_x === "number"
+          && Math.abs(element.position_x - drag.position_x) > EPSILON)
+        || (typeof drag.position_y === "number"
+          && Math.abs(element.position_y - drag.position_y) > EPSILON)
+        || (typeof drag.width === "number"
+          && Math.abs(element.width - drag.width) > EPSILON)
+        || (typeof drag.height === "number"
+          && Math.abs(element.height - drag.height) > EPSILON)
+        || (typeof drag.rotation === "number"
+          && Math.abs((element.rotation ?? 0) - drag.rotation) > EPSILON);
+      if (!hasSignificantChange) return;
+      const next = { ...element };
+      if (typeof drag.position_x === "number") next.position_x = drag.position_x;
+      if (typeof drag.position_y === "number") next.position_y = drag.position_y;
+      if (typeof drag.width === "number") next.width = drag.width;
+      if (typeof drag.height === "number") next.height = drag.height;
+      if (typeof drag.rotation === "number") next.rotation = drag.rotation;
+      overrides.set(drag.element_id, next);
+    });
+    if (overrides.size === 0) return elements;
+    return elements.map((element) => overrides.get(element.id) ?? element);
+  }, [cursorList, elementMap, elements, localOverrideIds]);
+
+  const selectionStrokeWidth = 2 / stageScale;
+  const selectionPadding = 6 / stageScale;
+  const snapStrokeWidth = 1.5 / stageScale;
+  const handleSize = 8 / stageScale;
+  const rotateHandleOffset = 20 / stageScale;
+
+  const registerElementRef = useCallback(
+    (id: string, node: PixiContainer | null) => {
+      if (!node) {
+        elementRefs.current.delete(id);
+        return;
+      }
+      elementRefs.current.set(id, node);
     },
-    [element.id, registerElementRef],
+    [],
   );
 
-  if (element.element_type === "Shape") {
-    if (element.properties.shapeType === "rectangle") {
-      return (
-        <Group
-          x={rectX}
-          y={rectY}
-          draggable={isDragEnabled && !isLocked}
-          rotation={element.rotation ?? 0}
-          ref={handleRef}
-          onDragMove={(event) => {
-            const node = event.target;
-            const next = resolveRectDragPosition(element, node.x(), node.y());
-            onElementDragMove(element.id, next, {
-              allowSnap: !event.evt.altKey,
-            });
-          }}
-          onDragEnd={(event) => {
-            const node = event.target;
-            const next = resolveRectDragPosition(element, node.x(), node.y());
-            onElementDragEnd(element.id, next, {
-              allowSnap: !event.evt.altKey,
-            });
-          }}
-          onTransform={(event) => {
-            const node = event.target;
-            const scaleX = node.scaleX() || 1;
-            const scaleY = node.scaleY() || 1;
-            onElementTransform(element.id, {
-              position_x: node.x(),
-              position_y: node.y(),
-              width: rectWidth * scaleX,
-              height: rectHeight * scaleY,
-              rotation: node.rotation(),
-            });
-          }}
-          onTransformEnd={(event) => {
-            const node = event.target;
-            const scaleX = node.scaleX() || 1;
-            const scaleY = node.scaleY() || 1;
-            const nextWidth = rectWidth * scaleX;
-            const nextHeight = rectHeight * scaleY;
-            node.scaleX(1);
-            node.scaleY(1);
-            onElementTransformEnd(element.id, {
-              position_x: node.x(),
-              position_y: node.y(),
-              width: nextWidth,
-              height: nextHeight,
-              rotation: node.rotation(),
-            });
-          }}
-        >
-          <Rect
-            x={0}
-            y={0}
-            width={rectWidth}
-            height={rectHeight}
-            stroke={element.style.stroke}
-            strokeWidth={element.style.strokeWidth}
-            fill={element.style.fill}
-          />
-          {isSelected && (
-            <Rect
-              x={-selectionPadding}
-              y={-selectionPadding}
-              width={rectWidth + selectionPadding * 2}
-              height={rectHeight + selectionPadding * 2}
-              stroke={SELECTION_STROKE}
-              strokeWidth={selectionStrokeWidth}
-              dash={selectionDash}
-              listening={false}
-            />
-          )}
-        </Group>
-      );
-    }
-    if (element.properties.shapeType === "circle") {
-      const radius = Math.hypot(element.width || 0, element.height || 0);
-      const positionX = coerceNumber(element.position_x, 0);
-      const positionY = coerceNumber(element.position_y, 0);
-      return (
-        <Group
-          x={positionX}
-          y={positionY}
-          draggable={isDragEnabled && !isLocked}
-          rotation={element.rotation ?? 0}
-          ref={handleRef}
-          onDragMove={(event) => {
-            const node = event.target;
-            onElementDragMove(
-              element.id,
-              { x: node.x(), y: node.y() },
-              {
-                allowSnap: !event.evt.altKey,
-              },
-            );
-          }}
-          onDragEnd={(event) => {
-            const node = event.target;
-            onElementDragEnd(
-              element.id,
-              { x: node.x(), y: node.y() },
-              {
-                allowSnap: !event.evt.altKey,
-              },
-            );
-          }}
-          onTransform={(event) => {
-            const node = event.target;
-            const scaleX = node.scaleX() || 1;
-            const scaleY = node.scaleY() || 1;
-            onElementTransform(element.id, {
-              position_x: node.x(),
-              position_y: node.y(),
-              width: (element.width || 1) * scaleX,
-              height: (element.height || 1) * scaleY,
-              rotation: node.rotation(),
-            });
-          }}
-          onTransformEnd={(event) => {
-            const node = event.target;
-            const scaleX = node.scaleX() || 1;
-            const scaleY = node.scaleY() || 1;
-            const nextWidth = (element.width || 1) * scaleX;
-            const nextHeight = (element.height || 1) * scaleY;
-            node.scaleX(1);
-            node.scaleY(1);
-            onElementTransformEnd(element.id, {
-              position_x: node.x(),
-              position_y: node.y(),
-              width: nextWidth,
-              height: nextHeight,
-              rotation: node.rotation(),
-            });
-          }}
-        >
-          <Circle
-            x={0}
-            y={0}
-            radius={radius}
-            stroke={element.style.stroke}
-            strokeWidth={element.style.strokeWidth}
-            fill={element.style.fill}
-          />
-          {isSelected && (
-            <Circle
-              x={0}
-              y={0}
-              radius={radius + selectionPadding}
-              stroke={SELECTION_STROKE}
-              strokeWidth={selectionStrokeWidth}
-              dash={selectionDash}
-              listening={false}
-            />
-          )}
-        </Group>
-      );
-    }
-  }
+  useEffect(() => {
+    if (!app || !viewportRef.current) return;
+  }, [app]);
 
-  if (element.element_type === "Drawing") {
-    const points = element.properties.points;
-    if (!Array.isArray(points) || !isValidDrawingPoints(points)) {
-      warnInvalidElementOnce(element, "invalid drawing points");
-      return null;
-    }
-    const positionX = coerceNumber(element.position_x, 0);
-    const positionY = coerceNumber(element.position_y, 0);
-    return (
-      <Group
-        x={positionX}
-        y={positionY}
-        draggable={isDragEnabled && !isLocked}
-        onDragMove={(event) => {
-          const node = event.target;
-          onElementDragMove(
-            element.id,
-            { x: node.x(), y: node.y() },
-            {
-              allowSnap: !event.evt.altKey,
-            },
+  const handlePointerMove = useCallback(
+    (event: FederatedPointerEvent) => {
+      const transformState = transformStateRef.current;
+      if (transformState && transformState.pointerId === event.pointerId) {
+        const canvasEvent = buildCanvasPointerEvent(event, viewportRef);
+        const rotationRad = transformState.rotation * DEG_TO_RAD;
+        if (transformState.kind === "rotate") {
+          const center = transformState.center;
+          if (!center || typeof transformState.startAngle !== "number") return;
+          const angle = Math.atan2(
+            canvasEvent.world.y - center.y,
+            canvasEvent.world.x - center.x,
           );
-        }}
-        onDragEnd={(event) => {
-          const node = event.target;
-          onDrawingDragEnd(
-            element.id,
-            { x: node.x(), y: node.y() },
-            {
-              allowSnap: !event.evt.altKey,
-            },
+          const nextRotation = transformState.rotation + (angle - transformState.startAngle) * RAD_TO_DEG;
+          onElementTransform(transformState.id, {
+            position_x: transformState.element.position_x,
+            position_y: transformState.element.position_y,
+            width: transformState.element.width,
+            height: transformState.element.height,
+            rotation: nextRotation,
+          });
+          return;
+        }
+        if (!transformState.handle) return;
+        const local = rotatePoint(
+          {
+            x: canvasEvent.world.x - transformState.origin.x,
+            y: canvasEvent.world.y - transformState.origin.y,
+          },
+          -rotationRad,
+        );
+        const opposite = (() => {
+          switch (transformState.handle) {
+            case "nw":
+              return { x: transformState.width, y: transformState.height };
+            case "ne":
+              return { x: 0, y: transformState.height };
+            case "sw":
+              return { x: transformState.width, y: 0 };
+            case "se":
+            default:
+              return { x: 0, y: 0 };
+          }
+        })();
+        let minX = Math.min(local.x, opposite.x);
+        let maxX = Math.max(local.x, opposite.x);
+        let minY = Math.min(local.y, opposite.y);
+        let maxY = Math.max(local.y, opposite.y);
+        if (maxX - minX < MIN_TRANSFORM_SIZE) {
+          if (local.x < opposite.x) {
+            minX = maxX - MIN_TRANSFORM_SIZE;
+          } else {
+            maxX = minX + MIN_TRANSFORM_SIZE;
+          }
+        }
+        if (maxY - minY < MIN_TRANSFORM_SIZE) {
+          if (local.y < opposite.y) {
+            minY = maxY - MIN_TRANSFORM_SIZE;
+          } else {
+            maxY = minY + MIN_TRANSFORM_SIZE;
+          }
+        }
+        const nextOrigin = rotatePoint({ x: minX, y: minY }, rotationRad);
+        const nextWidth = maxX - minX;
+        const nextHeight = maxY - minY;
+        const updatedOrigin = {
+          x: transformState.origin.x + nextOrigin.x,
+          y: transformState.origin.y + nextOrigin.y,
+        };
+        const element = transformState.element;
+        if (element.element_type === "Shape" && element.properties.shapeType === "circle") {
+          const startRadius = Math.max(1, Math.hypot(transformState.width, transformState.height) / 2);
+          const nextRadius = Math.max(MIN_TRANSFORM_SIZE / 2, Math.max(nextWidth, nextHeight) / 2);
+          const scale = nextRadius / startRadius;
+          const nextCenter = rotatePoint(
+            { x: minX + nextWidth / 2, y: minY + nextHeight / 2 },
+            rotationRad,
           );
-        }}
-      >
-        <Line
-          points={points}
-          stroke={element.style.stroke}
-          strokeWidth={element.style.strokeWidth}
-          lineCap="round"
-          lineJoin="round"
-        />
-        {isSelected && (
-          <Line
-            points={points}
-            stroke={SELECTION_STROKE}
-            strokeWidth={(element.style.strokeWidth ?? 1) + selectionStrokeWidth}
-            lineCap="round"
-            lineJoin="round"
-            dash={selectionDash}
-            listening={false}
-          />
-        )}
-      </Group>
-    );
-  }
+          onElementTransform(transformState.id, {
+            position_x: transformState.origin.x + nextCenter.x,
+            position_y: transformState.origin.y + nextCenter.y,
+            width: element.width * scale,
+            height: element.height * scale,
+            rotation: transformState.rotation,
+          });
+          return;
+        }
+        const payload: {
+          position_x: number;
+          position_y: number;
+          width: number;
+          height: number;
+          rotation: number;
+          font_size?: number;
+        } = {
+          position_x: updatedOrigin.x,
+          position_y: updatedOrigin.y,
+          width: nextWidth,
+          height: nextHeight,
+          rotation: transformState.rotation,
+        };
+        if (element.element_type === "Text" || element.element_type === "StickyNote") {
+          if (transformState.fontSize && transformState.height > 0) {
+            payload.font_size = Math.max(6, (transformState.fontSize * nextHeight) / transformState.height);
+          }
+        }
+        onElementTransform(transformState.id, payload);
+        return;
+      }
+      const canvasEvent = buildCanvasPointerEvent(event, viewportRef);
+      if (dragStateRef.current) {
+        const dragState = dragStateRef.current;
+        if (dragState.pointerId !== event.pointerId) return;
+        const element = elementMap.get(dragState.id);
+        if (!element) return;
+        const next = {
+          x: canvasEvent.world.x - dragState.offset.x,
+          y: canvasEvent.world.y - dragState.offset.y,
+        };
+        onElementDragMove(dragState.id, next, { allowSnap: !canvasEvent.altKey });
+        return;
+      }
+      onMouseMove(canvasEvent);
+    },
+    [elementMap, onElementDragMove, onElementTransform, onMouseMove],
+  );
 
-  if (element.element_type === "Text") {
-    const content = element.properties.content || "";
-    const fontSize = element.style.fontSize ?? DEFAULT_TEXT_STYLE.fontSize;
-    const { width: textWidth, height: textHeight } = getTextMetrics(
-      content,
-      fontSize,
-    );
-    const positionX = coerceNumber(element.position_x, 0);
-    const positionY = coerceNumber(element.position_y, 0);
-    return (
-      <Group
-        x={positionX}
-        y={positionY}
-        draggable={isDragEnabled && !isLocked}
-        rotation={element.rotation ?? 0}
-        ref={handleRef}
-        onDragMove={(event) => {
-          const node = event.target;
-          onElementDragMove(
-            element.id,
-            { x: node.x(), y: node.y() },
-            {
-              allowSnap: !event.evt.altKey,
-            },
+  const handlePointerUp = useCallback(
+    (event: FederatedPointerEvent) => {
+      const transformState = transformStateRef.current;
+      if (transformState && transformState.pointerId === event.pointerId) {
+        const canvasEvent = buildCanvasPointerEvent(event, viewportRef);
+        const rotationRad = transformState.rotation * DEG_TO_RAD;
+        if (transformState.kind === "rotate") {
+          const center = transformState.center;
+          if (!center || typeof transformState.startAngle !== "number") return;
+          const angle = Math.atan2(
+            canvasEvent.world.y - center.y,
+            canvasEvent.world.x - center.x,
           );
-        }}
-        onDragEnd={(event) => {
-          const node = event.target;
-          onElementDragEnd(
-            element.id,
-            { x: node.x(), y: node.y() },
-            {
-              allowSnap: !event.evt.altKey,
-            },
+          const nextRotation = transformState.rotation + (angle - transformState.startAngle) * RAD_TO_DEG;
+          onElementTransformEnd(transformState.id, {
+            position_x: transformState.element.position_x,
+            position_y: transformState.element.position_y,
+            width: transformState.element.width,
+            height: transformState.element.height,
+            rotation: nextRotation,
+          });
+          transformStateRef.current = null;
+          onMouseUp();
+          return;
+        }
+        if (!transformState.handle) return;
+        const local = rotatePoint(
+          {
+            x: canvasEvent.world.x - transformState.origin.x,
+            y: canvasEvent.world.y - transformState.origin.y,
+          },
+          -rotationRad,
+        );
+        const opposite = (() => {
+          switch (transformState.handle) {
+            case "nw":
+              return { x: transformState.width, y: transformState.height };
+            case "ne":
+              return { x: 0, y: transformState.height };
+            case "sw":
+              return { x: transformState.width, y: 0 };
+            case "se":
+            default:
+              return { x: 0, y: 0 };
+          }
+        })();
+        let minX = Math.min(local.x, opposite.x);
+        let maxX = Math.max(local.x, opposite.x);
+        let minY = Math.min(local.y, opposite.y);
+        let maxY = Math.max(local.y, opposite.y);
+        if (maxX - minX < MIN_TRANSFORM_SIZE) {
+          if (local.x < opposite.x) {
+            minX = maxX - MIN_TRANSFORM_SIZE;
+          } else {
+            maxX = minX + MIN_TRANSFORM_SIZE;
+          }
+        }
+        if (maxY - minY < MIN_TRANSFORM_SIZE) {
+          if (local.y < opposite.y) {
+            minY = maxY - MIN_TRANSFORM_SIZE;
+          } else {
+            maxY = minY + MIN_TRANSFORM_SIZE;
+          }
+        }
+        const nextOrigin = rotatePoint({ x: minX, y: minY }, rotationRad);
+        const nextWidth = maxX - minX;
+        const nextHeight = maxY - minY;
+        const updatedOrigin = {
+          x: transformState.origin.x + nextOrigin.x,
+          y: transformState.origin.y + nextOrigin.y,
+        };
+        const element = transformState.element;
+        if (element.element_type === "Shape" && element.properties.shapeType === "circle") {
+          const startRadius = Math.max(1, Math.hypot(transformState.width, transformState.height) / 2);
+          const nextRadius = Math.max(MIN_TRANSFORM_SIZE / 2, Math.max(nextWidth, nextHeight) / 2);
+          const scale = nextRadius / startRadius;
+          const nextCenter = rotatePoint(
+            { x: minX + nextWidth / 2, y: minY + nextHeight / 2 },
+            rotationRad,
           );
-        }}
-        onTransform={(event) => {
-          const node = event.target;
-          const scaleX = node.scaleX() || 1;
-          const scaleY = node.scaleY() || 1;
-          const scale = Math.max(scaleX, scaleY);
-          const nextFontSize = Math.max(1, fontSize * scale);
-          const metrics = getTextMetrics(content, nextFontSize);
-          onElementTransform(element.id, {
-            position_x: node.x(),
-            position_y: node.y(),
-            width: metrics.width,
-            height: metrics.height,
-            rotation: node.rotation(),
-            font_size: nextFontSize,
+          onElementTransformEnd(transformState.id, {
+            position_x: transformState.origin.x + nextCenter.x,
+            position_y: transformState.origin.y + nextCenter.y,
+            width: element.width * scale,
+            height: element.height * scale,
+            rotation: transformState.rotation,
           });
-        }}
-        onTransformEnd={(event) => {
-          const node = event.target;
-          const scaleX = node.scaleX() || 1;
-          const scaleY = node.scaleY() || 1;
-          const scale = Math.max(scaleX, scaleY);
-          const nextFontSize = Math.max(1, fontSize * scale);
-          const metrics = getTextMetrics(content, nextFontSize);
-          node.scaleX(1);
-          node.scaleY(1);
-          onElementTransformEnd(element.id, {
-            position_x: node.x(),
-            position_y: node.y(),
-            width: metrics.width,
-            height: metrics.height,
-            rotation: node.rotation(),
-            font_size: nextFontSize,
-          });
-        }}
-      >
-        <KonvaText
-          x={0}
-          y={0}
-          text={content}
-          fontSize={fontSize}
-          fill={element.style.fill}
-          onDblClick={(event) => {
-            event.cancelBubble = true;
-            if (isLocked) return;
-            onOpenTextEditor({
-              x: positionX,
-              y: positionY,
-              value: content,
-              elementId: element.id,
-              fontSize,
-              color: element.style.fill ?? DEFAULT_TEXT_STYLE.fill,
-              elementType: "Text",
-              backgroundColor: undefined,
-            });
-          }}
-        />
-        {isSelected && (
-          <Rect
-            x={-selectionPadding}
-            y={-selectionPadding}
-            width={textWidth + selectionPadding * 2}
-            height={textHeight + selectionPadding * 2}
-            stroke={SELECTION_STROKE}
-            strokeWidth={selectionStrokeWidth}
-            dash={selectionDash}
-            listening={false}
-          />
-        )}
-      </Group>
-    );
-  }
+          transformStateRef.current = null;
+          onMouseUp();
+          return;
+        }
+        const payload: {
+          position_x: number;
+          position_y: number;
+          width: number;
+          height: number;
+          rotation: number;
+          font_size?: number;
+        } = {
+          position_x: updatedOrigin.x,
+          position_y: updatedOrigin.y,
+          width: nextWidth,
+          height: nextHeight,
+          rotation: transformState.rotation,
+        };
+        if (element.element_type === "Text" || element.element_type === "StickyNote") {
+          if (transformState.fontSize && transformState.height > 0) {
+            payload.font_size = Math.max(6, (transformState.fontSize * nextHeight) / transformState.height);
+          }
+        }
+        onElementTransformEnd(transformState.id, payload);
+        transformStateRef.current = null;
+        onMouseUp();
+        return;
+      }
+      const canvasEvent = buildCanvasPointerEvent(event, viewportRef);
+      const dragState = dragStateRef.current;
+      if (dragState && dragState.pointerId === event.pointerId) {
+        const element = elementMap.get(dragState.id);
+        if (element) {
+          const next = {
+            x: canvasEvent.world.x - dragState.offset.x,
+            y: canvasEvent.world.y - dragState.offset.y,
+          };
+          if (element.element_type === "Drawing") {
+            onDrawingDragEnd(dragState.id, next, { allowSnap: !canvasEvent.altKey });
+          } else {
+            onElementDragEnd(dragState.id, next, { allowSnap: !canvasEvent.altKey });
+          }
+        }
+        dragStateRef.current = null;
+      }
+      onMouseUp();
+    },
+    [
+      elementMap,
+      onDrawingDragEnd,
+      onElementDragEnd,
+      onElementTransformEnd,
+      onMouseUp,
+    ],
+  );
 
-  if (element.element_type === "StickyNote") {
-    const content = element.properties.content || "";
-    const fontSize = element.style.fontSize ?? 16;
-    const padding = 12;
-    const editorWidth = Math.max(0, rectWidth - padding * 2);
-    const editorHeight = Math.max(0, rectHeight - padding * 2);
-    return (
-      <Group
-        x={rectX}
-        y={rectY}
-        draggable={isDragEnabled && !isLocked}
-        rotation={element.rotation ?? 0}
-        ref={handleRef}
-        onDragMove={(event) => {
-          const node = event.target;
-          onElementDragMove(
-            element.id,
-            { x: node.x(), y: node.y() },
-            {
-              allowSnap: !event.evt.altKey,
-            },
-          );
-        }}
-        onDblClick={(event) => {
-          event.cancelBubble = true;
-          if (isLocked) return;
-          onOpenTextEditor({
-            x: rectX + padding,
-            y: rectY + padding,
-            value: content,
-            elementId: element.id,
-            fontSize,
-            color: element.style.textColor ?? "#1F2937",
-            elementType: "StickyNote",
-            backgroundColor: element.style.fill ?? "#FDE68A",
-            editorWidth,
-            editorHeight,
-          });
-        }}
-        onDragEnd={(event) => {
-          const node = event.target;
-          onElementDragEnd(
-            element.id,
-            { x: node.x(), y: node.y() },
-            {
-              allowSnap: !event.evt.altKey,
-            },
-          );
-        }}
-        onTransform={(event) => {
-          const node = event.target;
-          const scaleX = node.scaleX() || 1;
-          const scaleY = node.scaleY() || 1;
-          onElementTransform(element.id, {
-            position_x: node.x(),
-            position_y: node.y(),
-            width: rectWidth * scaleX,
-            height: rectHeight * scaleY,
-            rotation: node.rotation(),
-          });
-        }}
-        onTransformEnd={(event) => {
-          const node = event.target;
-          const scaleX = node.scaleX() || 1;
-          const scaleY = node.scaleY() || 1;
-          const nextWidth = rectWidth * scaleX;
-          const nextHeight = rectHeight * scaleY;
-          node.scaleX(1);
-          node.scaleY(1);
-          onElementTransformEnd(element.id, {
-            position_x: node.x(),
-            position_y: node.y(),
-            width: nextWidth,
-            height: nextHeight,
-            rotation: node.rotation(),
-          });
-        }}
-      >
-        <Rect
-          x={0}
-          y={0}
-          width={rectWidth}
-          height={rectHeight}
-          fill={element.style.fill}
-          stroke={element.style.stroke}
-          strokeWidth={element.style.strokeWidth}
-          cornerRadius={element.style.cornerRadius ?? 12}
-        />
-        <KonvaText
-          x={padding}
-          y={padding}
-          width={Math.max(0, rectWidth - padding * 2)}
-          height={Math.max(0, rectHeight - padding * 2)}
-          text={content}
-          fontSize={fontSize}
-          fill={element.style.textColor ?? "#1F2937"}
-        />
-        {isSelected && (
-          <Rect
-            x={-selectionPadding}
-            y={-selectionPadding}
-            width={rectWidth + selectionPadding * 2}
-            height={rectHeight + selectionPadding * 2}
-            stroke={SELECTION_STROKE}
-            strokeWidth={selectionStrokeWidth}
-            dash={selectionDash}
-            listening={false}
-          />
-        )}
-      </Group>
-    );
-  }
+  const handlePointerDown = useCallback(
+    (event: FederatedPointerEvent) => {
+      const canvasEvent = buildCanvasPointerEvent(event, viewportRef);
+      onMouseDown(canvasEvent);
+    },
+    [onMouseDown],
+  );
 
-  if (element.element_type === "Connector") {
-    const rawPoints = resolveConnectorPoints(element);
-    if (!rawPoints || rawPoints.length < 4) return null;
-    const baseX = rawPoints[0];
-    const baseY = rawPoints[1];
-    const points = rawPoints.map((value, index) =>
-      value - (index % 2 === 0 ? baseX : baseY),
-    );
-    const roundedPath = buildRoundedPath(points, CONNECTOR_CORNER_RADIUS);
+  const handleElementPointerDown = useCallback(
+    (event: FederatedPointerEvent, element: BoardElement) => {
+      const canvasEvent = buildCanvasPointerEvent(event, viewportRef);
+      onMouseDown(canvasEvent);
+      if (!isDragEnabled || lockedElementIds.has(element.id)) return;
+      const anchor = getAnchorPosition(element);
+      dragStateRef.current = {
+        id: element.id,
+        pointerId: event.pointerId,
+        offset: {
+          x: canvasEvent.world.x - anchor.x,
+          y: canvasEvent.world.y - anchor.y,
+        },
+      };
+    },
+    [isDragEnabled, lockedElementIds, onMouseDown],
+  );
 
-    return (
-      <Group
-        x={baseX}
-        y={baseY}
-        draggable={isDragEnabled && !isLocked}
-        onDragMove={(event) => {
-          const node = event.target;
-          onElementDragMove(
-            element.id,
-            { x: node.x(), y: node.y() },
-            {
-              allowSnap: !event.evt.altKey,
-            },
-          );
-        }}
-        onDragEnd={(event) => {
-          const node = event.target;
-          onElementDragEnd(
-            element.id,
-            { x: node.x(), y: node.y() },
-            {
-              allowSnap: !event.evt.altKey,
-            },
-          );
-        }}
-      >
-        {roundedPath ? (
-          <Path
-            data={roundedPath}
-            stroke={element.style.stroke}
-            strokeWidth={element.style.strokeWidth}
-            lineCap="round"
-            lineJoin="round"
-            fillEnabled={false}
-          />
-        ) : (
-          <Line
-            points={points}
-            stroke={element.style.stroke}
-            strokeWidth={element.style.strokeWidth}
-            lineCap="round"
-            lineJoin="round"
-          />
-        )}
-        {isSelected && (
-          roundedPath ? (
-            <Path
-              data={roundedPath}
-              stroke={SELECTION_STROKE}
-              strokeWidth={(element.style.strokeWidth ?? 1) + selectionStrokeWidth}
-              lineCap="round"
-              lineJoin="round"
-              dash={selectionDash}
-              listening={false}
-              fillEnabled={false}
-            />
-          ) : (
-            <Line
-              points={points}
-              stroke={SELECTION_STROKE}
-              strokeWidth={(element.style.strokeWidth ?? 1) + selectionStrokeWidth}
-              lineCap="round"
-              lineJoin="round"
-              dash={selectionDash}
-              listening={false}
-            />
-          )
-        )}
-      </Group>
-    );
-  }
+  const beginResize = useCallback(
+    (event: FederatedPointerEvent, element: BoardElement, handle: "nw" | "ne" | "se" | "sw") => {
+      event.stopPropagation();
+      const bounds = getElementBounds(element);
+      const origin = { x: bounds.left, y: bounds.top };
+      const width = bounds.right - bounds.left;
+      const height = bounds.bottom - bounds.top;
+      transformStateRef.current = {
+        id: element.id,
+        pointerId: event.pointerId,
+        kind: "resize",
+        handle,
+        origin,
+        width,
+        height,
+        rotation: element.rotation ?? 0,
+        fontSize: element.style.fontSize ?? DEFAULT_TEXT_STYLE.fontSize ?? 16,
+        element,
+      };
+      dragStateRef.current = null;
+    },
+    [],
+  );
 
-  if (element.element_type === "Frame") {
-    const title = element.properties.title ?? "Frame";
-    return (
-      <Group
-        x={rectX}
-        y={rectY}
-        draggable={isDragEnabled && !isLocked}
-        rotation={element.rotation ?? 0}
-        ref={handleRef}
-        onDragMove={(event) => {
-          const node = event.target;
-          const next = resolveRectDragPosition(element, node.x(), node.y());
-          onElementDragMove(element.id, next, {
-            allowSnap: !event.evt.altKey,
-          });
-        }}
-        onDragEnd={(event) => {
-          const node = event.target;
-          const next = resolveRectDragPosition(element, node.x(), node.y());
-          onElementDragEnd(element.id, next, {
-            allowSnap: !event.evt.altKey,
-          });
-        }}
-        onTransform={(event) => {
-          const node = event.target;
-          const scaleX = node.scaleX() || 1;
-          const scaleY = node.scaleY() || 1;
-          onElementTransform(element.id, {
-            position_x: node.x(),
-            position_y: node.y(),
-            width: rectWidth * scaleX,
-            height: rectHeight * scaleY,
-            rotation: node.rotation(),
-          });
-        }}
-        onTransformEnd={(event) => {
-          const node = event.target;
-          const scaleX = node.scaleX() || 1;
-          const scaleY = node.scaleY() || 1;
-          const nextWidth = rectWidth * scaleX;
-          const nextHeight = rectHeight * scaleY;
-          node.scaleX(1);
-          node.scaleY(1);
-          onElementTransformEnd(element.id, {
-            position_x: node.x(),
-            position_y: node.y(),
-            width: nextWidth,
-            height: nextHeight,
-            rotation: node.rotation(),
-          });
-        }}
-      >
-        <Rect
-          x={0}
-          y={0}
-          width={rectWidth}
-          height={rectHeight}
-          fill={element.style.fill}
-          stroke={element.style.stroke}
-          strokeWidth={element.style.strokeWidth}
-          dash={[10 / stageScale, 6 / stageScale]}
-        />
-        <KonvaText
-          x={12}
-          y={10}
-          text={title}
-          fontSize={14}
-          fill={element.style.stroke ?? "#FBBF24"}
-        />
-        {isSelected && (
-          <Rect
-            x={-selectionPadding}
-            y={-selectionPadding}
-            width={rectWidth + selectionPadding * 2}
-            height={rectHeight + selectionPadding * 2}
-            stroke={SELECTION_STROKE}
-            strokeWidth={selectionStrokeWidth}
-            dash={selectionDash}
-            listening={false}
-          />
-        )}
-      </Group>
-    );
-  }
+  const beginRotate = useCallback(
+    (event: FederatedPointerEvent, element: BoardElement) => {
+      event.stopPropagation();
+      const bounds = getElementBounds(element);
+      const origin = { x: bounds.left, y: bounds.top };
+      const width = bounds.right - bounds.left;
+      const height = bounds.bottom - bounds.top;
+      const rotation = element.rotation ?? 0;
+      const rotationRad = rotation * DEG_TO_RAD;
+      const centerOffset = rotatePoint({ x: width / 2, y: height / 2 }, rotationRad);
+      const center = { x: origin.x + centerOffset.x, y: origin.y + centerOffset.y };
+      const angle = Math.atan2(event.global.y - center.y, event.global.x - center.x);
+      transformStateRef.current = {
+        id: element.id,
+        pointerId: event.pointerId,
+        kind: "rotate",
+        origin,
+        width,
+        height,
+        rotation,
+        startAngle: angle,
+        center,
+        element,
+      };
+      dragStateRef.current = null;
+    },
+    [],
+  );
 
-  if (
-    element.element_type === "Image" ||
-    element.element_type === "Video" ||
-    element.element_type === "Embed" ||
-    element.element_type === "Document" ||
-    element.element_type === "Component"
-  ) {
-    const label = MEDIA_LABELS[element.element_type] ?? element.element_type;
-    return (
-      <Group
-        x={rectX}
-        y={rectY}
-        draggable={isDragEnabled && !isLocked}
-        rotation={element.rotation ?? 0}
-        ref={handleRef}
-        onDragMove={(event) => {
-          const node = event.target;
-          const next = resolveRectDragPosition(element, node.x(), node.y());
-          onElementDragMove(element.id, next, {
-            allowSnap: !event.evt.altKey,
-          });
-        }}
-        onDragEnd={(event) => {
-          const node = event.target;
-          const next = resolveRectDragPosition(element, node.x(), node.y());
-          onElementDragEnd(element.id, next, {
-            allowSnap: !event.evt.altKey,
-          });
-        }}
-        onTransform={(event) => {
-          const node = event.target;
-          const scaleX = node.scaleX() || 1;
-          const scaleY = node.scaleY() || 1;
-          onElementTransform(element.id, {
-            position_x: node.x(),
-            position_y: node.y(),
-            width: rectWidth * scaleX,
-            height: rectHeight * scaleY,
-            rotation: node.rotation(),
-          });
-        }}
-        onTransformEnd={(event) => {
-          const node = event.target;
-          const scaleX = node.scaleX() || 1;
-          const scaleY = node.scaleY() || 1;
-          const nextWidth = rectWidth * scaleX;
-          const nextHeight = rectHeight * scaleY;
-          node.scaleX(1);
-          node.scaleY(1);
-          onElementTransformEnd(element.id, {
-            position_x: node.x(),
-            position_y: node.y(),
-            width: nextWidth,
-            height: nextHeight,
-            rotation: node.rotation(),
-          });
-        }}
-      >
-        <Rect
-          x={0}
-          y={0}
-          width={rectWidth}
-          height={rectHeight}
-          fill={element.style.fill}
-          stroke={element.style.stroke}
-          strokeWidth={element.style.strokeWidth}
-          cornerRadius={element.style.cornerRadius ?? 12}
-        />
-        <KonvaText
-          x={0}
-          y={0}
-          width={rectWidth}
-          height={rectHeight}
-          text={label}
-          fontSize={14}
-          fill="#E2E8F0"
-          align="center"
-          verticalAlign="middle"
-        />
-        {isSelected && (
-          <Rect
-            x={-selectionPadding}
-            y={-selectionPadding}
-            width={rectWidth + selectionPadding * 2}
-            height={rectHeight + selectionPadding * 2}
-            stroke={SELECTION_STROKE}
-            strokeWidth={selectionStrokeWidth}
-            dash={selectionDash}
-            listening={false}
-          />
-        )}
-      </Group>
-    );
-  }
+  const isDoubleTap = useCallback((id: string, event: FederatedPointerEvent) => {
+    const now = event.originalEvent.timeStamp ?? performance.now();
+    const last = lastTapRef.current;
+    lastTapRef.current = { id, time: now };
+    if (!last) return false;
+    return last.id === id && now - last.time < 350;
+  }, []);
 
-  return null;
-});
-
-const SelectionOverlayLayer = memo(function SelectionOverlayLayer({
-  selectionPresence,
-  elements,
-  selectionStrokeWidth,
-  selectionDash,
-  selectionPadding,
-  stageScale,
-}: SelectionOverlayLayerProps) {
   const selectionOverlays = useMemo(() => {
     if (selectionPresence.length === 0) return [];
-    const elementMap = new Map(elements.map((element) => [element.id, element]));
-    const overlays: SelectionOverlay[] = [];
+    const overlays: Array<{ key: string; element: BoardElement; color: string; label?: string }> = [];
     selectionPresence.forEach((presence) => {
       let labelUsed = false;
       presence.element_ids.forEach((elementId) => {
         const element = elementMap.get(elementId);
         if (!element) return;
-        const isEditing = presence.editing?.element_id === elementId;
         overlays.push({
           key: `${presence.user_id}:${elementId}`,
           element,
           color: presence.color,
           label: !labelUsed ? presence.user_name : undefined,
-          isEditing,
         });
-        if (!labelUsed) {
-          labelUsed = true;
-        }
+        if (!labelUsed) labelUsed = true;
       });
     });
     return overlays;
-  }, [elements, selectionPresence]);
+  }, [elementMap, selectionPresence]);
+
+  const transformHandles = useMemo(() => {
+    if (!primarySelectedElement || !canTransform) return null;
+    if (primarySelectedElement.element_type === "Drawing" || primarySelectedElement.element_type === "Connector") {
+      return null;
+    }
+    const bounds = getElementBounds(primarySelectedElement);
+    const rotation = (primarySelectedElement.rotation ?? 0) * DEG_TO_RAD;
+    const origin = { x: bounds.left, y: bounds.top };
+    const width = bounds.right - bounds.left;
+    const height = bounds.bottom - bounds.top;
+    const corners = [
+      { key: "nw", local: { x: 0, y: 0 } },
+      { key: "ne", local: { x: width, y: 0 } },
+      { key: "se", local: { x: width, y: height } },
+      { key: "sw", local: { x: 0, y: height } },
+    ];
+    const handles = corners.map((corner) => {
+      const rotated = rotatePoint(corner.local, rotation);
+      return {
+        key: corner.key as "nw" | "ne" | "se" | "sw",
+        x: origin.x + rotated.x,
+        y: origin.y + rotated.y,
+      };
+    });
+    const topCenter = rotatePoint({ x: width / 2, y: 0 }, rotation);
+    const rotateOffset = rotatePoint({ x: 0, y: -rotateHandleOffset }, rotation);
+    const rotateHandle = {
+      x: origin.x + topCenter.x + rotateOffset.x,
+      y: origin.y + topCenter.y + rotateOffset.y,
+    };
+    const rotateLineStart = {
+      x: origin.x + topCenter.x,
+      y: origin.y + topCenter.y,
+    };
+    return {
+      element: primarySelectedElement,
+      handles,
+      rotateHandle,
+      rotateLineStart,
+    };
+  }, [canTransform, primarySelectedElement, rotateHandleOffset]);
 
   return (
-    <>
-      {selectionOverlays.map((overlay) => {
-        const element = overlay.element;
-        const overlayStrokeWidth = overlay.isEditing
-          ? selectionStrokeWidth * 1.6
-          : selectionStrokeWidth;
-        const overlayDash = overlay.isEditing ? undefined : selectionDash;
-        const bounds = getElementBounds(element);
-        const labelFontSize = 11 / stageScale;
-        const labelOffset = 6 / stageScale;
-        const label =
-          overlay.label && bounds ? (
-            <KonvaText
-              x={bounds.x}
-              y={bounds.y - labelFontSize - labelOffset}
-              text={overlay.label}
-              fontSize={labelFontSize}
-              fill={overlay.color}
-              listening={false}
-            />
-          ) : null;
+    <pixiContainer
+      ref={viewportRef}
+      x={stagePosition.x}
+      y={stagePosition.y}
+      scale={stageScale}
+      eventMode="static"
+      hitArea={new Rectangle(worldRect.x, worldRect.y, worldRect.width, worldRect.height)}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerUpOutside={handlePointerUp}
+    >
+      <pixiGraphics
+        draw={(graphics) => {
+          graphics.clear();
+          setFillStyle(graphics, parseColor(backgroundColor, 0x141414));
+          graphics.rect(worldRect.x, worldRect.y, worldRect.width, worldRect.height);
+          graphics.fill();
+        }}
+      />
+
+      <pixiGraphics
+        draw={(graphics) => {
+          graphics.clear();
+          gridLines.forEach((line) => {
+            const color = line.major ? 0x2f2f2f : 0x222222;
+            setStrokeStyle(graphics, (line.major ? 1.2 : 1) / stageScale, color);
+            graphics.moveTo(line.points[0], line.points[1]);
+            graphics.lineTo(line.points[2], line.points[3]);
+            graphics.stroke();
+          });
+        }}
+      />
+
+      {renderElements.map((element) => {
+        const isSelected = selectedSet.has(element.id);
+        const isLocked = lockedElementIds.has(element.id);
+        const isInteractive = isDragEnabled && !isLocked;
+        if (element.element_type === "Shape") {
+          if (element.properties.shapeType === "rectangle") {
+            const rect = getRectBounds(element);
+            return (
+              <pixiContainer
+                key={element.id}
+                ref={(node) => registerElementRef(element.id, node)}
+                x={rect.x}
+                y={rect.y}
+                rotation={(element.rotation ?? 0) * DEG_TO_RAD}
+                eventMode={isInteractive ? "static" : "passive"}
+                onPointerDown={(event: FederatedPointerEvent) => handleElementPointerDown(event, element)}
+              >
+                <pixiGraphics
+                  draw={(graphics) => {
+                  graphics.clear();
+                  const stroke = parseColor(element.style.stroke, 0xffffff);
+                  const fill = parseColor(element.style.fill, 0x000000);
+                  const strokeWidth = element.style.strokeWidth ?? 1;
+                  setStrokeStyle(graphics, strokeWidth, stroke);
+                  setFillStyle(graphics, fill);
+                  graphics.rect(0, 0, rect.width, rect.height);
+                  graphics.fill();
+                  graphics.stroke();
+                }}
+              />
+              {isSelected && (
+                <pixiGraphics
+                  draw={(graphics) => {
+                    graphics.clear();
+                    setStrokeStyle(graphics, selectionStrokeWidth, parseColor(SELECTION_STROKE));
+                    graphics.rect(
+                      -selectionPadding,
+                      -selectionPadding,
+                      rect.width + selectionPadding * 2,
+                      rect.height + selectionPadding * 2,
+                    );
+                    graphics.stroke();
+                  }}
+                />
+              )}
+            </pixiContainer>
+            );
+          }
+          if (element.properties.shapeType === "circle") {
+            const radius = Math.hypot(element.width || 0, element.height || 0);
+            const positionX = coerceNumber(element.position_x, 0);
+            const positionY = coerceNumber(element.position_y, 0);
+            return (
+              <pixiContainer
+                key={element.id}
+                ref={(node) => registerElementRef(element.id, node)}
+                x={positionX}
+                y={positionY}
+                rotation={(element.rotation ?? 0) * DEG_TO_RAD}
+                eventMode={isInteractive ? "static" : "passive"}
+                onPointerDown={(event: FederatedPointerEvent) => handleElementPointerDown(event, element)}
+              >
+                <pixiGraphics
+                  draw={(graphics) => {
+                  graphics.clear();
+                  const stroke = parseColor(element.style.stroke, 0xffffff);
+                  const fill = parseColor(element.style.fill, 0x000000);
+                  const strokeWidth = element.style.strokeWidth ?? 1;
+                  setStrokeStyle(graphics, strokeWidth, stroke);
+                  setFillStyle(graphics, fill);
+                  graphics.circle(0, 0, radius);
+                  graphics.fill();
+                  graphics.stroke();
+                }}
+              />
+              {isSelected && (
+                <pixiGraphics
+                  draw={(graphics) => {
+                    graphics.clear();
+                    setStrokeStyle(graphics, selectionStrokeWidth, parseColor(SELECTION_STROKE));
+                    graphics.circle(0, 0, radius + selectionPadding);
+                    graphics.stroke();
+                  }}
+                />
+              )}
+            </pixiContainer>
+            );
+          }
+        }
 
         if (element.element_type === "Drawing") {
           const points = element.properties.points;
-          if (!Array.isArray(points) || !isValidDrawingPoints(points)) {
-            warnInvalidElementOnce(element, "invalid drawing points");
-            return label ? <Fragment key={overlay.key}>{label}</Fragment> : null;
-          }
+          if (!Array.isArray(points) || !isValidDrawingPoints(points)) return null;
           const positionX = coerceNumber(element.position_x, 0);
           const positionY = coerceNumber(element.position_y, 0);
           return (
-            <Fragment key={overlay.key}>
-              <Line
-                x={positionX}
-                y={positionY}
-                points={points}
-                stroke={overlay.color}
-                strokeWidth={(element.style.strokeWidth ?? 1) + overlayStrokeWidth}
-                lineCap="round"
-                lineJoin="round"
-                dash={overlayDash}
-                listening={false}
+            <pixiContainer
+              key={element.id}
+              ref={(node) => registerElementRef(element.id, node)}
+              x={positionX}
+              y={positionY}
+              rotation={(element.rotation ?? 0) * DEG_TO_RAD}
+              eventMode={isInteractive ? "static" : "passive"}
+              onPointerDown={(event: FederatedPointerEvent) => handleElementPointerDown(event, element)}
+            >
+              <pixiGraphics
+                draw={(graphics) => {
+                  graphics.clear();
+                  drawPolyline(
+                    graphics,
+                    points,
+                    element.style.strokeWidth ?? 2,
+                    parseColor(element.style.stroke, 0xffffff),
+                  );
+                }}
               />
-              {label}
-            </Fragment>
+            </pixiContainer>
+          );
+        }
+
+        if (element.element_type === "Text") {
+          const positionX = coerceNumber(element.position_x, 0);
+          const positionY = coerceNumber(element.position_y, 0);
+          const fontSize = element.style.fontSize ?? DEFAULT_TEXT_STYLE.fontSize ?? 16;
+          const content = element.properties?.content ?? "";
+          const metrics = getTextMetrics(content, fontSize);
+          return (
+            <pixiContainer
+              key={element.id}
+              ref={(node) => registerElementRef(element.id, node)}
+              x={positionX}
+              y={positionY}
+              rotation={(element.rotation ?? 0) * DEG_TO_RAD}
+              eventMode={isInteractive ? "static" : "passive"}
+              onPointerDown={(event: FederatedPointerEvent) => handleElementPointerDown(event, element)}
+              onPointerTap={(event: FederatedPointerEvent) => {
+                if (!isDoubleTap(element.id, event)) return;
+                onOpenTextEditor({
+                  x: positionX,
+                  y: positionY,
+                  value: content,
+                  elementId: element.id,
+                  fontSize,
+                  color: element.style.textColor ?? DEFAULT_TEXT_STYLE.fill ?? "#1F2937",
+                  elementType: "Text",
+                });
+              }}
+            >
+              <pixiText
+                text={content}
+                style={{
+                  fontSize,
+                  fill: element.style.textColor ?? DEFAULT_TEXT_STYLE.fill ?? "#1F2937",
+                }}
+              />
+              {isSelected && (
+                <pixiGraphics
+                  draw={(graphics) => {
+                    graphics.clear();
+                    setStrokeStyle(graphics, selectionStrokeWidth, parseColor(SELECTION_STROKE));
+                    graphics.rect(
+                      -selectionPadding,
+                      -selectionPadding,
+                      metrics.width + selectionPadding * 2,
+                      metrics.height + selectionPadding * 2,
+                    );
+                    graphics.stroke();
+                  }}
+                />
+              )}
+            </pixiContainer>
+          );
+        }
+
+        if (element.element_type === "StickyNote") {
+          const rect = getRectBounds(element);
+          const fontSize = element.style.fontSize ?? 16;
+          const content = element.properties?.content ?? "";
+          const padding = 12;
+          return (
+            <pixiContainer
+              key={element.id}
+              ref={(node) => registerElementRef(element.id, node)}
+              x={rect.x}
+              y={rect.y}
+              rotation={(element.rotation ?? 0) * DEG_TO_RAD}
+              eventMode={isInteractive ? "static" : "passive"}
+              onPointerDown={(event: FederatedPointerEvent) => handleElementPointerDown(event, element)}
+              onPointerTap={(event: FederatedPointerEvent) => {
+                if (!isDoubleTap(element.id, event)) return;
+                onOpenTextEditor({
+                  x: rect.x + padding,
+                  y: rect.y + padding,
+                  value: content,
+                  elementId: element.id,
+                  fontSize,
+                  color: element.style.textColor ?? "#1F2937",
+                  elementType: "StickyNote",
+                  backgroundColor: element.style.fill,
+                  editorWidth: Math.max(0, rect.width - padding * 2),
+                  editorHeight: Math.max(0, rect.height - padding * 2),
+                });
+              }}
+            >
+              <pixiGraphics
+                draw={(graphics) => {
+                  graphics.clear();
+                  const stroke = parseColor(element.style.stroke, 0xffffff);
+                  const fill = parseColor(element.style.fill, 0xfff9c2);
+                  const strokeWidth = element.style.strokeWidth ?? 1;
+                  setStrokeStyle(graphics, strokeWidth, stroke);
+                  setFillStyle(graphics, fill);
+                  graphics.roundRect(0, 0, rect.width, rect.height, element.style.cornerRadius ?? 12);
+                  graphics.fill();
+                  graphics.stroke();
+                }}
+              />
+              <pixiText
+                text={content}
+                x={padding}
+                y={padding}
+                style={{
+                  fontSize,
+                  fill: element.style.textColor ?? "#1F2937",
+                  wordWrap: true,
+                  wordWrapWidth: Math.max(0, rect.width - padding * 2),
+                }}
+              />
+              {isSelected && (
+                <pixiGraphics
+                  draw={(graphics) => {
+                    graphics.clear();
+                    setStrokeStyle(graphics, selectionStrokeWidth, parseColor(SELECTION_STROKE));
+                    graphics.rect(
+                      -selectionPadding,
+                      -selectionPadding,
+                      rect.width + selectionPadding * 2,
+                      rect.height + selectionPadding * 2,
+                    );
+                    graphics.stroke();
+                  }}
+                />
+              )}
+            </pixiContainer>
           );
         }
 
         if (element.element_type === "Connector") {
           const points = resolveConnectorPoints(element);
-          if (!points || points.length < 4) {
-            return label ? <Fragment key={overlay.key}>{label}</Fragment> : null;
-          }
+          if (!points || points.length < 4) return null;
           return (
-            <Fragment key={overlay.key}>
-              <Line
-                points={points}
-                stroke={overlay.color}
-                strokeWidth={(element.style.strokeWidth ?? 1) + overlayStrokeWidth}
-                lineCap="round"
-                lineJoin="round"
-                dash={overlayDash}
-                listening={false}
+            <pixiContainer
+              key={element.id}
+              ref={(node) => registerElementRef(element.id, node)}
+              eventMode={isInteractive ? "static" : "passive"}
+              onPointerDown={(event: FederatedPointerEvent) => handleElementPointerDown(event, element)}
+            >
+              <pixiGraphics
+                draw={(graphics) => {
+                  graphics.clear();
+                  drawPolyline(
+                    graphics,
+                    normalizeOrthogonalPoints(points),
+                    element.style.strokeWidth ?? 2,
+                    parseColor(element.style.stroke, 0xffffff),
+                  );
+                }}
               />
-              {label}
-            </Fragment>
+            </pixiContainer>
           );
         }
 
-        if (
-          element.element_type === "Shape" &&
-          element.properties.shapeType === "circle"
-        ) {
-          const radius = Math.hypot(element.width || 0, element.height || 0);
-          const positionX = coerceNumber(element.position_x, 0);
-          const positionY = coerceNumber(element.position_y, 0);
-          return (
-            <Fragment key={overlay.key}>
-              <Circle
-                x={positionX}
-                y={positionY}
-                radius={radius + selectionPadding}
-                stroke={overlay.color}
-                strokeWidth={overlayStrokeWidth}
-                dash={overlayDash}
-                listening={false}
-              />
-              {label}
-            </Fragment>
-          );
-        }
+        return null;
+      })}
 
-        if (element.element_type === "Text") {
-          const content = element.properties.content || "";
-          const fontSize = element.style.fontSize ?? DEFAULT_TEXT_STYLE.fontSize;
-          const { width: textWidth, height: textHeight } = getTextMetrics(
-            content,
-            fontSize,
-          );
-          const positionX = coerceNumber(element.position_x, 0);
-          const positionY = coerceNumber(element.position_y, 0);
-          return (
-            <Fragment key={overlay.key}>
-              <Group
-                x={positionX}
-                y={positionY}
-                rotation={element.rotation ?? 0}
-                listening={false}
-              >
-                <Rect
-                  x={-selectionPadding}
-                  y={-selectionPadding}
-                  width={textWidth + selectionPadding * 2}
-                  height={textHeight + selectionPadding * 2}
-                  stroke={overlay.color}
-                  strokeWidth={overlayStrokeWidth}
-                  dash={overlayDash}
-                  listening={false}
-                />
-              </Group>
-              {label}
-            </Fragment>
-          );
-        }
+      {ghostElement && (
+        <pixiGraphics
+          draw={(graphics) => {
+            graphics.clear();
+            if (ghostElement.element_type === "Shape" && ghostElement.properties.shapeType === "rectangle") {
+              const rect = getRectBounds(ghostElement);
+              setStrokeStyle(
+                graphics,
+                (ghostElement.style.strokeWidth ?? 2) / stageScale,
+                parseColor(ghostElement.style.stroke),
+              );
+              setFillStyle(graphics, parseColor(ghostElement.style.fill), 0.25);
+              graphics.rect(rect.x, rect.y, rect.width, rect.height);
+              graphics.fill();
+              graphics.stroke();
+            }
+          }}
+        />
+      )}
 
-        const rectBounds = getRectBounds(element);
+      {snapGuides.map((guide, index) => {
+        const points = guide.orientation === "vertical"
+          ? [guide.position, worldRect.y, guide.position, worldRect.y + worldRect.height]
+          : [worldRect.x, guide.position, worldRect.x + worldRect.width, guide.position];
+        return (
+          <pixiGraphics
+            key={`snap-${index}`}
+            draw={(graphics) => {
+              graphics.clear();
+              setStrokeStyle(
+                graphics,
+                snapStrokeWidth,
+                parseColor(guide.orientation === "vertical" ? SNAP_GUIDE_COLORS.vertical : SNAP_GUIDE_COLORS.horizontal),
+              );
+              graphics.moveTo(points[0], points[1]);
+              graphics.lineTo(points[2], points[3]);
+              graphics.stroke();
+            }}
+          />
+        );
+      })}
+
+      {selectionOverlays.map((overlay) => {
+        const rawBounds = getElementBounds(overlay.element);
+        if (!rawBounds) return null;
+        const bounds = toRectBounds(rawBounds);
+        const labelFontSize = 11 / stageScale;
+        const labelOffset = 6 / stageScale;
         return (
           <Fragment key={overlay.key}>
-            <Group
-              x={rectBounds.x}
-              y={rectBounds.y}
-              rotation={element.rotation ?? 0}
-              listening={false}
-            >
-              <Rect
-                x={-selectionPadding}
-                y={-selectionPadding}
-                width={rectBounds.width + selectionPadding * 2}
-                height={rectBounds.height + selectionPadding * 2}
-                stroke={overlay.color}
-                strokeWidth={overlayStrokeWidth}
-                dash={overlayDash}
-                listening={false}
+            <pixiGraphics
+              draw={(graphics) => {
+                graphics.clear();
+                setStrokeStyle(graphics, selectionStrokeWidth, parseColor(overlay.color));
+                graphics.rect(
+                  bounds.x - selectionPadding,
+                  bounds.y - selectionPadding,
+                  bounds.width + selectionPadding * 2,
+                  bounds.height + selectionPadding * 2,
+                );
+                graphics.stroke();
+              }}
+            />
+            {overlay.label && (
+              <pixiText
+                text={overlay.label}
+                x={bounds.x}
+                y={bounds.y - labelFontSize - labelOffset}
+                style={{
+                  fontSize: labelFontSize,
+                  fill: overlay.color,
+                }}
               />
-            </Group>
-            {label}
+            )}
           </Fragment>
         );
       })}
-    </>
+
+      {cursorList
+        .filter((cursor) => cursor.x !== null && cursor.y !== null)
+        .map((cursor) => (
+          <CursorMarker key={cursor.client_id} cursor={cursor} />
+        ))}
+
+      {transformHandles && (
+        <pixiContainer eventMode="static">
+          <pixiGraphics
+            draw={(graphics) => {
+              graphics.clear();
+              setStrokeStyle(graphics, selectionStrokeWidth, parseColor(SELECTION_STROKE));
+              graphics.moveTo(transformHandles.rotateLineStart.x, transformHandles.rotateLineStart.y);
+              graphics.lineTo(transformHandles.rotateHandle.x, transformHandles.rotateHandle.y);
+              graphics.stroke();
+            }}
+          />
+          <pixiGraphics
+            x={transformHandles.rotateHandle.x}
+            y={transformHandles.rotateHandle.y}
+            eventMode="static"
+            onPointerDown={(event: FederatedPointerEvent) =>
+              beginRotate(event, transformHandles.element)
+            }
+            draw={(graphics) => {
+              graphics.clear();
+              setFillStyle(graphics, parseColor(SELECTION_STROKE));
+              graphics.circle(0, 0, handleSize / 2);
+              graphics.fill();
+            }}
+          />
+          {transformHandles.handles.map((handle) => (
+            <pixiGraphics
+              key={handle.key}
+              x={handle.x}
+              y={handle.y}
+              eventMode="static"
+              onPointerDown={(event: FederatedPointerEvent) =>
+                beginResize(event, transformHandles.element, handle.key)
+              }
+              draw={(graphics) => {
+                graphics.clear();
+                setFillStyle(graphics, 0xffffff);
+                setStrokeStyle(graphics, 1 / stageScale, parseColor(SELECTION_STROKE));
+                graphics.rect(-handleSize / 2, -handleSize / 2, handleSize, handleSize);
+                graphics.fill();
+                graphics.stroke();
+              }}
+            />
+          ))}
+        </pixiContainer>
+      )}
+    </pixiContainer>
   );
-});
+}
 
 export function BoardCanvasStage({
   stageRef,
@@ -1505,300 +1270,66 @@ export function BoardCanvasStage({
   onDrawingDragEnd,
   onOpenTextEditor,
 }: BoardCanvasStageProps) {
-  const selectionStrokeWidth = 2 / stageScale;
-  const selectionDash = useMemo(
-    () => [6 / stageScale, 4 / stageScale],
-    [stageScale],
-  );
-  const selectionPadding = 6 / stageScale;
-  const [transformerModifiers, setTransformerModifiers] = useState({
-    keepRatio: false,
-    centeredScaling: false,
-  });
-  const elementRefs = useRef<Map<string, Konva.Node>>(new Map());
-  const transformerRef = useRef<Konva.Transformer | null>(null);
-  const hydratedRef = useRef(false);
-  const knownElementIdsRef = useRef<Set<string>>(new Set());
-  const pendingSpawnIdsRef = useRef<Set<string>>(new Set());
-  const selectedSet = useMemo(
-    () => new Set(selectedElementIds),
-    [selectedElementIds],
-  );
-  const primarySelectedId =
-    selectedElementIds.length === 1 ? selectedElementIds[0] : null;
-  const canTransform = primarySelectedId
-    ? !lockedElementIds.has(primarySelectedId)
-    : false;
-  const primarySelectedElement = useMemo(() => {
-    if (!primarySelectedId) return null;
-    return elements.find((element) => element.id === primarySelectedId) ?? null;
-  }, [elements, primarySelectedId]);
-  const forceKeepRatio = useMemo(() => {
-    if (!primarySelectedElement) return false;
-    if (primarySelectedElement.element_type === "Text") {
-      return true;
-    }
-    return (
-      primarySelectedElement.element_type === "Shape" &&
-      primarySelectedElement.properties.shapeType === "circle"
-    );
-  }, [primarySelectedElement]);
-  const keepRatio = transformerModifiers.keepRatio || forceKeepRatio;
-  const centeredScaling = transformerModifiers.centeredScaling;
-  const prefersReducedMotion = useMemo(() => {
-    if (typeof window === "undefined" || !window.matchMedia) return false;
-    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  }, []);
-
-  const animateSpawn = useCallback(
-    (node: Konva.Node) => {
-      if (prefersReducedMotion) return;
-      node.opacity(0);
-      node.scale({ x: 0.96, y: 0.96 });
-      node.to({
-        opacity: 1,
-        scaleX: 1,
-        scaleY: 1,
-        duration: 0.18,
-      });
-    },
-    [prefersReducedMotion],
-  );
-
-  const registerElementRef = useCallback(
-    (id: string, node: Konva.Node | null) => {
-      if (!node) {
-        elementRefs.current.delete(id);
-        return;
-      }
-      elementRefs.current.set(id, node);
-      if (pendingSpawnIdsRef.current.has(id)) {
-        pendingSpawnIdsRef.current.delete(id);
-        animateSpawn(node);
-      }
-    },
-    [animateSpawn],
-  );
-
   useEffect(() => {
-    const transformer = transformerRef.current;
-    if (!transformer) return;
-    const node = canTransform && primarySelectedId
-      ? elementRefs.current.get(primarySelectedId) ?? null
-      : null;
-    if (node) {
-      transformer.nodes([node]);
-    } else {
-      transformer.nodes([]);
-    }
-    transformer.getLayer()?.batchDraw();
-  }, [canTransform, primarySelectedId]);
-  useEffect(() => {
-    if (!hydratedRef.current) {
-      knownElementIdsRef.current = new Set(elements.map((element) => element.id));
-      hydratedRef.current = true;
-      return;
-    }
-    const nextIds = new Set(elements.map((element) => element.id));
-    nextIds.forEach((id) => {
-      if (!knownElementIdsRef.current.has(id)) {
-        pendingSpawnIdsRef.current.add(id);
-        const node = elementRefs.current.get(id);
-        if (node) {
-          pendingSpawnIdsRef.current.delete(id);
-          animateSpawn(node);
-        }
-      }
-    });
-    knownElementIdsRef.current = nextIds;
-  }, [animateSpawn, elements]);
-  useEffect(() => {
-    const updateModifiers = (event: KeyboardEvent) => {
-      setTransformerModifiers({
-        keepRatio: event.shiftKey,
-        centeredScaling: event.altKey,
+    const container = stageRef.current;
+    if (!container) return;
+    const handleWheelEvent = (event: WheelEvent) => {
+      const rect = container.getBoundingClientRect();
+      onWheel({
+        screen: { x: event.clientX - rect.left, y: event.clientY - rect.top },
+        deltaX: event.deltaX,
+        deltaY: event.deltaY,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        originalEvent: event,
       });
     };
-    const resetModifiers = () => {
-      setTransformerModifiers({ keepRatio: false, centeredScaling: false });
-    };
-    window.addEventListener("keydown", updateModifiers, { passive: true });
-    window.addEventListener("keyup", updateModifiers, { passive: true });
-    window.addEventListener("blur", resetModifiers);
+    container.addEventListener("wheel", handleWheelEvent, { passive: false });
     return () => {
-      window.removeEventListener("keydown", updateModifiers);
-      window.removeEventListener("keyup", updateModifiers);
-      window.removeEventListener("blur", resetModifiers);
+      container.removeEventListener("wheel", handleWheelEvent);
     };
-  }, []);
-  const renderElements = useMemo(() => {
-    if (cursorList.length === 0) return elements;
-    const elementMap = new Map(elements.map((element) => [element.id, element]));
-    const overrides = new Map<string, BoardElement>();
-    const EPSILON = 0.5; // Threshold for position changes to reduce flickering
-
-    cursorList.forEach((cursor) => {
-      const drag = cursor.dragging;
-      if (!drag) return;
-      const element = elementMap.get(drag.element_id);
-      if (!element) return;
-      if (localOverrideIds.has(drag.element_id)) return;
-
-      // Check if changes are significant enough to warrant an update
-      const hasSignificantChange =
-        (typeof drag.position_x === "number" && Math.abs(element.position_x - drag.position_x) > EPSILON) ||
-        (typeof drag.position_y === "number" && Math.abs(element.position_y - drag.position_y) > EPSILON) ||
-        (typeof drag.width === "number" && Math.abs(element.width - drag.width) > EPSILON) ||
-        (typeof drag.height === "number" && Math.abs(element.height - drag.height) > EPSILON) ||
-        (typeof drag.rotation === "number" && Math.abs((element.rotation ?? 0) - drag.rotation) > EPSILON);
-
-      if (!hasSignificantChange) return;
-
-      const next = { ...element };
-      if (typeof drag.position_x === "number") {
-        next.position_x = drag.position_x;
-      }
-      if (typeof drag.position_y === "number") {
-        next.position_y = drag.position_y;
-      }
-      if (typeof drag.width === "number") {
-        next.width = drag.width;
-      }
-      if (typeof drag.height === "number") {
-        next.height = drag.height;
-      }
-      if (typeof drag.rotation === "number") {
-        next.rotation = drag.rotation;
-      }
-      overrides.set(drag.element_id, next);
-    });
-    if (overrides.size === 0) return elements;
-    return elements.map((element) => overrides.get(element.id) ?? element);
-  }, [cursorList, elements, localOverrideIds]);
-  const visibleCursors = useMemo(
-    () => cursorList.filter((cursor) => cursor.x !== null && cursor.y !== null),
-    [cursorList],
-  );
+  }, [onWheel, stageRef]);
 
   return (
-    <Stage
+    <div
       ref={stageRef}
-      width={width}
-      height={height}
-      scaleX={stageScale}
-      scaleY={stageScale}
-      x={stagePosition.x}
-      y={stagePosition.y}
-      onMouseDown={onMouseDown}
-      onMouseMove={onMouseMove}
-      onMouseUp={onMouseUp}
-      onMouseLeave={onMouseLeave}
-      onWheel={onWheel}
+      className="w-full h-full"
+      onPointerLeave={onMouseLeave}
     >
-      <Layer>
-        <Rect
-          x={worldRect.x}
-          y={worldRect.y}
-          width={worldRect.width}
-          height={worldRect.height}
-          fill={backgroundColor}
-          listening={false}
-        />
-        {gridLines.map((line, index) => (
-          <Line
-            key={`grid-${index}`}
-            points={line.points}
-            stroke={line.major ? "#2F2F2F" : "#222222"}
-            strokeWidth={(line.major ? 1.2 : 1) / stageScale}
-            listening={false}
-          />
-        ))}
-
-        {renderElements.map((element) => (
-          <ElementRenderer
-            key={element.id}
-            element={element}
-            isSelected={selectedSet.has(element.id)}
-            isLocked={lockedElementIds.has(element.id)}
-            isDragEnabled={isDragEnabled}
-            selectionStrokeWidth={selectionStrokeWidth}
-            selectionDash={selectionDash}
-            selectionPadding={selectionPadding}
-            stageScale={stageScale}
-            registerElementRef={registerElementRef}
-            onElementDragMove={onElementDragMove}
-            onElementDragEnd={onElementDragEnd}
-            onElementTransform={onElementTransform}
-            onElementTransformEnd={onElementTransformEnd}
-            onDrawingDragEnd={onDrawingDragEnd}
-            onOpenTextEditor={onOpenTextEditor}
-          />
-        ))}
-
-        {ghostElement && (
-          <GhostElementRenderer
-            element={ghostElement}
-            stageScale={stageScale}
-          />
-        )}
-
-        <SelectionOverlayLayer
-          selectionPresence={selectionPresence}
-          elements={renderElements}
-          selectionStrokeWidth={selectionStrokeWidth}
-          selectionDash={selectionDash}
-          selectionPadding={selectionPadding}
+      <Application
+        width={width}
+        height={height}
+        antialias
+        backgroundAlpha={0}
+      >
+        <PixiScene
+          width={width}
+          height={height}
           stageScale={stageScale}
+          stagePosition={stagePosition}
+          worldRect={worldRect}
+          backgroundColor={backgroundColor}
+          gridLines={gridLines}
+          snapGuides={snapGuides}
+          elements={elements}
+          ghostElement={ghostElement}
+          selectedElementIds={selectedElementIds}
+          selectionPresence={selectionPresence}
+          cursorList={cursorList}
+          localOverrideIds={localOverrideIds}
+          lockedElementIds={lockedElementIds}
+          isDragEnabled={isDragEnabled}
+          onMouseDown={onMouseDown}
+          onMouseMove={onMouseMove}
+          onMouseUp={onMouseUp}
+          onElementDragMove={onElementDragMove}
+          onElementDragEnd={onElementDragEnd}
+          onElementTransform={onElementTransform}
+          onElementTransformEnd={onElementTransformEnd}
+          onDrawingDragEnd={onDrawingDragEnd}
+          onOpenTextEditor={onOpenTextEditor}
         />
-
-        {snapGuides.map((guide, index) => {
-          const points =
-            guide.orientation === "vertical"
-              ? [guide.position, guide.start, guide.position, guide.end]
-              : [guide.start, guide.position, guide.end, guide.position];
-          return (
-            <Line
-              key={`snap-${index}`}
-              points={points}
-              stroke={
-                guide.orientation === "vertical"
-                  ? SNAP_GUIDE_COLORS.vertical
-                  : SNAP_GUIDE_COLORS.horizontal
-              }
-              strokeWidth={1.5 / stageScale}
-              listening={false}
-            />
-          );
-        })}
-
-        {visibleCursors.map((cursor) => (
-          <CursorMarker key={cursor.client_id} cursor={cursor} />
-        ))}
-
-        {primarySelectedId && canTransform && (
-          <Transformer
-            ref={transformerRef}
-            rotateEnabled
-            keepRatio={keepRatio}
-            centeredScaling={centeredScaling}
-            enabledAnchors={[
-              "top-left",
-              "top-right",
-              "bottom-left",
-              "bottom-right",
-            ]}
-            boundBoxFunc={(oldBox, newBox) => {
-              if (
-                newBox.width < MIN_TRANSFORM_SIZE ||
-                newBox.height < MIN_TRANSFORM_SIZE
-              ) {
-                return oldBox;
-              }
-              return newBox;
-            }}
-          />
-        )}
-      </Layer>
-    </Stage>
+      </Application>
+    </div>
   );
 }
