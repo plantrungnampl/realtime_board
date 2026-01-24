@@ -19,6 +19,7 @@ import type { CursorBroadcast, SelectionPresence } from "@/features/boards/types
 import { DEFAULT_TEXT_STYLE } from "@/features/boards/boardRoute/elements";
 import { getTextMetrics } from "@/features/boards/boardRoute.utils";
 import type { SnapGuide } from "@/features/boards/elementMove.utils";
+import { BoardGrid } from "@/features/boards/components/BoardGrid";
 
 type TextEditorPayload = {
   x: number;
@@ -46,7 +47,8 @@ type BoardCanvasStageProps = {
   onWheel: (event: KonvaEventObject<WheelEvent>) => void;
   worldRect: { x: number; y: number; width: number; height: number };
   backgroundColor: string;
-  gridLines: Array<{ points: number[]; major: boolean }>;
+  gridSize: number;
+  gridEnabled: boolean;
   snapGuides: SnapGuide[];
   elements: BoardElement[];
   ghostElement?: BoardElement | null;
@@ -1488,7 +1490,8 @@ export function BoardCanvasStage({
   onWheel,
   worldRect,
   backgroundColor,
-  gridLines,
+  gridSize,
+  gridEnabled,
   snapGuides,
   elements,
   ghostElement,
@@ -1704,15 +1707,12 @@ export function BoardCanvasStage({
           fill={backgroundColor}
           listening={false}
         />
-        {gridLines.map((line, index) => (
-          <Line
-            key={`grid-${index}`}
-            points={line.points}
-            stroke={line.major ? "#2F2F2F" : "#222222"}
-            strokeWidth={(line.major ? 1.2 : 1) / stageScale}
-            listening={false}
-          />
-        ))}
+        <BoardGrid
+          gridSize={gridSize}
+          gridEnabled={gridEnabled}
+          worldRect={worldRect}
+          stageScale={stageScale}
+        />
 
         {renderElements.map((element) => (
           <ElementRenderer

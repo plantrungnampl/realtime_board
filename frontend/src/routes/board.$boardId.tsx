@@ -293,13 +293,11 @@ function BoardComponent() {
       );
     };
   }, [setSelectedElementIds]);
-  const { gridLines, worldRect } = useBoardViewport({
+  const { worldRect } = useBoardViewport({
     dimensions,
     stageHeight,
     stageScale,
     stagePosition,
-    gridEnabled,
-    gridSize,
   });
   const {
     editableSelectedElements,
@@ -580,7 +578,8 @@ function BoardComponent() {
           onWheel: handleWheel,
           worldRect,
           backgroundColor,
-          gridLines,
+          gridSize,
+          gridEnabled,
           snapGuides,
           elements: renderElements,
           ghostElement: quickCreateGhost,
