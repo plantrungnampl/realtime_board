@@ -36,8 +36,7 @@ impl AppState {
 
         Self {
             db,
-            jwt_secret: std::env::var("JWT_SECRET")
-                .unwrap_or_else(|_| "zxcsgdfhegrfjherfgjetj".to_string()),
+            jwt_secret: std::env::var("JWT_SECRET").expect("JWT_SECRET must be set"),
             rooms: Arc::new(dashmap::DashMap::new()),
             redis,
             email_service,
