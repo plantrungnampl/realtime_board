@@ -123,9 +123,12 @@ export function BoardHeader({
           {visiblePresence.map((user) => (
             <div
               key={user.user_id}
-              className="relative w-8 h-8 rounded-full border-2 border-neutral-900 overflow-hidden flex items-center justify-center text-[10px] font-semibold text-neutral-900"
+              className="relative w-8 h-8 rounded-full border-2 border-neutral-900 overflow-hidden flex items-center justify-center text-[10px] font-semibold text-neutral-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/60 focus-visible:ring-offset-1 focus-visible:ring-offset-neutral-900"
               style={{ backgroundColor: user.color ?? "#EAB308" }}
               title={user.display_name}
+              role="img"
+              aria-label={`${user.display_name} (${user.status})`}
+              tabIndex={0}
             >
               {user.avatar_url ? (
                 <img
@@ -144,7 +147,12 @@ export function BoardHeader({
             </div>
           ))}
           {extraPresenceCount > 0 && (
-            <div className="w-8 h-8 rounded-full bg-neutral-800 border-2 border-neutral-900 flex items-center justify-center text-xs text-neutral-400">
+            <div
+              className="w-8 h-8 rounded-full bg-neutral-800 border-2 border-neutral-900 flex items-center justify-center text-xs text-neutral-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/60 focus-visible:ring-offset-1 focus-visible:ring-offset-neutral-900"
+              role="img"
+              aria-label={`${extraPresenceCount} more users`}
+              tabIndex={0}
+            >
               +{extraPresenceCount}
             </div>
           )}
