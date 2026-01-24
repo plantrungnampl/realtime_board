@@ -1,0 +1,187 @@
+{
+  "id": null,
+  "uid": "realtime-board-logs",
+  "title": "Realtime Board Logs",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "tags": [
+    "logs",
+    "realtime-board"
+  ],
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Request Rate (req/s)",
+      "datasource": "Loki",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate({job=\"realtime-board\"} |= \"Request completed\" [1m]))"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Error Rate (5xx) %",
+      "datasource": "Loki",
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "((sum(rate({job=\"realtime-board\"} |= \"Request completed\" | json status=\"fields.status\" | status >= 500 [5m])) / sum(rate({job=\"realtime-board\"} |= \"Request completed\" [5m]))) * 100) or vector(0)"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 2
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "P95 Latency (ms)",
+      "datasource": "Loki",
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "quantile_over_time(0.95, {job=\"realtime-board\"} |= \"Request completed\" | json latency_ms=\"fields.latency_ms\" | unwrap latency_ms [5m])"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "5xx Count (5m)",
+      "datasource": "Loki",
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({job=\"realtime-board\"} |= \"Request completed\" | json status=\"fields.status\" | status >= 500 [5m])) or vector(0)"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "2xx Rate (req/s)",
+      "datasource": "Loki",
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 8,
+        "h": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate({job=\"realtime-board\"} |= \"Request completed\" | json status=\"fields.status\" | status=~\"2..\" [5m]))"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "4xx Rate (req/s)",
+      "datasource": "Loki",
+      "gridPos": {
+        "x": 8,
+        "y": 16,
+        "w": 8,
+        "h": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate({job=\"realtime-board\"} |= \"Request completed\" | json status=\"fields.status\" | status=~\"4..\" [5m]))"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "5xx Rate (req/s)",
+      "datasource": "Loki",
+      "gridPos": {
+        "x": 16,
+        "y": 16,
+        "w": 8,
+        "h": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate({job=\"realtime-board\"} |= \"Request completed\" | json status=\"fields.status\" | status=~\"5..\" [5m]))"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    }
+  ]
+}

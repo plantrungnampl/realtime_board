@@ -1,0 +1,34 @@
+FROM rust:1.88-bookworm AS builder
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends pkg-config libssl-dev ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+ARG BIN_NAME=Real-time_Board
+ENV SQLX_OFFLINE=true
+
+COPY Cargo.toml Cargo.lock ./
+COPY .sqlx ./.sqlx
+COPY src ./src
+
+RUN cargo build --release --locked
+
+FROM debian:bookworm-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN useradd --create-home --shell /usr/sbin/nologin appuser
+
+WORKDIR /app
+
+ARG BIN_NAME=Real-time_Board
+COPY --from=builder /app/target/release/${BIN_NAME} /app/realtime-board
+
+USER appuser
+EXPOSE 3000
+
+CMD ["/app/realtime-board"]

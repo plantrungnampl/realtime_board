@@ -2,18 +2,19 @@ use sqlx::postgres::PgPoolOptions;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
 
-use crate::{app, realtime, services};
+use crate::{app, error::AppError, realtime, services, telemetry};
 
-pub async fn run() {
-    dotenvy::dotenv().expect("do not search file env");
-    tracing_subscriber::fmt::init();
+pub async fn run() -> Result<(), AppError> {
+    let _ = dotenvy::dotenv();
+    telemetry::init_tracing();
 
-    let database_url = std::env::var("DATABASE_URL").expect("you do not key");
+    let database_url = std::env::var("DATABASE_URL")
+        .map_err(|err| AppError::Internal(format!("DATABASE_URL missing: {}", err)))?;
     let pool = PgPoolOptions::new()
         .max_connections(10)
         .connect(&database_url)
         .await
-        .expect("connect to database failed");
+        .map_err(AppError::Database)?;
 
     let state = app::state::AppState::new(pool);
     realtime::snapshot::spawn_maintenance(state.db.clone(), state.rooms.clone());
@@ -23,7 +24,12 @@ pub async fn run() {
     let app = app::router::build_router(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
-    println!("listening on {}", addr);
-    let listener = TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    tracing::info!(%addr, "Server listening");
+    let listener = TcpListener::bind(addr)
+        .await
+        .map_err(|err| AppError::Internal(format!("bind failed: {}", err)))?;
+    axum::serve(listener, app)
+        .await
+        .map_err(|err| AppError::Internal(format!("server error: {}", err)))?;
+    Ok(())
 }

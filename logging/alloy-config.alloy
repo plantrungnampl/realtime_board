@@ -1,0 +1,38 @@
+logging {
+  level  = "info"
+  format = "logfmt"
+}
+
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "backend_only" {
+  targets = discovery.docker.containers.targets
+
+  rule {
+    action        = "keep"
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/realtime_board_backend"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "service_name"
+  }
+}
+
+loki.source.docker "containers" {
+  host     = "unix:///var/run/docker.sock"
+  targets  = discovery.relabel.backend_only.output
+  labels   = { job = "realtime-board" }
+  relabel_rules = discovery.relabel.backend_only.rules
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

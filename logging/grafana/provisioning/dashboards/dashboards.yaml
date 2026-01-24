@@ -1,0 +1,9 @@
+apiVersion: 1
+
+providers:
+  - name: "realtime-board"
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /etc/grafana/provisioning/dashboards

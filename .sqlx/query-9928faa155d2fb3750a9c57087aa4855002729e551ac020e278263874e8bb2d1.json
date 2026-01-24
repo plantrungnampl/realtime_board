@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COALESCE(MAX(snapshot_seq), 0) as \"snapshot_seq!\"\n        FROM crdt.board_snapshot\n        WHERE board_id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "snapshot_seq!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "9928faa155d2fb3750a9c57087aa4855002729e551ac020e278263874e8bb2d1"
+}

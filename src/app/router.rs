@@ -13,11 +13,13 @@ use crate::{
             boards as boards_http,
             elements as elements_http,
             organizations as organizations_http,
+            telemetry as telemetry_http,
         },
         ws::boards as boards_ws,
     },
     app::state::AppState,
     auth::middleware::{auth_middleware, verified_middleware},
+    telemetry,
 };
 
 pub fn build_router(state: AppState) -> Router {
@@ -41,6 +43,9 @@ pub fn build_router(state: AppState) -> Router {
             "/organizations/invites/validate",
             get(organizations_http::validate_invite_handle),
         );
+
+    let telemetry_routes = Router::new()
+        .route("/api/telemetry/client", post(telemetry_http::ingest_client_logs));
 
     let onboarding_routes = Router::new()
         .route(
@@ -202,9 +207,11 @@ pub fn build_router(state: AppState) -> Router {
 
     Router::new()
         .merge(auth_routes)
+        .merge(telemetry_routes)
         .merge(onboarding_routes)
         .merge(verified_routes)
         .merge(ws_routes)
         .layer(cors)
+        .layer(middleware::from_fn(telemetry::request_logging_middleware))
         .with_state(state)
 }

@@ -411,6 +411,11 @@ pub async fn touch_board_last_accessed(
                 updated_at = CURRENT_TIMESTAMP
             WHERE board_id = $1
             AND user_id = $2
+            -- Perf: avoid extra writes when users reopen a board rapidly.
+            AND (
+                last_accessed_at IS NULL
+                OR last_accessed_at < (CURRENT_TIMESTAMP - INTERVAL '1 minute')
+            )
         "#,
     )
     .bind(board_id)

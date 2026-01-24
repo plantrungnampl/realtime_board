@@ -706,10 +706,15 @@ async fn resolve_board_access_with_board(
     board: &Board,
     user_id: Uuid,
 ) -> Result<BoardAccess, AppError> {
-    let board_member = board_repo::get_board_member_access(pool, board.id, user_id).await?;
-    let org_member = match board.organization_id {
-        Some(org_id) => org_repo::get_member_by_user_id(pool, org_id, user_id).await?,
-        None => None,
+    let (board_member, org_member) = match board.organization_id {
+        Some(org_id) => {
+            // Perf: fetch board + org membership in parallel to reduce access latency.
+            tokio::try_join!(
+                board_repo::get_board_member_access(pool, board.id, user_id),
+                org_repo::get_member_by_user_id(pool, org_id, user_id),
+            )?
+        }
+        None => (board_repo::get_board_member_access(pool, board.id, user_id).await?, None),
     };
 
     if let Some(member) = board_member {

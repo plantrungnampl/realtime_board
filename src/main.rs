@@ -1,6 +1,9 @@
 #[tokio::main]
 async fn main() {
-    app::run().await;
+    if let Err(err) = app::run().await {
+        tracing::error!("Application failed to start: {}", err);
+        std::process::exit(1);
+    }
 }
 
 mod api;
@@ -12,4 +15,5 @@ mod models;
 mod realtime;
 mod repositories;
 mod services;
+mod telemetry;
 mod usecases;
