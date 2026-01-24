@@ -11,7 +11,7 @@ use axum::{
         Path, State, WebSocketUpgrade,
         ws::{Message, WebSocket},
     },
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
 };
 use chrono::Utc;
@@ -26,6 +26,7 @@ use yrs::{
     sync::awareness::AwarenessUpdate,
     updates::{decoder::Decode, encoder::Encode},
 };
+use tracing::Instrument;
 
 use crate::{
     app::state::AppState,
@@ -37,6 +38,7 @@ use crate::{
     },
     realtime::{protocol, room, snapshot},
     repositories::boards as board_repo,
+    telemetry::{REQUEST_ID_HEADER, TRACE_ID_HEADER, extract_header, extract_or_generate_header},
     usecases::boards::BoardService,
     usecases::presence::PresenceService,
 };
@@ -89,6 +91,81 @@ fn presence_user_payload(user: &PresenceUser) -> serde_json::Value {
     })
 }
 
+fn op_name(op_code: u8) -> &'static str {
+    match op_code {
+        protocol::OP_SYNCSTEP_1 => "syncstep_1",
+        protocol::OP_SYNCSTEP_2 => "syncstep_2",
+        protocol::OP_UPDATE => "update",
+        protocol::OP_AWARENESS => "awareness",
+        protocol::OP_ROLE_UPDATE => "role_update",
+        _ => "unknown",
+    }
+}
+
+fn log_ws_message(direction: &str, message: &Message) {
+    match message {
+        Message::Binary(bin) => {
+            let (op_code, op_label) = bin
+                .first()
+                .map(|byte| (Some(*byte), op_name(*byte)))
+                .unwrap_or((None, "empty"));
+            tracing::info!(
+                target: "ws_message",
+                direction = direction,
+                message_type = "binary",
+                op_code = ?op_code.map(u64::from),
+                op_name = op_label,
+                bytes = bin.len(),
+                "WebSocket binary message"
+            );
+        }
+        Message::Text(text) => {
+            let event_type = serde_json::from_str::<ClientEvent>(text)
+                .map(|event| event.event_type)
+                .unwrap_or_else(|_| "unknown".to_string());
+            tracing::info!(
+                target: "ws_message",
+                direction = direction,
+                message_type = "text",
+                event_type = %event_type,
+                bytes = text.len(),
+                "WebSocket text message"
+            );
+        }
+        Message::Ping(payload) => {
+            tracing::info!(
+                target: "ws_message",
+                direction = direction,
+                message_type = "ping",
+                bytes = payload.len(),
+                "WebSocket ping"
+            );
+        }
+        Message::Pong(payload) => {
+            tracing::info!(
+                target: "ws_message",
+                direction = direction,
+                message_type = "pong",
+                bytes = payload.len(),
+                "WebSocket pong"
+            );
+        }
+        Message::Close(frame) => {
+            let reason = frame
+                .as_ref()
+                .map(|inner| inner.reason.to_string())
+                .unwrap_or_else(|| "client_close".to_string());
+            tracing::info!(
+                target: "ws_message",
+                direction = direction,
+                message_type = "close",
+                reason = %reason,
+                "WebSocket close"
+            );
+        }
+    }
+}
+
 fn should_emit_user_left(
     active_session: Result<bool, AppError>,
     board_id: Uuid,
@@ -110,6 +187,7 @@ fn should_emit_user_left(
 
 pub async fn ws_handler(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Extension(auth_user): Extension<AuthUser>,
     Path(board_id): Path<Uuid>,
     ws: WebSocketUpgrade,
@@ -170,6 +248,9 @@ pub async fn ws_handler(
         }
     };
 
+    let request_id = extract_or_generate_header(&headers, REQUEST_ID_HEADER);
+    let trace_id = extract_header(&headers, TRACE_ID_HEADER).unwrap_or_else(|| request_id.clone());
+
     ws.on_upgrade(move |socket| {
         handle_socket(
             socket,
@@ -180,6 +261,8 @@ pub async fn ws_handler(
             user_id,
             permissions,
             room,
+            request_id,
+            trace_id,
         )
     })
 }
@@ -193,6 +276,8 @@ pub async fn handle_socket(
     user_id: Uuid,
     permissions: BoardPermissions,
     room: Arc<room::Room>,
+    request_id: String,
+    trace_id: String,
 ) {
     let can_edit = permissions.can_edit;
     let (sender, mut receiver) = socket.split();
@@ -200,15 +285,28 @@ pub async fn handle_socket(
     let (join_tx, join_rx) = watch::channel(false);
     let mut rx = room.tx.subscribe();
     let mut text_rx = room.text_tx.subscribe();
+    let session_id = Uuid::now_v7();
+
+    let connection_span = tracing::info_span!(
+        "ws_connection",
+        board_id = %board_id,
+        user_id = %user_id,
+        session_id = %session_id,
+        request_id = %request_id,
+        trace_id = %trace_id
+    );
+    tracing::info!(parent: &connection_span, "WebSocket connected");
 
     let mut write_task = tokio::spawn(async move {
         let mut sender = sender;
         while let Some(msg) = out_rx.recv().await {
+            log_ws_message("outbound", &msg);
             if sender.send(msg).await.is_err() {
+                tracing::warn!("Failed to send websocket message; client disconnected");
                 break;
             }
         }
-    });
+    }.instrument(connection_span.clone()));
 
     let out_tx_clone = out_tx.clone();
     let mut send_task = tokio::spawn({
@@ -224,7 +322,7 @@ pub async fn handle_socket(
                 }
             }
         }
-    });
+    }.instrument(connection_span.clone()));
 
     let out_tx_text = out_tx.clone();
     let mut text_task = tokio::spawn({
@@ -240,7 +338,7 @@ pub async fn handle_socket(
                 }
             }
         }
-    });
+    }.instrument(connection_span.clone()));
 
     let room_cleanup = room.clone();
     let db_cleanup = db.clone();
@@ -281,15 +379,15 @@ pub async fn handle_socket(
                 }
             }
         }
-    });
+    }.instrument(connection_span.clone()));
 
     let room_clone = room.clone();
     let out_tx_recv = out_tx.clone();
     let redis_clone = redis.clone();
     let mut recv_task = tokio::spawn(async move {
-        let session_id = Uuid::now_v7();
         let connection_id = Some(session_id.to_string());
         let mut awareness_clients: HashSet<ClientID> = HashSet::new();
+        let mut close_reason: Option<String> = None;
         let already_active = PresenceService::has_active_session(&db, board_id, user_id)
             .await
             .unwrap_or(false);
@@ -345,6 +443,7 @@ pub async fn handle_socket(
             );
             return;
         }
+        tracing::info!("WebSocket presence joined");
 
         {
             let sessions = room_clone.sessions.write().await;
@@ -431,6 +530,7 @@ pub async fn handle_socket(
             *room_clone.last_active.lock().await = Instant::now();
             match message {
                 Message::Binary(bin) => {
+                    log_ws_message("inbound", &Message::Binary(bin.clone()));
                     if bin.is_empty() {
                         continue;
                     }
@@ -503,8 +603,17 @@ pub async fn handle_socket(
                 }
                 Message::Text(text) => {
                     let Ok(event) = serde_json::from_str::<ClientEvent>(&text) else {
+                        tracing::warn!("Failed to parse websocket text message");
                         continue;
                     };
+                    tracing::info!(
+                        target: "ws_message",
+                        direction = "inbound",
+                        message_type = "text",
+                        event_type = %event.event_type,
+                        bytes = text.len(),
+                        "WebSocket text message"
+                    );
                     match event.event_type.as_str() {
                         "heartbeat" => {
                             if PresenceService::heartbeat(&db, board_id, session_id)
@@ -558,8 +667,20 @@ pub async fn handle_socket(
                         _ => {}
                     }
                 }
-                Message::Close(_) => break,
-                _ => {}
+                Message::Close(frame) => {
+                    close_reason = frame
+                        .as_ref()
+                        .map(|inner| inner.reason.to_string())
+                        .or_else(|| Some("client_close".to_string()));
+                    log_ws_message("inbound", &Message::Close(frame));
+                    break;
+                }
+                Message::Ping(payload) => {
+                    log_ws_message("inbound", &Message::Ping(payload));
+                }
+                Message::Pong(payload) => {
+                    log_ws_message("inbound", &Message::Pong(payload));
+                }
             }
         }
 
@@ -625,6 +746,10 @@ pub async fn handle_socket(
                 error
             );
         }
+        tracing::info!(
+            reason = close_reason.unwrap_or_else(|| "server_shutdown".to_string()),
+            "WebSocket disconnected"
+        );
 
         if should_emit_user_left(
             PresenceService::has_active_session(&db, board_id, user_id).await,
@@ -646,7 +771,7 @@ pub async fn handle_socket(
         if let Some(queued) = room_clone.pop_next_queued().await {
             queued.notify.notify_one();
         }
-    });
+    }.instrument(connection_span.clone()));
 
     tokio::select! {
         _ = (&mut write_task) => {},

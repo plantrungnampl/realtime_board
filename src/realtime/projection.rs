@@ -11,6 +11,7 @@ use crate::{
     realtime::{element_crdt, room::Room, room::Rooms},
     repositories::boards as board_repo,
     repositories::elements as element_repo,
+    telemetry::BusinessEvent,
 };
 
 struct ProjectionFallback {
@@ -65,6 +66,7 @@ async fn project_elements(
     board_id: Uuid,
     elements: Vec<element_crdt::ElementMaterialized>,
 ) -> Result<(), AppError> {
+    let element_count = elements.len();
     let board = board_repo::find_board_by_id_including_deleted(db, board_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Board not found".to_string()))?;
@@ -75,9 +77,11 @@ async fn project_elements(
     };
 
     let mut tx = db.begin().await?;
-    sqlx::query("SELECT set_config('app.crdt_projection', 'on', true)")
-        .execute(&mut *tx)
-        .await?;
+    crate::log_query_execute!(
+        "realtime.set_crdt_projection",
+        sqlx::query("SELECT set_config('app.crdt_projection', 'on', true)")
+            .execute(&mut *tx)
+    )?;
 
     let defaults = element_repo::list_projection_defaults(db, board_id).await?;
     let defaults_map: HashMap<Uuid, element_repo::ElementProjectionDefaults> = defaults
@@ -100,6 +104,11 @@ async fn project_elements(
         }
     }
     tx.commit().await?;
+    BusinessEvent::CrdtProjectionCompleted {
+        board_id,
+        elements_synced: element_count,
+    }
+    .log();
     Ok(())
 }
 

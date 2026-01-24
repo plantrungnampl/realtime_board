@@ -6,7 +6,8 @@ use crate::{app, error::AppError, realtime, services, telemetry};
 
 pub async fn run() -> Result<(), AppError> {
     let _ = dotenvy::dotenv();
-    telemetry::init_tracing();
+    telemetry::init_tracing()
+        .map_err(|err| AppError::Internal(format!("telemetry init failed: {}", err)))?;
 
     let database_url = std::env::var("DATABASE_URL")
         .map_err(|err| AppError::Internal(format!("DATABASE_URL missing: {}", err)))?;
@@ -28,8 +29,10 @@ pub async fn run() -> Result<(), AppError> {
     let listener = TcpListener::bind(addr)
         .await
         .map_err(|err| AppError::Internal(format!("bind failed: {}", err)))?;
-    axum::serve(listener, app)
+    let result = axum::serve(listener, app)
         .await
-        .map_err(|err| AppError::Internal(format!("server error: {}", err)))?;
+        .map_err(|err| AppError::Internal(format!("server error: {}", err)));
+    telemetry::shutdown_tracing();
+    result?;
     Ok(())
 }

@@ -8,6 +8,7 @@ services:
     volumes:
       - loki-data:/loki
       - ./logging/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      - ./logging/alerting-rules.yml:/loki/rules/realtime-board-alerts.yml:ro
     restart: unless-stopped
 
   alloy:
@@ -16,12 +17,27 @@ services:
     command: run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
     ports:
       - "12345:12345"
+      - "4317:4317"
+      - "4318:4318"
     volumes:
       - alloy-data:/var/lib/alloy/data
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./logging/alloy-config.alloy:/etc/alloy/config.alloy:ro
     depends_on:
       - loki
+      - tempo
+    restart: unless-stopped
+
+  tempo:
+    image: grafana/tempo:latest
+    container_name: realtime_board_tempo
+    command: -config.file=/etc/tempo/tempo-config.yml
+    ports:
+      - "3200:3200"
+      - "4319:4317"
+    volumes:
+      - tempo-data:/var/tempo
+      - ./logging/tempo-config.yml:/etc/tempo/tempo-config.yml:ro
     restart: unless-stopped
 
   grafana:
@@ -38,9 +54,11 @@ services:
       - ./logging/grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on:
       - loki
+      - tempo
     restart: unless-stopped
 
 volumes:
   loki-data:
   alloy-data:
   grafana-data:
+  tempo-data:

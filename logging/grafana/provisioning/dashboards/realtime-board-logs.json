@@ -182,6 +182,75 @@
           "placement": "bottom"
         }
       }
+    },
+    {
+      "type": "timeseries",
+      "title": "Auth Failures (per min)",
+      "datasource": "Loki",
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 8,
+        "h": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate({job=\"realtime-board\"} |~ \"LoginFailed\" [5m])) * 60"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "DB Query P95 (ms)",
+      "datasource": "Loki",
+      "gridPos": {
+        "x": 8,
+        "y": 22,
+        "w": 8,
+        "h": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "quantile_over_time(0.95, {job=\"realtime-board\"} |= \"Query executed successfully\" | json latency_ms=\"fields.latency_ms\" | unwrap latency_ms [5m])"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "WS Disconnect Rate (per min)",
+      "datasource": "Loki",
+      "gridPos": {
+        "x": 16,
+        "y": 22,
+        "w": 8,
+        "h": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate({job=\"realtime-board\"} |= \"WebSocket disconnected\" [5m])) * 60"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
     }
   ]
 }

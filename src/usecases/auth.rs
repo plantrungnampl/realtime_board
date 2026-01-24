@@ -10,6 +10,7 @@ use crate::{
     repositories::organizations as org_repo,
     repositories::users as user_repo,
     services::email::EmailService,
+    telemetry::{BusinessEvent, redact_email},
 };
 pub struct UserServices;
 impl UserServices {
@@ -63,6 +64,7 @@ impl UserServices {
         } else {
             None
         };
+        let invite_org_id = invite.as_ref().map(|record| record.organization_id);
 
         if invite.is_none() && email_service.is_none() {
             return Err(AppError::ExternalService(
@@ -101,6 +103,18 @@ impl UserServices {
         }
 
         tx.commit().await?;
+        BusinessEvent::UserRegistered {
+            user_id: user.id,
+            email_redacted: redact_email(&user.email),
+        }
+        .log();
+        if let Some(org_id) = invite_org_id {
+            BusinessEvent::MemberJoined {
+                org_id,
+                user_id: user.id,
+            }
+            .log();
+        }
 
         let token = jwt_config
             .create_token(user.id, user.email.clone())
@@ -130,11 +144,19 @@ impl UserServices {
         jwt_config: &JwtConfig,
         req: LoginRequest,
     ) -> Result<LoginResponse, AppError> {
-        let user = user_repo::find_user_by_email(pool, &req.email)
-            .await?
-            .ok_or(AppError::InvalidCredentials(
-                "invalid creadentials".to_string(),
-            ))?;
+        let user = match user_repo::find_user_by_email(pool, &req.email).await? {
+            Some(user) => user,
+            None => {
+                BusinessEvent::LoginFailed {
+                    email_redacted: redact_email(&req.email),
+                    reason: "user_not_found".to_string(),
+                }
+                .log();
+                return Err(AppError::InvalidCredentials(
+                    "invalid creadentials".to_string(),
+                ));
+            }
+        };
         let hash = user
             .password_hash
             .as_deref()
@@ -144,9 +166,19 @@ impl UserServices {
         let verifypassword = verify_password_user(&req.password, hash)
             .map_err(|_| AppError::InvalidCredentials("error password".to_string()))?;
         if !verifypassword {
+            BusinessEvent::LoginFailed {
+                email_redacted: redact_email(&req.email),
+                reason: "invalid_password".to_string(),
+            }
+            .log();
             return Err(AppError::InvalidCredentials("error pass".to_string()));
         }
         if !user.is_active {
+            BusinessEvent::LoginFailed {
+                email_redacted: redact_email(&req.email),
+                reason: "inactive_account".to_string(),
+            }
+            .log();
             return Err(AppError::InvalidCredentials(
                 "invalid creadential".to_string(),
             ));
@@ -157,6 +189,7 @@ impl UserServices {
             .create_token(user.id, user.email.clone())
             .map_err(|e| AppError::Internal(format!("Failed to create token: {}", e)))?;
 
+        BusinessEvent::UserLoggedIn { user_id: user.id }.log();
         Ok(LoginResponse {
             token,
             user: UserResponse::from(user),
@@ -379,6 +412,7 @@ impl UserServices {
         }
 
         user_repo::mark_email_verified(pool, user_id).await?;
+        BusinessEvent::EmailVerified { user_id }.log();
         Ok(())
     }
 }

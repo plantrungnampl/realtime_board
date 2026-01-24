@@ -1,7 +1,9 @@
 use std::env;
 
 use tracing::Level;
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+
+use crate::telemetry::otel;
 
 #[derive(Debug, Clone, Copy)]
 pub enum LogFormat {
@@ -39,21 +41,67 @@ impl LogSettings {
     }
 }
 
-pub fn init_tracing() {
+pub fn init_tracing() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let settings = LogSettings::from_env();
     let env_filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(settings.default_filter()));
+    let otel_layer = otel::build_otel_layer()?;
+    let registry = tracing_subscriber::registry();
 
-    let builder = tracing_subscriber::fmt()
-        .with_env_filter(env_filter)
-        .with_target(true)
-        .with_level(true)
-        .with_file(true)
-        .with_line_number(true)
-        .with_thread_ids(true);
-
-    match settings.format {
-        LogFormat::Json => builder.json().init(),
-        LogFormat::Pretty => builder.pretty().init(),
+    match (settings.format, otel_layer) {
+        (LogFormat::Json, Some(otel_layer)) => {
+            let fmt_layer = tracing_subscriber::fmt::layer()
+                .json()
+                .with_target(true)
+                .with_level(true)
+                .with_file(true)
+                .with_line_number(true)
+                .with_thread_ids(true);
+            registry
+                .with(otel_layer)
+                .with(env_filter)
+                .with(fmt_layer)
+                .init();
+        }
+        (LogFormat::Json, None) => {
+            let fmt_layer = tracing_subscriber::fmt::layer()
+                .json()
+                .with_target(true)
+                .with_level(true)
+                .with_file(true)
+                .with_line_number(true)
+                .with_thread_ids(true);
+            registry.with(env_filter).with(fmt_layer).init();
+        }
+        (LogFormat::Pretty, Some(otel_layer)) => {
+            let fmt_layer = tracing_subscriber::fmt::layer()
+                .pretty()
+                .with_target(true)
+                .with_level(true)
+                .with_file(true)
+                .with_line_number(true)
+                .with_thread_ids(true);
+            registry
+                .with(otel_layer)
+                .with(env_filter)
+                .with(fmt_layer)
+                .init();
+        }
+        (LogFormat::Pretty, None) => {
+            let fmt_layer = tracing_subscriber::fmt::layer()
+                .pretty()
+                .with_target(true)
+                .with_level(true)
+                .with_file(true)
+                .with_line_number(true)
+                .with_thread_ids(true);
+            registry.with(env_filter).with(fmt_layer).init();
+        }
     }
+
+    Ok(())
+}
+
+pub fn shutdown_tracing() {
+    otel::shutdown_tracer_provider();
 }

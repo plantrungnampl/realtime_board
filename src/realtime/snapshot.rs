@@ -12,6 +12,7 @@ use crate::{
     realtime::room::{Room, Rooms},
     repositories::elements as element_repo,
     repositories::realtime as realtime_repo,
+    telemetry::BusinessEvent,
 };
 
 pub fn spawn_maintenance(db: PgPool, rooms: Rooms) {
@@ -392,9 +393,16 @@ async fn create_snapshot_with_seq(
         txn.encode_state_as_update_v1(&StateVector::default())
     };
 
+    let snapshot_size = snapshot_data.len();
     let (inserted, deleted) =
         realtime_repo::create_snapshot_and_cleanup(pool, board_id, snapshot_seq, snapshot_data)
             .await?;
+    BusinessEvent::CrdtSnapshotSaved {
+        board_id,
+        snapshot_size,
+        update_count: deleted as usize,
+    }
+    .log();
     tracing::info!(
         "Snapshot board {} at seq {}, deleted {} updates (inserted={})",
         board_id,

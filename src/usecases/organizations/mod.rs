@@ -9,6 +9,7 @@ use crate::{
     error::AppError,
     models::users::SubscriptionTier,
     repositories::organizations as org_repo,
+    telemetry::BusinessEvent,
 };
 
 mod helpers;
@@ -64,6 +65,12 @@ impl OrganizationService {
         .await?;
         org_repo::add_owner_member(&mut tx, organization.id, user_id).await?;
         tx.commit().await?;
+
+        BusinessEvent::OrganizationCreated {
+            org_id: organization.id,
+            owner_id: user_id,
+        }
+        .log();
 
         Ok(OrganizationResponse::from(organization))
     }

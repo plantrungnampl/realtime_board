@@ -24,6 +24,7 @@ use crate::{
     repositories::users as user_repo,
     realtime::snapshot,
     services::email::EmailService,
+    telemetry::{BusinessEvent, redact_email},
     usecases::organizations::{max_boards_for_tier, send_invite_emails},
 };
 pub struct BoardService;
@@ -212,6 +213,14 @@ impl BoardService {
         }
         tx.commit().await?;
 
+        BusinessEvent::BoardCreated {
+            board_id: board.id,
+            user_id,
+            organization_id,
+            is_template: board.is_template,
+        }
+        .log();
+
         Ok(board)
     }
 
@@ -226,12 +235,30 @@ impl BoardService {
 
         let name = normalize_optional_name(req.name)?;
         let description = normalize_optional_description(req.description);
+        let mut fields = Vec::new();
+        if name.is_some() {
+            fields.push("name".to_string());
+        }
+        if description.is_some() {
+            fields.push("description".to_string());
+        }
+        if req.is_public.is_some() {
+            fields.push("is_public".to_string());
+        }
 
         let mut tx = pool.begin().await?;
         let updated =
             board_repo::update_board_metadata(&mut tx, board_id, name, description, req.is_public)
                 .await?;
         tx.commit().await?;
+        if !fields.is_empty() {
+            BusinessEvent::BoardUpdated {
+                board_id,
+                user_id,
+                fields,
+            }
+            .log();
+        }
 
         Ok(updated)
     }
@@ -354,6 +381,11 @@ impl BoardService {
         let mut tx = pool.begin().await?;
         board_repo::mark_board_deleted(&mut tx, board_id).await?;
         tx.commit().await?;
+        BusinessEvent::BoardDeleted {
+            board_id,
+            user_id: requester_id,
+        }
+        .log();
 
         Ok(BoardActionMessage {
             message: "Board moved to trash".to_string(),
@@ -461,6 +493,7 @@ impl BoardService {
         board_repo::set_actor_id(&mut tx, inviter_id).await?;
         let invited_emails: Vec<String> = users.iter().map(|user| user.email.clone()).collect();
         let mut org_invite_users: Vec<User> = Vec::new();
+        let mut pending_events: Vec<BusinessEvent> = Vec::new();
         if let Some(org_id) = organization_id {
             for user in &pending_org_invites {
                 if org_repo::organization_member_exists(&mut tx, org_id, user.id).await? {
@@ -468,13 +501,27 @@ impl BoardService {
                 }
                 org_repo::add_member_invite(&mut tx, org_id, user.id, OrgRole::Guest, inviter_id)
                     .await?;
+                pending_events.push(BusinessEvent::MemberInvited {
+                    org_id,
+                    inviter_id,
+                    invitee_email_redacted: redact_email(&user.email),
+                });
                 org_invite_users.push(user.clone());
             }
         }
         for user in users {
             board_repo::add_board_member(&mut tx, board_id, user.id, role, inviter_id).await?;
+            pending_events.push(BusinessEvent::BoardShared {
+                board_id,
+                shared_by: inviter_id,
+                shared_with: user.id,
+                role: format!("{:?}", role).to_lowercase(),
+            });
         }
         tx.commit().await?;
+        for event in pending_events {
+            event.log();
+        }
 
         if let Some(org) = organization {
             send_invite_emails(email_service, &org, &org_invite_users).await?;

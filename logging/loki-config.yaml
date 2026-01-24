@@ -35,3 +35,12 @@ compactor:
   retention_delete_delay: 2h
   retention_delete_worker_count: 50
   delete_request_store: filesystem
+
+ruler:
+  storage:
+    type: local
+    local:
+      directory: /loki/rules
+  rule_path: /loki/rules-temp
+  alertmanager_url: http://grafana:3000/api/alertmanager
+  enable_api: true

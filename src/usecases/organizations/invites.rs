@@ -12,6 +12,7 @@ use crate::{
     models::users::User,
     repositories::{boards as board_repo, organizations as org_repo, users as user_repo},
     services::email::EmailService,
+    telemetry::{BusinessEvent, redact_email},
 };
 
 use super::{
@@ -155,6 +156,15 @@ impl OrganizationService {
         }
         tx.commit().await?;
 
+        for email in invited_emails.iter().chain(pending_emails.iter()) {
+            BusinessEvent::MemberInvited {
+                org_id: organization_id,
+                inviter_id: invited_by,
+                invitee_email_redacted: redact_email(email),
+            }
+            .log();
+        }
+
         send_invite_emails(email_service, &organization, &users).await?;
         send_pre_signup_invites(email_service, &organization, &pending_invites).await?;
 
@@ -203,6 +213,11 @@ impl OrganizationService {
         let mut tx = pool.begin().await?;
         org_repo::accept_member_invitation(&mut tx, organization_id, member_id).await?;
         tx.commit().await?;
+        BusinessEvent::MemberJoined {
+            org_id: organization_id,
+            user_id,
+        }
+        .log();
 
         Ok(OrganizationActionMessage {
             message: "Invitation accepted".to_string(),

@@ -9,6 +9,7 @@ use crate::{
     error::AppError,
     models::organizations::OrgRole,
     repositories::{boards as board_repo, organizations as org_repo},
+    telemetry::BusinessEvent,
 };
 
 use super::{
@@ -154,6 +155,12 @@ impl OrganizationService {
         .await?;
         org_repo::remove_member(&mut tx, organization_id, member_id).await?;
         tx.commit().await?;
+        BusinessEvent::MemberRemoved {
+            org_id: organization_id,
+            removed_by: requester_id,
+            removed_user: member.user_id,
+        }
+        .log();
 
         Ok(OrganizationActionMessage {
             message: "Member removed".to_string(),
