@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Share2 } from "lucide-react";
+import { Share2, X } from "lucide-react";
 
 import {
   inviteBoardMembers,
@@ -476,14 +476,15 @@ export function BoardShareDialog({ boardId }: BoardShareDialogProps) {
                       {email}
                       <button
                         type="button"
+                        aria-label={t("board.memberRemove")}
                         onClick={() =>
                           setInvitees((prev) =>
                             prev.filter((item) => item !== email),
                           )
                         }
-                        className="text-text-muted hover:text-text-primary"
+                        className="rounded-sm text-text-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500"
                       >
-                        x
+                        <X className="h-3 w-3" />
                       </button>
                     </span>
                   ))}
