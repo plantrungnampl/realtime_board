@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, type MutableRefObject } from "react";
 
 import type { BoardElement } from "@/types/board";
 import { DEFAULT_TEXT_STYLE } from "@/features/boards/boardRoute/elements";
@@ -10,16 +10,18 @@ import {
 import { isRectLikeElement } from "@/features/boards/boardCanvas/elementUtils";
 
 type UseElementHitTestOptions = {
-  renderElements: BoardElement[];
-  stageScale: number;
+  renderElementsRef: MutableRefObject<BoardElement[]>;
+  stageScaleRef: MutableRefObject<number>;
 };
 
 export const useElementHitTest = ({
-  renderElements,
-  stageScale,
+  renderElementsRef,
+  stageScaleRef,
 }: UseElementHitTestOptions) =>
   useCallback(
     (point: Point): BoardElement | null => {
+      const stageScale = stageScaleRef.current;
+      const renderElements = renderElementsRef.current;
       const threshold = 6 / stageScale;
       for (let index = renderElements.length - 1; index >= 0; index -= 1) {
         const el = renderElements[index];
@@ -123,5 +125,5 @@ export const useElementHitTest = ({
       }
       return null;
     },
-    [renderElements, stageScale],
+    [renderElementsRef, stageScaleRef],
   );

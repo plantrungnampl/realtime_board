@@ -219,6 +219,7 @@ export function useBoardCanvasInteractions({
     handleWheel,
     resetZoom,
     setStagePositionDirect,
+    stageScaleRef,
   } = useCanvasZoom();
 
   useEffect(() => {
@@ -256,6 +257,11 @@ export function useBoardCanvasInteractions({
     if (overrideKeys.length === 0) return elements;
     return elements.map((element) => localOverrides[element.id] ?? element);
   }, [elements, localOverrides]);
+
+  const renderElementsRef = useRef(renderElements);
+  useEffect(() => {
+    renderElementsRef.current = renderElements;
+  }, [renderElements]);
 
   const localOverrideIds = useMemo(
     () => new Set(Object.keys(localOverrides)),
@@ -498,7 +504,10 @@ export function useBoardCanvasInteractions({
     [],
   );
 
-  const findElementAtPoint = useElementHitTest({ renderElements, stageScale });
+  const findElementAtPoint = useElementHitTest({
+    renderElementsRef,
+    stageScaleRef,
+  });
 
   const resolveSnap = useCallback(
     (

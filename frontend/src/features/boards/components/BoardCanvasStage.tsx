@@ -195,6 +195,359 @@ const drawPolyline = (graphics: PixiGraphics, points: number[], strokeWidth: num
   graphics.stroke();
 };
 
+const BoardElementItem = memo(function BoardElementItem({
+  element,
+  isInteractive,
+  onPointerDown,
+  onOpenTextEditor,
+  isDoubleTap,
+}: {
+  element: BoardElement;
+  isInteractive: boolean;
+  onPointerDown: (event: FederatedPointerEvent, element: BoardElement) => void;
+  onOpenTextEditor: (payload: TextEditorPayload) => void;
+  isDoubleTap: (id: string, event: FederatedPointerEvent) => boolean;
+}) {
+  if (element.element_type === "Shape") {
+    if (element.properties.shapeType === "rectangle") {
+      const rect = getRectBounds(element);
+      return (
+        <pixiContainer
+          key={element.id}
+          x={rect.x}
+          y={rect.y}
+          rotation={(element.rotation ?? 0) * DEG_TO_RAD}
+          eventMode={isInteractive ? "static" : "passive"}
+          onPointerDown={(event: FederatedPointerEvent) => onPointerDown(event, element)}
+        >
+          <pixiGraphics
+            draw={(graphics) => {
+              graphics.clear();
+              const stroke = parseColor(element.style.stroke, 0xffffff);
+              const fill = parseColor(element.style.fill, 0x000000);
+              const strokeWidth = element.style.strokeWidth ?? 1;
+              setStrokeStyle(graphics, strokeWidth, stroke);
+              setFillStyle(graphics, fill);
+              graphics.rect(0, 0, rect.width, rect.height);
+              graphics.fill();
+              graphics.stroke();
+            }}
+          />
+        </pixiContainer>
+      );
+    }
+    if (element.properties.shapeType === "circle") {
+      const radius = Math.hypot(element.width || 0, element.height || 0);
+      const positionX = coerceNumber(element.position_x, 0);
+      const positionY = coerceNumber(element.position_y, 0);
+      return (
+        <pixiContainer
+          key={element.id}
+          x={positionX}
+          y={positionY}
+          rotation={(element.rotation ?? 0) * DEG_TO_RAD}
+          eventMode={isInteractive ? "static" : "passive"}
+          onPointerDown={(event: FederatedPointerEvent) => onPointerDown(event, element)}
+        >
+          <pixiGraphics
+            draw={(graphics) => {
+              graphics.clear();
+              const stroke = parseColor(element.style.stroke, 0xffffff);
+              const fill = parseColor(element.style.fill, 0x000000);
+              const strokeWidth = element.style.strokeWidth ?? 1;
+              setStrokeStyle(graphics, strokeWidth, stroke);
+              setFillStyle(graphics, fill);
+              graphics.circle(0, 0, radius);
+              graphics.fill();
+              graphics.stroke();
+            }}
+          />
+        </pixiContainer>
+      );
+    }
+  }
+
+  if (element.element_type === "Drawing") {
+    const points = element.properties.points;
+    if (!Array.isArray(points) || !isValidDrawingPoints(points)) return null;
+    const positionX = coerceNumber(element.position_x, 0);
+    const positionY = coerceNumber(element.position_y, 0);
+    return (
+      <pixiContainer
+        key={element.id}
+        x={positionX}
+        y={positionY}
+        rotation={(element.rotation ?? 0) * DEG_TO_RAD}
+        eventMode={isInteractive ? "static" : "passive"}
+        onPointerDown={(event: FederatedPointerEvent) => onPointerDown(event, element)}
+      >
+        <pixiGraphics
+          draw={(graphics) => {
+            graphics.clear();
+            drawPolyline(
+              graphics,
+              points,
+              element.style.strokeWidth ?? 2,
+              parseColor(element.style.stroke, 0xffffff),
+            );
+          }}
+        />
+      </pixiContainer>
+    );
+  }
+
+  if (element.element_type === "Text") {
+    const positionX = coerceNumber(element.position_x, 0);
+    const positionY = coerceNumber(element.position_y, 0);
+    const fontSize = element.style.fontSize ?? DEFAULT_TEXT_STYLE.fontSize ?? 16;
+    const content = element.properties?.content ?? "";
+    return (
+      <pixiContainer
+        key={element.id}
+        x={positionX}
+        y={positionY}
+        rotation={(element.rotation ?? 0) * DEG_TO_RAD}
+        eventMode={isInteractive ? "static" : "passive"}
+        onPointerDown={(event: FederatedPointerEvent) => onPointerDown(event, element)}
+        onPointerTap={(event: FederatedPointerEvent) => {
+          if (!isDoubleTap(element.id, event)) return;
+          onOpenTextEditor({
+            x: positionX,
+            y: positionY,
+            value: content,
+            elementId: element.id,
+            fontSize,
+            color: element.style.textColor ?? DEFAULT_TEXT_STYLE.fill ?? "#1F2937",
+            elementType: "Text",
+          });
+        }}
+      >
+        <pixiText
+          text={content}
+          style={{
+            fontSize,
+            fill: element.style.textColor ?? DEFAULT_TEXT_STYLE.fill ?? "#1F2937",
+          }}
+        />
+      </pixiContainer>
+    );
+  }
+
+  if (element.element_type === "StickyNote") {
+    const rect = getRectBounds(element);
+    const fontSize = element.style.fontSize ?? 16;
+    const content = element.properties?.content ?? "";
+    const padding = 12;
+    return (
+      <pixiContainer
+        key={element.id}
+        x={rect.x}
+        y={rect.y}
+        rotation={(element.rotation ?? 0) * DEG_TO_RAD}
+        eventMode={isInteractive ? "static" : "passive"}
+        onPointerDown={(event: FederatedPointerEvent) => onPointerDown(event, element)}
+        onPointerTap={(event: FederatedPointerEvent) => {
+          if (!isDoubleTap(element.id, event)) return;
+          onOpenTextEditor({
+            x: rect.x + padding,
+            y: rect.y + padding,
+            value: content,
+            elementId: element.id,
+            fontSize,
+            color: element.style.textColor ?? "#1F2937",
+            elementType: "StickyNote",
+            backgroundColor: element.style.fill,
+            editorWidth: Math.max(0, rect.width - padding * 2),
+            editorHeight: Math.max(0, rect.height - padding * 2),
+          });
+        }}
+      >
+        <pixiGraphics
+          draw={(graphics) => {
+            graphics.clear();
+            const stroke = parseColor(element.style.stroke, 0xffffff);
+            const fill = parseColor(element.style.fill, 0xfff9c2);
+            const strokeWidth = element.style.strokeWidth ?? 1;
+            setStrokeStyle(graphics, strokeWidth, stroke);
+            setFillStyle(graphics, fill);
+            graphics.roundRect(0, 0, rect.width, rect.height, element.style.cornerRadius ?? 12);
+            graphics.fill();
+            graphics.stroke();
+          }}
+        />
+        <pixiText
+          text={content}
+          x={padding}
+          y={padding}
+          style={{
+            fontSize,
+            fill: element.style.textColor ?? "#1F2937",
+            wordWrap: true,
+            wordWrapWidth: Math.max(0, rect.width - padding * 2),
+          }}
+        />
+      </pixiContainer>
+    );
+  }
+
+  if (element.element_type === "Connector") {
+    const points = resolveConnectorPoints(element);
+    if (!points || points.length < 4) return null;
+    return (
+      <pixiContainer
+        key={element.id}
+        eventMode={isInteractive ? "static" : "passive"}
+        onPointerDown={(event: FederatedPointerEvent) => onPointerDown(event, element)}
+      >
+        <pixiGraphics
+          draw={(graphics) => {
+            graphics.clear();
+            drawPolyline(
+              graphics,
+              normalizeOrthogonalPoints(points),
+              element.style.strokeWidth ?? 2,
+              parseColor(element.style.stroke, 0xffffff),
+            );
+          }}
+        />
+      </pixiContainer>
+    );
+  }
+
+  return null;
+});
+
+const SelectionHighlight = memo(function SelectionHighlight({
+  element,
+  stageScale,
+}: {
+  element: BoardElement;
+  stageScale: number;
+}) {
+  const selectionStrokeWidth = 2 / stageScale;
+  const selectionPadding = 6 / stageScale;
+
+  if (element.element_type === "Shape") {
+    if (element.properties.shapeType === "rectangle") {
+      const rect = getRectBounds(element);
+      return (
+        <pixiContainer
+          x={rect.x}
+          y={rect.y}
+          rotation={(element.rotation ?? 0) * DEG_TO_RAD}
+        >
+          <pixiGraphics
+            draw={(graphics) => {
+              graphics.clear();
+              setStrokeStyle(graphics, selectionStrokeWidth, parseColor(SELECTION_STROKE));
+              graphics.rect(
+                -selectionPadding,
+                -selectionPadding,
+                rect.width + selectionPadding * 2,
+                rect.height + selectionPadding * 2,
+              );
+              graphics.stroke();
+            }}
+          />
+        </pixiContainer>
+      );
+    }
+    if (element.properties.shapeType === "circle") {
+      const radius = Math.hypot(element.width || 0, element.height || 0);
+      const positionX = coerceNumber(element.position_x, 0);
+      const positionY = coerceNumber(element.position_y, 0);
+      return (
+        <pixiContainer
+          x={positionX}
+          y={positionY}
+          rotation={(element.rotation ?? 0) * DEG_TO_RAD}
+        >
+          <pixiGraphics
+            draw={(graphics) => {
+              graphics.clear();
+              setStrokeStyle(graphics, selectionStrokeWidth, parseColor(SELECTION_STROKE));
+              graphics.circle(0, 0, radius + selectionPadding);
+              graphics.stroke();
+            }}
+          />
+        </pixiContainer>
+      );
+    }
+  }
+
+  if (element.element_type === "Drawing") {
+    return null;
+  }
+
+  if (element.element_type === "Text") {
+    const positionX = coerceNumber(element.position_x, 0);
+    const positionY = coerceNumber(element.position_y, 0);
+    const fontSize = element.style.fontSize ?? DEFAULT_TEXT_STYLE.fontSize ?? 16;
+    const content = element.properties?.content ?? "";
+    const metrics = getTextMetrics(content, fontSize);
+    return (
+      <pixiContainer
+        x={positionX}
+        y={positionY}
+        rotation={(element.rotation ?? 0) * DEG_TO_RAD}
+      >
+        <pixiGraphics
+          draw={(graphics) => {
+            graphics.clear();
+            setStrokeStyle(graphics, selectionStrokeWidth, parseColor(SELECTION_STROKE));
+            graphics.rect(
+              -selectionPadding,
+              -selectionPadding,
+              metrics.width + selectionPadding * 2,
+              metrics.height + selectionPadding * 2,
+            );
+            graphics.stroke();
+          }}
+        />
+      </pixiContainer>
+    );
+  }
+
+  if (element.element_type === "StickyNote") {
+    const rect = getRectBounds(element);
+    return (
+      <pixiContainer
+        x={rect.x}
+        y={rect.y}
+        rotation={(element.rotation ?? 0) * DEG_TO_RAD}
+      >
+        <pixiGraphics
+          draw={(graphics) => {
+            graphics.clear();
+            setStrokeStyle(graphics, selectionStrokeWidth, parseColor(SELECTION_STROKE));
+            graphics.rect(
+              -selectionPadding,
+              -selectionPadding,
+              rect.width + selectionPadding * 2,
+              rect.height + selectionPadding * 2,
+            );
+            graphics.stroke();
+          }}
+        />
+      </pixiContainer>
+    );
+  }
+
+  // Connector doesn't have selection highlight in original code either?
+  // Original code:
+  /*
+        if (element.element_type === "Connector") {
+          // ...
+          return (
+             // ...
+          );
+        }
+  */
+  // No `isSelected` block.
+
+  return null;
+});
+
 const CursorMarker = memo(function CursorMarker({ cursor }: { cursor: CursorBroadcast }) {
   const groupRef = useRef<PixiContainer | null>(null);
   const targetRef = useRef({ x: cursor.x ?? 0, y: cursor.y ?? 0 });
@@ -285,7 +638,6 @@ function PixiScene({
 }: Omit<BoardCanvasStageProps, "stageRef" | "onMouseLeave" | "onWheel">) {
   const { app } = useApplication();
   const viewportRef = useRef<PixiContainer | null>(null);
-  const elementRefs = useRef<Map<string, PixiContainer>>(new Map());
   const transformStateRef = useRef<{
     id: string;
     pointerId: number;
@@ -307,10 +659,6 @@ function PixiScene({
   } | null>(null);
   const lastTapRef = useRef<{ id: string; time: number } | null>(null);
 
-  const selectedSet = useMemo(
-    () => new Set(selectedElementIds),
-    [selectedElementIds],
-  );
   const primarySelectedId =
     selectedElementIds.length === 1 ? selectedElementIds[0] : null;
   const canTransform = primarySelectedId
@@ -361,17 +709,6 @@ function PixiScene({
   const snapStrokeWidth = 1.5 / stageScale;
   const handleSize = 8 / stageScale;
   const rotateHandleOffset = 20 / stageScale;
-
-  const registerElementRef = useCallback(
-    (id: string, node: PixiContainer | null) => {
-      if (!node) {
-        elementRefs.current.delete(id);
-        return;
-      }
-      elementRefs.current.set(id, node);
-    },
-    [],
-  );
 
   useEffect(() => {
     if (!app || !viewportRef.current) return;
@@ -832,278 +1169,30 @@ function PixiScene({
       />
 
       {renderElements.map((element) => {
-        const isSelected = selectedSet.has(element.id);
         const isLocked = lockedElementIds.has(element.id);
         const isInteractive = isDragEnabled && !isLocked;
-        if (element.element_type === "Shape") {
-          if (element.properties.shapeType === "rectangle") {
-            const rect = getRectBounds(element);
-            return (
-              <pixiContainer
-                key={element.id}
-                ref={(node) => registerElementRef(element.id, node)}
-                x={rect.x}
-                y={rect.y}
-                rotation={(element.rotation ?? 0) * DEG_TO_RAD}
-                eventMode={isInteractive ? "static" : "passive"}
-                onPointerDown={(event: FederatedPointerEvent) => handleElementPointerDown(event, element)}
-              >
-                <pixiGraphics
-                  draw={(graphics) => {
-                  graphics.clear();
-                  const stroke = parseColor(element.style.stroke, 0xffffff);
-                  const fill = parseColor(element.style.fill, 0x000000);
-                  const strokeWidth = element.style.strokeWidth ?? 1;
-                  setStrokeStyle(graphics, strokeWidth, stroke);
-                  setFillStyle(graphics, fill);
-                  graphics.rect(0, 0, rect.width, rect.height);
-                  graphics.fill();
-                  graphics.stroke();
-                }}
-              />
-              {isSelected && (
-                <pixiGraphics
-                  draw={(graphics) => {
-                    graphics.clear();
-                    setStrokeStyle(graphics, selectionStrokeWidth, parseColor(SELECTION_STROKE));
-                    graphics.rect(
-                      -selectionPadding,
-                      -selectionPadding,
-                      rect.width + selectionPadding * 2,
-                      rect.height + selectionPadding * 2,
-                    );
-                    graphics.stroke();
-                  }}
-                />
-              )}
-            </pixiContainer>
-            );
-          }
-          if (element.properties.shapeType === "circle") {
-            const radius = Math.hypot(element.width || 0, element.height || 0);
-            const positionX = coerceNumber(element.position_x, 0);
-            const positionY = coerceNumber(element.position_y, 0);
-            return (
-              <pixiContainer
-                key={element.id}
-                ref={(node) => registerElementRef(element.id, node)}
-                x={positionX}
-                y={positionY}
-                rotation={(element.rotation ?? 0) * DEG_TO_RAD}
-                eventMode={isInteractive ? "static" : "passive"}
-                onPointerDown={(event: FederatedPointerEvent) => handleElementPointerDown(event, element)}
-              >
-                <pixiGraphics
-                  draw={(graphics) => {
-                  graphics.clear();
-                  const stroke = parseColor(element.style.stroke, 0xffffff);
-                  const fill = parseColor(element.style.fill, 0x000000);
-                  const strokeWidth = element.style.strokeWidth ?? 1;
-                  setStrokeStyle(graphics, strokeWidth, stroke);
-                  setFillStyle(graphics, fill);
-                  graphics.circle(0, 0, radius);
-                  graphics.fill();
-                  graphics.stroke();
-                }}
-              />
-              {isSelected && (
-                <pixiGraphics
-                  draw={(graphics) => {
-                    graphics.clear();
-                    setStrokeStyle(graphics, selectionStrokeWidth, parseColor(SELECTION_STROKE));
-                    graphics.circle(0, 0, radius + selectionPadding);
-                    graphics.stroke();
-                  }}
-                />
-              )}
-            </pixiContainer>
-            );
-          }
-        }
+        return (
+          <BoardElementItem
+            key={element.id}
+            element={element}
+            isInteractive={isInteractive}
+            onPointerDown={handleElementPointerDown}
+            onOpenTextEditor={onOpenTextEditor}
+            isDoubleTap={isDoubleTap}
+          />
+        );
+      })}
 
-        if (element.element_type === "Drawing") {
-          const points = element.properties.points;
-          if (!Array.isArray(points) || !isValidDrawingPoints(points)) return null;
-          const positionX = coerceNumber(element.position_x, 0);
-          const positionY = coerceNumber(element.position_y, 0);
-          return (
-            <pixiContainer
-              key={element.id}
-              ref={(node) => registerElementRef(element.id, node)}
-              x={positionX}
-              y={positionY}
-              rotation={(element.rotation ?? 0) * DEG_TO_RAD}
-              eventMode={isInteractive ? "static" : "passive"}
-              onPointerDown={(event: FederatedPointerEvent) => handleElementPointerDown(event, element)}
-            >
-              <pixiGraphics
-                draw={(graphics) => {
-                  graphics.clear();
-                  drawPolyline(
-                    graphics,
-                    points,
-                    element.style.strokeWidth ?? 2,
-                    parseColor(element.style.stroke, 0xffffff),
-                  );
-                }}
-              />
-            </pixiContainer>
-          );
-        }
-
-        if (element.element_type === "Text") {
-          const positionX = coerceNumber(element.position_x, 0);
-          const positionY = coerceNumber(element.position_y, 0);
-          const fontSize = element.style.fontSize ?? DEFAULT_TEXT_STYLE.fontSize ?? 16;
-          const content = element.properties?.content ?? "";
-          const metrics = getTextMetrics(content, fontSize);
-          return (
-            <pixiContainer
-              key={element.id}
-              ref={(node) => registerElementRef(element.id, node)}
-              x={positionX}
-              y={positionY}
-              rotation={(element.rotation ?? 0) * DEG_TO_RAD}
-              eventMode={isInteractive ? "static" : "passive"}
-              onPointerDown={(event: FederatedPointerEvent) => handleElementPointerDown(event, element)}
-              onPointerTap={(event: FederatedPointerEvent) => {
-                if (!isDoubleTap(element.id, event)) return;
-                onOpenTextEditor({
-                  x: positionX,
-                  y: positionY,
-                  value: content,
-                  elementId: element.id,
-                  fontSize,
-                  color: element.style.textColor ?? DEFAULT_TEXT_STYLE.fill ?? "#1F2937",
-                  elementType: "Text",
-                });
-              }}
-            >
-              <pixiText
-                text={content}
-                style={{
-                  fontSize,
-                  fill: element.style.textColor ?? DEFAULT_TEXT_STYLE.fill ?? "#1F2937",
-                }}
-              />
-              {isSelected && (
-                <pixiGraphics
-                  draw={(graphics) => {
-                    graphics.clear();
-                    setStrokeStyle(graphics, selectionStrokeWidth, parseColor(SELECTION_STROKE));
-                    graphics.rect(
-                      -selectionPadding,
-                      -selectionPadding,
-                      metrics.width + selectionPadding * 2,
-                      metrics.height + selectionPadding * 2,
-                    );
-                    graphics.stroke();
-                  }}
-                />
-              )}
-            </pixiContainer>
-          );
-        }
-
-        if (element.element_type === "StickyNote") {
-          const rect = getRectBounds(element);
-          const fontSize = element.style.fontSize ?? 16;
-          const content = element.properties?.content ?? "";
-          const padding = 12;
-          return (
-            <pixiContainer
-              key={element.id}
-              ref={(node) => registerElementRef(element.id, node)}
-              x={rect.x}
-              y={rect.y}
-              rotation={(element.rotation ?? 0) * DEG_TO_RAD}
-              eventMode={isInteractive ? "static" : "passive"}
-              onPointerDown={(event: FederatedPointerEvent) => handleElementPointerDown(event, element)}
-              onPointerTap={(event: FederatedPointerEvent) => {
-                if (!isDoubleTap(element.id, event)) return;
-                onOpenTextEditor({
-                  x: rect.x + padding,
-                  y: rect.y + padding,
-                  value: content,
-                  elementId: element.id,
-                  fontSize,
-                  color: element.style.textColor ?? "#1F2937",
-                  elementType: "StickyNote",
-                  backgroundColor: element.style.fill,
-                  editorWidth: Math.max(0, rect.width - padding * 2),
-                  editorHeight: Math.max(0, rect.height - padding * 2),
-                });
-              }}
-            >
-              <pixiGraphics
-                draw={(graphics) => {
-                  graphics.clear();
-                  const stroke = parseColor(element.style.stroke, 0xffffff);
-                  const fill = parseColor(element.style.fill, 0xfff9c2);
-                  const strokeWidth = element.style.strokeWidth ?? 1;
-                  setStrokeStyle(graphics, strokeWidth, stroke);
-                  setFillStyle(graphics, fill);
-                  graphics.roundRect(0, 0, rect.width, rect.height, element.style.cornerRadius ?? 12);
-                  graphics.fill();
-                  graphics.stroke();
-                }}
-              />
-              <pixiText
-                text={content}
-                x={padding}
-                y={padding}
-                style={{
-                  fontSize,
-                  fill: element.style.textColor ?? "#1F2937",
-                  wordWrap: true,
-                  wordWrapWidth: Math.max(0, rect.width - padding * 2),
-                }}
-              />
-              {isSelected && (
-                <pixiGraphics
-                  draw={(graphics) => {
-                    graphics.clear();
-                    setStrokeStyle(graphics, selectionStrokeWidth, parseColor(SELECTION_STROKE));
-                    graphics.rect(
-                      -selectionPadding,
-                      -selectionPadding,
-                      rect.width + selectionPadding * 2,
-                      rect.height + selectionPadding * 2,
-                    );
-                    graphics.stroke();
-                  }}
-                />
-              )}
-            </pixiContainer>
-          );
-        }
-
-        if (element.element_type === "Connector") {
-          const points = resolveConnectorPoints(element);
-          if (!points || points.length < 4) return null;
-          return (
-            <pixiContainer
-              key={element.id}
-              ref={(node) => registerElementRef(element.id, node)}
-              eventMode={isInteractive ? "static" : "passive"}
-              onPointerDown={(event: FederatedPointerEvent) => handleElementPointerDown(event, element)}
-            >
-              <pixiGraphics
-                draw={(graphics) => {
-                  graphics.clear();
-                  drawPolyline(
-                    graphics,
-                    normalizeOrthogonalPoints(points),
-                    element.style.strokeWidth ?? 2,
-                    parseColor(element.style.stroke, 0xffffff),
-                  );
-                }}
-              />
-            </pixiContainer>
-          );
-        }
-
-        return null;
+      {selectedElementIds.map((id) => {
+        const element = elementMap.get(id);
+        if (!element) return null;
+        return (
+          <SelectionHighlight
+            key={`selection-${id}`}
+            element={element}
+            stageScale={stageScale}
+          />
+        );
       })}
 
       {ghostElement && (
