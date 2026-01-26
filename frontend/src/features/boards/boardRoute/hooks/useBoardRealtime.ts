@@ -256,6 +256,8 @@ export function useBoardRealtime({
   const lastConnectAtRef = useRef(0);
   const syncStartAtRef = useRef<number | null>(null);
   const onRoleUpdateRef = useRef<typeof onRoleUpdate | null>(onRoleUpdate ?? null);
+  const lockedElementKeyRef = useRef("");
+  const lockedElementIdsRef = useRef<Set<string>>(new Set());
   const wsMetricsRef = useRef<WsMetrics>({
     outboundUpdate: 0,
     outboundAwareness: 0,
@@ -381,7 +383,12 @@ export function useBoardRealtime({
         ids.add(entry.editing.element_id);
       }
     });
-    return ids;
+    const key = ids.size === 0 ? "" : [...ids].sort().join("|");
+    if (key !== lockedElementKeyRef.current) {
+      lockedElementKeyRef.current = key;
+      lockedElementIdsRef.current = ids;
+    }
+    return lockedElementIdsRef.current;
   }, [selectionPresence]);
 
   const refreshHistoryState = useCallback(() => {

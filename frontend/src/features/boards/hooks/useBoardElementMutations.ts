@@ -186,6 +186,20 @@ const serializeRecord = (value: unknown) => {
   }
 };
 
+const buildPersistSignature = (element: BoardElement) => {
+  const dimensions = resolveElementDimensions(element);
+  const rotation = normalizeRotation(element.rotation);
+  return [
+    dimensions.position_x,
+    dimensions.position_y,
+    dimensions.width,
+    dimensions.height,
+    rotation ?? "__undefined__",
+    serializeRecord(element.style),
+    serializeRecord(element.properties),
+  ].join("|");
+};
+
 const cloneBoardElement = (
   element: BoardElement,
   overrides: Partial<BoardElement>,
@@ -222,6 +236,10 @@ export function useBoardElementMutations({
   const inFlightCreatesRef = useRef(new Set<string>());
   const pendingCreatesRef = useRef(new Map<string, BoardElement>());
   const pendingDeletesRef = useRef(new Set<string>());
+  const lastPersistedRef = useRef(new Map<string, string>());
+  const recordPersistedSnapshot = useCallback((element: BoardElement) => {
+    lastPersistedRef.current.set(element.id, buildPersistSignature(element));
+  }, []);
   const reconcileCreatedElement = useCallback(
     (originalId: string, created: BoardElementResponse) => {
       const reconciled = toBoardElement(created);
@@ -234,6 +252,7 @@ export function useBoardElementMutations({
       } else if (onReconciled) {
         onReconciled(reconciled);
       }
+      recordPersistedSnapshot(reconciled);
       onPersisted(
         reconciled.id,
         created.version,
@@ -241,14 +260,20 @@ export function useBoardElementMutations({
       );
       return reconciled;
     },
-    [onPersisted, onReconciled, onReplaced],
+    [onPersisted, onReconciled, onReplaced, recordPersistedSnapshot],
   );
   const persistUpdate = useCallback(
     async (element: BoardElement, expectedVersion: number) => {
+      const signature = buildPersistSignature(element);
+      const lastSignature = lastPersistedRef.current.get(element.id);
+      if (typeof element.version === "number" && lastSignature === signature) {
+        return true;
+      }
       const payload = buildUpdatePayload(element, expectedVersion);
 
       try {
         const updated = await updateBoardElement(boardId, element.id, payload);
+        recordPersistedSnapshot(element);
         onPersisted(element.id, updated.version, updated.updated_at);
         return true;
       } catch (error) {
