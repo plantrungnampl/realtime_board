@@ -7,6 +7,8 @@ import { isRectLikeElement } from "@/features/boards/boardCanvas/elementUtils";
 const ROUTE_PADDING = 12;
 const ROUTE_MARGIN = 320;
 const ROUTE_BEND_PENALTY = 20;
+const ROUTE_SHORT_MARGIN = 120;
+const ROUTE_SHORT_DISTANCE = 800;
 const CONNECTOR_ANCHOR_GAP = 0.5;
 const CONNECTOR_ANCHOR_STROKE_FACTOR = 0.25;
 const CONNECTOR_ANCHOR_MIN_GAP = 1;
@@ -162,6 +164,18 @@ const segmentIntersectsObstacles = (
   end: Point,
   obstacles: RectBounds[],
 ) => obstacles.some((rect) => segmentIntersectsRect(start, end, rect));
+
+const pathIntersectsObstacles = (points: number[] | undefined, obstacles: RectBounds[]) => {
+  if (!points || points.length < 4) return false;
+  for (let i = 0; i < points.length - 2; i += 2) {
+    const start = { x: points[i], y: points[i + 1] };
+    const end = { x: points[i + 2], y: points[i + 3] };
+    if (segmentIntersectsObstacles(start, end, obstacles)) {
+      return true;
+    }
+  }
+  return false;
+};
 
 const shrinkRect = (rect: RectBounds, delta: number): RectBounds => {
   const width = rect.right - rect.left;
@@ -485,6 +499,10 @@ export const buildConnectorRouteContext = (
     margin: ROUTE_MARGIN,
     bendPenalty: ROUTE_BEND_PENALTY,
   };
+  const distance = Math.hypot(end.x - start.x, end.y - start.y);
+  if (distance <= ROUTE_SHORT_DISTANCE) {
+    routeOptions.margin = ROUTE_SHORT_MARGIN;
+  }
   const obstacleIndex = options?.obstacleIndex ?? null;
   const candidateSearch = buildSearchBounds(start, end, routeOptions.margin, routeOptions.padding);
   const candidates = obstacleIndex
@@ -519,6 +537,23 @@ export const buildConnectorRouteContext = (
       requiresRoute = true;
     }
   }
+  const obstacleRects = shouldAvoidObstacles
+    ? buildObstacleRects(
+        obstacleElements.filter((element) => element.id !== connector.id),
+        boundIds,
+      )
+    : [];
+  if (
+    !requiresRoute
+    && normalizedMode === "orthogonal"
+    && connectorElement.properties.routing?.lock
+    && obstacleRects.length > 0
+  ) {
+    const existingPoints = connectorElement.properties.points;
+    if (existingPoints && pathIntersectsObstacles(existingPoints, obstacleRects)) {
+      requiresRoute = true;
+    }
+  }
   return {
     base,
     normalizedMode,
@@ -530,12 +565,7 @@ export const buildConnectorRouteContext = (
     endSide,
     routeStart: getStubPoint(start, startSide),
     routeEnd: getStubPoint(end, endSide),
-    obstacles: shouldAvoidObstacles
-      ? buildObstacleRects(
-          obstacleElements.filter((element) => element.id !== connector.id),
-          boundIds,
-        )
-      : [],
+    obstacles: obstacleRects,
     routeOptions,
   };
 };

@@ -1,5 +1,5 @@
 Goal (incl. success criteria):
-- Review backend performance and identify high-impact optimization targets.
+- Fix frontend connector routing algorithm issues and answer the new question about a .webm file problem.
 
 Constraints/Assumptions:
 - Must read docs/README.md and all docs/*.md before analysis (done).
@@ -48,18 +48,36 @@ State:
     - Added projection prefilter to skip param build when unchanged.
     - Added changelog entry for projection prefilter.
     - cargo test passed (24 tests) after snapshot/projection changes; existing dead-code warnings remain.
+    - Added budgets for connector routing (node/iteration/time caps).
+    - Added changelog entry for connector routing budgets.
+    - Added routing budget debug logs gated by RTC_DEBUG_ROUTING.
+    - Reduced routing margin for short connector distances.
+    - Added changelog entry for routing telemetry and short-range margin.
+    - Removed duplicate lock-route obstacle check to avoid repeated obstacle builds.
+    - Added changelog entry for routing lock check cleanup.
+    - Prefiltered obstacles per row/column when building routing graph.
+    - Added changelog entry for routing edge obstacle prefilter.
+    - Sampled routing time-budget check every 64 iterations to reduce overhead.
+    - Added changelog entry for routing time budget sampling.
+    - Normalized obstacle hashes to improve routing graph cache hits.
+    - Added changelog entry for routing cache hash normalization.
+    - Added optional realtime WS metrics sampling gated by RTC_DEBUG_REALTIME.
+    - Added changelog entry for realtime metrics sampling.
+    - Fixed WsMetrics type scope for realtime debug counters.
+    - Added changelog entry for realtime metrics type scope fix.
   - Now:
-    - Backend snapshot/projection changes validated by tests.
+    - Understand what is wrong with `/Data/ce25b650-2723-4084-8df1-3906a2bfc3c3.webm`.
   - Next:
-    - Validate behavior under WS updates if requested.
+    - Update docs/CHANGELOG.md if logic changes.
+    - Validate FE build/lint if requested.
 
 Open questions (UNCONFIRMED if needed):
-- Do you want me to tackle remaining dead-code warnings or continue performance work?
+- Do you want me to run frontend lint/build to verify routing changes after cleanup?
 
 Working set (files/ids/commands):
-- src/main.rs
-- src/handles/
-- src/services/
-- src/models/
-- docs/*.md
+- frontend/src/features/boards/boardCanvas/connectorRouting.ts
+- frontend/src/features/boards/routing/orthogonalRouter.ts
+- frontend/src/features/boards/routing/orthogonalRouter.ts
+- frontend/src/features/boards/routing/connectorRouting.worker.ts
+- frontend/src/features/boards/routing/useConnectorRoutingWorker.ts
 - CONTINUITY.md

@@ -65,6 +65,25 @@ const PRESENCE_AWAY_MS = 180_000;
 const SYNC_STATUS_THROTTLE_MS = 250;
 const MAX_RECONNECT_ATTEMPTS = 8;
 const MIN_CONNECT_INTERVAL_MS = 400;
+const DEBUG_REALTIME_SAMPLE_MS = 5000;
+
+const shouldDebugRealtime = () =>
+  typeof window !== "undefined"
+  && window.localStorage?.getItem("RTC_DEBUG_REALTIME") === "1";
+
+type DeepObserver = (
+  events: Y.YEvent<Y.AbstractType<unknown>>[],
+  transaction: Y.Transaction,
+) => void;
+
+type WsMetrics = {
+  outboundUpdate: number;
+  outboundAwareness: number;
+  outboundText: number;
+  inboundUpdate: number;
+  inboundAwareness: number;
+  inboundText: number;
+};
 
 const RECT_LIKE_TYPES = new Set<BoardElement["element_type"]>([
   "Shape",
@@ -237,6 +256,14 @@ export function useBoardRealtime({
   const lastConnectAtRef = useRef(0);
   const syncStartAtRef = useRef<number | null>(null);
   const onRoleUpdateRef = useRef<typeof onRoleUpdate | null>(onRoleUpdate ?? null);
+  const wsMetricsRef = useRef<WsMetrics>({
+    outboundUpdate: 0,
+    outboundAwareness: 0,
+    outboundText: 0,
+    inboundUpdate: 0,
+    inboundAwareness: 0,
+    inboundText: 0,
+  });
 
   const insertByZIndex = useCallback(
     (list: BoardElement[], element: BoardElement) => {
@@ -685,15 +712,12 @@ export function useBoardRealtime({
     let disposed = false;
     let awareness: Awareness | null = null;
     let yElements: Y.Map<Y.Map<unknown>> | null = null;
-    type DeepObserver = (
-      events: Y.YEvent<Y.AbstractType<unknown>>[],
-      transaction: Y.Transaction,
-    ) => void;
     let observer: DeepObserver | null = null;
-    let onUpdate: ((update: Uint8Array, origin: unknown) => void) | null = null;
-    let heartbeatId: number | null = null;
-    let presenceHeartbeatId: number | null = null;
-    let sweepId: number | null = null;
+  let onUpdate: ((update: Uint8Array, origin: unknown) => void) | null = null;
+  let heartbeatId: number | null = null;
+  let presenceHeartbeatId: number | null = null;
+  let sweepId: number | null = null;
+  let debugIntervalId: number | null = null;
     let activityHandler: (() => void) | null = null;
     let visibilityHandler: (() => void) | null = null;
     let onlineHandler: (() => void) | null = null;
@@ -838,10 +862,16 @@ export function useBoardRealtime({
 
       const wsUrl = `ws://localhost:3000/ws/boards/${boardId}?token=${encodeURIComponent(token)}`;
 
+      const bumpMetric = (key: keyof WsMetrics) => {
+        wsMetricsRef.current[key] += 1;
+      };
+
       const sendMessage = (type: number, payload: Uint8Array) => {
         const socket = wsRef.current;
         if (!socket || socket.readyState !== WebSocket.OPEN) return;
         socket.send(createWsMessage(type, payload));
+        if (type === WS_MESSAGE.Update) bumpMetric("outboundUpdate");
+        if (type === WS_MESSAGE.Awareness) bumpMetric("outboundAwareness");
       };
 
       const sendTextEvent = (type: string, payload?: Record<string, unknown>) => {
@@ -853,6 +883,7 @@ export function useBoardRealtime({
             payload,
           }),
         );
+        bumpMetric("outboundText");
       };
 
       const setPresenceStatus = (next: PresenceClientStatus) => {
@@ -1154,11 +1185,14 @@ export function useBoardRealtime({
         socket.onmessage = async (event) => {
           if (disposed || wsRef.current !== socket) return;
           if (typeof event.data === "string") {
+            bumpMetric("inboundText");
             handleTextMessage(event.data);
             return;
           }
           const bytes = await toUint8Array(event.data);
           if (!bytes || bytes.length === 0 || !awareness) return;
+          if (bytes[0] === WS_MESSAGE.Update) bumpMetric("inboundUpdate");
+          if (bytes[0] === WS_MESSAGE.Awareness) bumpMetric("inboundAwareness");
           logWsMessage(boardId, "binary", bytes.length);
           const roleUpdate = handleWsMessage(bytes, doc, awareness);
           if (roleUpdate) {
@@ -1206,6 +1240,34 @@ export function useBoardRealtime({
       }
 
       connectWebSocket();
+
+      if (shouldDebugRealtime()) {
+        debugIntervalId = window.setInterval(() => {
+          const metrics = wsMetricsRef.current;
+          const total =
+            metrics.outboundUpdate
+            + metrics.outboundAwareness
+            + metrics.outboundText
+            + metrics.inboundUpdate
+            + metrics.inboundAwareness
+            + metrics.inboundText;
+          if (total > 0) {
+            // eslint-disable-next-line no-console
+            console.debug("[realtime] ws metrics", {
+              boardId,
+              ...metrics,
+            });
+          }
+          wsMetricsRef.current = {
+            outboundUpdate: 0,
+            outboundAwareness: 0,
+            outboundText: 0,
+            inboundUpdate: 0,
+            inboundAwareness: 0,
+            inboundText: 0,
+          };
+        }, DEBUG_REALTIME_SAMPLE_MS);
+      }
 
       heartbeatId = window.setInterval(() => {
         if (disposed || !awareness) return;
@@ -1258,6 +1320,10 @@ export function useBoardRealtime({
       if (sweepId !== null) {
         clearInterval(sweepId);
         sweepId = null;
+      }
+      if (debugIntervalId !== null) {
+        clearInterval(debugIntervalId);
+        debugIntervalId = null;
       }
       if (activityHandler) {
         window.removeEventListener("pointermove", activityHandler);
