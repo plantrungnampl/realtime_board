@@ -265,7 +265,8 @@ function Register() {
           <Button
             className="w-full"
             type="submit"
-            disabled={isLoading || (isInviteFlow && !isInviteValid)}
+            isLoading={isInviteLoading || isLoading}
+            disabled={isInviteFlow && !isInviteValid}
           >
             {isInviteLoading
               ? 'Validating invite...'
