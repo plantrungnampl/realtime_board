@@ -205,6 +205,8 @@ export function useBoardRealtime({
   useLogger("useBoardRealtime", loggerContext, { logMount: true });
   const docRef = useRef<Y.Doc | null>(null);
   const yElementsRef = useRef<Y.Map<Y.Map<unknown>> | null>(null);
+  const elementsMapRef = useRef<Map<string, BoardElement>>(new Map());
+  const elementsListRef = useRef<BoardElement[]>([]);
   const undoManagerRef = useRef<Y.UndoManager | null>(null);
   const historyOriginRef = useRef({ source: "local" });
   const syncOriginRef = useRef({ source: "sync" });
@@ -235,6 +237,84 @@ export function useBoardRealtime({
   const lastConnectAtRef = useRef(0);
   const syncStartAtRef = useRef<number | null>(null);
   const onRoleUpdateRef = useRef<typeof onRoleUpdate | null>(onRoleUpdate ?? null);
+
+  const insertByZIndex = useCallback(
+    (list: BoardElement[], element: BoardElement) => {
+      const targetZ = element.z_index ?? 0;
+      const index = list.findIndex((item) => (item.z_index ?? 0) > targetZ);
+      if (index === -1) {
+        list.push(element);
+        return;
+      }
+      list.splice(index, 0, element);
+    },
+    [],
+  );
+
+  const rebuildElementsState = useCallback((next: BoardElement[]) => {
+    elementsListRef.current = next;
+    elementsMapRef.current = new Map(next.map((element) => [element.id, element]));
+    setElements(next);
+  }, []);
+
+  const applyElementChanges = useCallback(
+    (changedIds: Set<string>, yElements: Y.Map<Y.Map<unknown>>) => {
+      if (changedIds.size === 0) return;
+      const map = new Map(elementsMapRef.current);
+      const list = elementsListRef.current.slice();
+      let listChanged = false;
+
+      changedIds.forEach((id) => {
+        const entry = yElements.get(id);
+        const nextElement =
+          entry instanceof Y.Map ? materializeElement(entry as Y.Map<unknown>) : null;
+        const previous = map.get(id);
+
+        if (!nextElement) {
+          if (!previous) return;
+          map.delete(id);
+          const index = list.findIndex((item) => item.id === id);
+          if (index !== -1) {
+            list.splice(index, 1);
+            listChanged = true;
+          }
+          return;
+        }
+
+        if (!previous) {
+          map.set(id, nextElement);
+          insertByZIndex(list, nextElement);
+          listChanged = true;
+          return;
+        }
+
+        const prevZ = previous.z_index ?? 0;
+        const nextZ = nextElement.z_index ?? 0;
+        const index = list.findIndex((item) => item.id === id);
+        map.set(id, nextElement);
+        if (index === -1) {
+          insertByZIndex(list, nextElement);
+          listChanged = true;
+          return;
+        }
+        if (prevZ === nextZ) {
+          list[index] = nextElement;
+          listChanged = true;
+          return;
+        }
+        list.splice(index, 1);
+        insertByZIndex(list, nextElement);
+        listChanged = true;
+      });
+
+      elementsMapRef.current = map;
+      elementsListRef.current = list;
+      if (listChanged) {
+        setElements(list);
+      }
+    },
+    [insertByZIndex],
+  );
 
   useEffect(() => {
     canEditRef.current = canEdit;
@@ -716,7 +796,7 @@ export function useBoardRealtime({
       }, syncOriginRef.current);
       queueMicrotask(() => {
         if (disposed || !yElements) return;
-        setElements(sortElementsByZIndex(materializeElements(yElements)));
+        rebuildElementsState(sortElementsByZIndex(materializeElements(yElements)));
       });
 
       const undoManager = new Y.UndoManager(yElements, {
@@ -728,10 +808,26 @@ export function useBoardRealtime({
         refreshHistoryState();
       });
 
-      observer = () => {
-        if (!disposed && yElements) {
-          setElements(sortElementsByZIndex(materializeElements(yElements)));
+      observer = (events: Y.YEvent<Y.Map<unknown>>[]) => {
+        if (disposed || !yElements) return;
+        const changedIds = new Set<string>();
+        events.forEach((event) => {
+          if (event.path.length > 0) {
+            const id = event.path[0];
+            if (typeof id === "string") {
+              changedIds.add(id);
+              return;
+            }
+            if (typeof id === "number") {
+              changedIds.add(String(id));
+              return;
+            }
+          }
+        if (event.target === yElements && "keysChanged" in event) {
+          event.keysChanged.forEach((key) => changedIds.add(String(key)));
         }
+        });
+        applyElementChanges(changedIds, yElements);
       };
       yElements.observeDeep(observer);
 
