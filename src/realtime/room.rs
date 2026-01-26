@@ -5,7 +5,7 @@ use std::{
     collections::VecDeque,
     sync::{
         Arc,
-        atomic::{AtomicU64, Ordering},
+        atomic::AtomicU64,
     },
     time::Instant,
 };

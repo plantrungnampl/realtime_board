@@ -103,14 +103,32 @@ fn op_name(op_code: u8) -> &'static str {
     }
 }
 
+fn log_ws_message_sample_rate() -> u64 {
+    std::env::var("WS_MESSAGE_LOG_SAMPLE_RATE")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(100)
+}
+
 fn log_ws_message(direction: &str, message: &Message) {
+    if !tracing::enabled!(target: "ws_message", tracing::Level::DEBUG) {
+        return;
+    }
+    static LOG_COUNTER: std::sync::atomic::AtomicU64 =
+        std::sync::atomic::AtomicU64::new(0);
+    let sample_rate = log_ws_message_sample_rate();
+    let current = LOG_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    if current % sample_rate != 0 {
+        return;
+    }
     match message {
         Message::Binary(bin) => {
             let (op_code, op_label) = bin
                 .first()
                 .map(|byte| (Some(*byte), op_name(*byte)))
                 .unwrap_or((None, "empty"));
-            tracing::info!(
+            tracing::debug!(
                 target: "ws_message",
                 direction = direction,
                 message_type = "binary",
@@ -124,7 +142,7 @@ fn log_ws_message(direction: &str, message: &Message) {
             let event_type = serde_json::from_str::<ClientEvent>(text)
                 .map(|event| event.event_type)
                 .unwrap_or_else(|_| "unknown".to_string());
-            tracing::info!(
+            tracing::debug!(
                 target: "ws_message",
                 direction = direction,
                 message_type = "text",
@@ -134,7 +152,7 @@ fn log_ws_message(direction: &str, message: &Message) {
             );
         }
         Message::Ping(payload) => {
-            tracing::info!(
+            tracing::debug!(
                 target: "ws_message",
                 direction = direction,
                 message_type = "ping",
@@ -143,7 +161,7 @@ fn log_ws_message(direction: &str, message: &Message) {
             );
         }
         Message::Pong(payload) => {
-            tracing::info!(
+            tracing::debug!(
                 target: "ws_message",
                 direction = direction,
                 message_type = "pong",
@@ -156,7 +174,7 @@ fn log_ws_message(direction: &str, message: &Message) {
                 .as_ref()
                 .map(|inner| inner.reason.to_string())
                 .unwrap_or_else(|| "client_close".to_string());
-            tracing::info!(
+            tracing::debug!(
                 target: "ws_message",
                 direction = direction,
                 message_type = "close",

@@ -74,7 +74,8 @@ pub fn spawn_maintenance(db: PgPool, rooms: Rooms) {
                             }
                         }));
                     }
-                    if !tasks.is_empty() {
+                    let processed = tasks.len();
+                    if processed > 0 {
                         for task in tasks {
                             if let Err(error) = task.await {
                                 tracing::error!("Snapshot maintenance task failed: {}", error);
@@ -83,7 +84,7 @@ pub fn spawn_maintenance(db: PgPool, rooms: Rooms) {
                     }
                     tracing::debug!(
                         rooms_total,
-                        processed = tasks.len(),
+                        processed,
                         skipped,
                         duration_ms = tick_started.elapsed().as_millis(),
                         "Snapshot maintenance tick completed"
@@ -153,20 +154,34 @@ pub async fn load_board_state(
         tracing::info!("load_board_state no snapshot for board {}", board_id);
     }
 
-    let updates = realtime_repo::updates_after_seq(pool, board_id, start_seq).await?;
-    let update_count = updates.len();
-    let update_bytes: usize = updates.iter().map(|(_, bin)| bin.len()).sum();
+    let skip_seq = std::env::var("RTC_SKIP_UPDATE_SEQ")
+        .ok()
+        .and_then(|value| value.parse::<i64>().ok());
+    let chunk_size = std::env::var("RTC_UPDATE_CHUNK_SIZE")
+        .ok()
+        .and_then(|value| value.parse::<i64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(500);
+    let mut last_seq = start_seq;
+    let mut total_updates = 0usize;
+    let mut total_bytes = 0usize;
+    let mut had_updates = false;
 
-    if !updates.is_empty() {
-        let skip_seq = std::env::var("RTC_SKIP_UPDATE_SEQ")
-            .ok()
-            .and_then(|value| value.parse::<i64>().ok());
+    loop {
+        let updates =
+            realtime_repo::updates_after_seq_chunked(pool, board_id, last_seq, chunk_size).await?;
+        if updates.is_empty() {
+            break;
+        }
+        had_updates = true;
+        total_updates += updates.len();
+        total_bytes += updates.iter().map(|(_, bin)| bin.len()).sum::<usize>();
         tracing::info!(
             "load_board_state applying {} updates ({} bytes) for board {} after seq {}",
-            update_count,
-            update_bytes,
+            updates.len(),
+            updates.iter().map(|(_, bin)| bin.len()).sum::<usize>(),
             board_id,
-            start_seq
+            last_seq
         );
         for (index, (seq, update_bin)) in updates.iter().enumerate() {
             if skip_seq == Some(*seq) {
@@ -180,7 +195,7 @@ pub async fn load_board_state(
             tracing::info!(
                 "load_board_state apply update {}/{} seq {} ({} bytes) for board {}",
                 index + 1,
-                update_count,
+                updates.len(),
                 seq,
                 update_bin.len(),
                 board_id
@@ -211,10 +226,19 @@ pub async fn load_board_state(
             drop(doc_guard);
             tokio::task::yield_now().await;
         }
+        if let Some((last, _)) = updates.last() {
+            last_seq = *last;
+        }
+        if updates.len() < chunk_size as usize {
+            break;
+        }
+    }
+
+    if had_updates {
         tracing::info!(
             "load_board_state replayed {} updates ({} bytes) and released doc lock for board {}",
-            update_count,
-            update_bytes,
+            total_updates,
+            total_bytes,
             board_id
         );
     } else {
@@ -233,12 +257,12 @@ pub async fn load_board_state(
         );
     }
     tracing::info!("load_board_state after hydrate for board {}", board_id);
-    if update_count >= 50 || update_bytes >= 5_000_000 {
+    if total_updates >= 50 || total_bytes >= 5_000_000 {
         tracing::info!(
             "load_board_state snapshot-on-load trigger for board {} ({} updates, {} bytes)",
             board_id,
-            update_count,
-            update_bytes
+            total_updates,
+            total_bytes
         );
         if let Err(error) = maybe_create_snapshot(pool, board_id, doc.clone(), 1).await {
             tracing::warn!(

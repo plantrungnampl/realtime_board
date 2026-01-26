@@ -1,5 +1,5 @@
 use sqlx::postgres::PgPoolOptions;
-use std::net::SocketAddr;
+use std::{net::SocketAddr, time::Duration};
 use tokio::net::TcpListener;
 
 use crate::{app, error::AppError, realtime, services, telemetry};
@@ -11,8 +11,13 @@ pub async fn run() -> Result<(), AppError> {
 
     let database_url = std::env::var("DATABASE_URL")
         .map_err(|err| AppError::Internal(format!("DATABASE_URL missing: {}", err)))?;
+    let max_connections = read_env_u32("DATABASE_MAX_CONNECTIONS").unwrap_or(20);
+    let min_connections = read_env_u32("DATABASE_MIN_CONNECTIONS").unwrap_or(5);
+    let acquire_timeout_secs = read_env_u64("DATABASE_ACQUIRE_TIMEOUT_SECS").unwrap_or(15);
     let pool = PgPoolOptions::new()
-        .max_connections(10)
+        .max_connections(max_connections)
+        .min_connections(min_connections)
+        .acquire_timeout(Duration::from_secs(acquire_timeout_secs))
         .connect(&database_url)
         .await
         .map_err(AppError::Database)?;
@@ -35,4 +40,16 @@ pub async fn run() -> Result<(), AppError> {
     telemetry::shutdown_tracing();
     result?;
     Ok(())
+}
+
+fn read_env_u32(key: &str) -> Option<u32> {
+    std::env::var(key)
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+}
+
+fn read_env_u64(key: &str) -> Option<u64> {
+    std::env::var(key)
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
 }

@@ -70,6 +70,32 @@ pub async fn updates_after_seq(
     Ok(records.into_iter().map(|r| (r.seq, r.update_bin)).collect())
 }
 
+pub async fn updates_after_seq_chunked(
+    pool: &PgPool,
+    board_id: Uuid,
+    start_seq: i64,
+    limit: i64,
+) -> Result<Vec<(i64, Vec<u8>)>, AppError> {
+    let records = crate::log_query_fetch_all!(
+        "realtime.updates_after_seq_chunked",
+        sqlx::query!(
+            r#"
+            SELECT update_bin, seq
+            FROM crdt.board_update
+            WHERE board_id = $1 AND seq > $2
+            ORDER BY seq ASC
+            LIMIT $3
+            "#,
+            board_id,
+            start_seq,
+            limit
+        )
+        .fetch_all(pool)
+    )?;
+
+    Ok(records.into_iter().map(|r| (r.seq, r.update_bin)).collect())
+}
+
 pub async fn last_snapshot_seq(pool: &PgPool, board_id: Uuid) -> Result<i64, AppError> {
     Ok(crate::log_query_fetch_one!(
         "realtime.last_snapshot_seq",

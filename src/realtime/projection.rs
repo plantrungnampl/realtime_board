@@ -149,8 +149,18 @@ async fn project_elements_once(
         .map(|row| (row.id, row))
         .collect();
     let mut upserts = Vec::new();
+    let mut skipped = 0usize;
     for element in elements {
         let defaults = defaults_map.get(&element.id);
+        if let Some(defaults) = defaults {
+            if element.version == Some(defaults.version)
+                && element.updated_at == Some(defaults.updated_at)
+                && element.deleted_at == defaults.deleted_at
+            {
+                skipped += 1;
+                continue;
+            }
+        }
         match to_projected_params(board_id, element.clone(), defaults, &fallback) {
             Ok(params) => {
                 if should_write_projection(defaults, &params) {
@@ -168,6 +178,13 @@ async fn project_elements_once(
     }
     element_repo::upsert_projected_elements_batch(&mut tx, &upserts).await?;
     tx.commit().await?;
+    if skipped > 0 {
+        tracing::debug!(
+            board_id = %board_id,
+            skipped,
+            "Projection prefilter skipped elements"
+        );
+    }
     BusinessEvent::CrdtProjectionCompleted {
         board_id,
         elements_synced: element_count,

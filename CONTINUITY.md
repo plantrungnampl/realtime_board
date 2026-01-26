@@ -37,13 +37,24 @@ State:
     - Added changelog entry for backend metrics logs.
     - Implemented batch upsert for projection to reduce query count.
     - Added changelog entry for batch projection upserts.
+    - Added projection/snapshot metrics logs.
+    - cargo test passed (24 tests) with existing dead-code warnings.
+    - Added env-based DB pool tuning (max/min/acquire timeout).
+    - Added changelog entry for DB pool tuning.
+    - Throttled WS message logs with debug-level sampling.
+    - Added changelog entry for WS logging throttle.
+    - Implemented chunked update replay during board state hydration.
+    - Added changelog entry for chunked snapshot replay.
+    - Added projection prefilter to skip param build when unchanged.
+    - Added changelog entry for projection prefilter.
+    - cargo test passed (24 tests) after snapshot/projection changes; existing dead-code warnings remain.
   - Now:
-    - Backend projection batching implemented; pending validation if needed.
+    - Backend snapshot/projection changes validated by tests.
   - Next:
     - Validate behavior under WS updates if requested.
 
 Open questions (UNCONFIRMED if needed):
-- Do you want me to run backend tests or add metrics around snapshot/projection skips?
+- Do you want me to tackle remaining dead-code warnings or continue performance work?
 
 Working set (files/ids/commands):
 - src/main.rs
