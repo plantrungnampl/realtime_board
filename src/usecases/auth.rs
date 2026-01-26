@@ -153,7 +153,7 @@ impl UserServices {
                 }
                 .log();
                 return Err(AppError::InvalidCredentials(
-                    "invalid creadentials".to_string(),
+                    "Invalid email or password".to_string(),
                 ));
             }
         };
@@ -164,14 +164,16 @@ impl UserServices {
 
         //verify password
         let verifypassword = verify_password_user(&req.password, hash)
-            .map_err(|_| AppError::InvalidCredentials("error password".to_string()))?;
+            .map_err(|_| AppError::InvalidCredentials("Invalid email or password".to_string()))?;
         if !verifypassword {
             BusinessEvent::LoginFailed {
                 email_redacted: redact_email(&req.email),
                 reason: "invalid_password".to_string(),
             }
             .log();
-            return Err(AppError::InvalidCredentials("error pass".to_string()));
+            return Err(AppError::InvalidCredentials(
+                "Invalid email or password".to_string(),
+            ));
         }
         if !user.is_active {
             BusinessEvent::LoginFailed {
@@ -180,7 +182,7 @@ impl UserServices {
             }
             .log();
             return Err(AppError::InvalidCredentials(
-                "invalid creadential".to_string(),
+                "Invalid email or password".to_string(),
             ));
         }
 
