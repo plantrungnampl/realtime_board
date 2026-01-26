@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                INSERT INTO crdt.board_update (board_id, actor_id, update_bin)\n                VALUES ($1, $2, $3)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "30cb51cf495b1aeeeb96300a6f1fdf6dd0d5bd6c5e8d8b23a224a272f80f6ee2"
+}

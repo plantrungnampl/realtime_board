@@ -19,6 +19,15 @@ import {
   type RoleUpdateEvent,
   WS_MESSAGE,
 } from "@/features/boards/realtime/protocol";
+import {
+  logWsConnect,
+  logWsConnected,
+  logWsDisconnected,
+  logWsError,
+  logWsMessage,
+  logWsSyncComplete,
+} from "@/features/boards/realtime/wsLogger";
+import { useLogger } from "@/lib/logger/hooks";
 import { sortElementsByZIndex } from "@/features/boards/boardRoute/elements";
 import {
   applyElementPatch,
@@ -56,6 +65,58 @@ const PRESENCE_AWAY_MS = 180_000;
 const SYNC_STATUS_THROTTLE_MS = 250;
 const MAX_RECONNECT_ATTEMPTS = 8;
 const MIN_CONNECT_INTERVAL_MS = 400;
+
+const RECT_LIKE_TYPES = new Set<BoardElement["element_type"]>([
+  "Shape",
+  "StickyNote",
+  "Image",
+  "Video",
+  "Frame",
+  "Embed",
+  "Document",
+  "Component",
+]);
+
+const normalizeElementDimensions = (element: BoardElement): BoardElement => {
+  let positionX = element.position_x;
+  let positionY = element.position_y;
+  let width = Number.isFinite(element.width) ? element.width : 1;
+  let height = Number.isFinite(element.height) ? element.height : 1;
+
+  if (RECT_LIKE_TYPES.has(element.element_type)) {
+    if (width < 0) {
+      positionX += width;
+      width = Math.abs(width);
+    }
+    if (height < 0) {
+      positionY += height;
+      height = Math.abs(height);
+    }
+  } else {
+    width = Math.abs(width);
+    height = Math.abs(height);
+  }
+
+  width = Math.max(1, width);
+  height = Math.max(1, height);
+
+  if (
+    positionX === element.position_x
+    && positionY === element.position_y
+    && width === element.width
+    && height === element.height
+  ) {
+    return element;
+  }
+
+  return {
+    ...element,
+    position_x: positionX,
+    position_y: positionY,
+    width,
+    height,
+  };
+};
 
 type PresenceClientStatus = "active" | "idle" | "away";
 type ConnectionStatus = "connecting" | "online" | "offline" | "reconnecting";
@@ -140,6 +201,8 @@ export function useBoardRealtime({
     canRedo: false,
   });
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(initialSyncStatus);
+  const loggerContext = useMemo(() => ({ board_id: boardId }), [boardId]);
+  useLogger("useBoardRealtime", loggerContext, { logMount: true });
   const docRef = useRef<Y.Doc | null>(null);
   const yElementsRef = useRef<Y.Map<Y.Map<unknown>> | null>(null);
   const undoManagerRef = useRef<Y.UndoManager | null>(null);
@@ -170,6 +233,7 @@ export function useBoardRealtime({
   const reconnectTimeoutRef = useRef<number | null>(null);
   const reconnectAttemptRef = useRef(0);
   const lastConnectAtRef = useRef(0);
+  const syncStartAtRef = useRef<number | null>(null);
   const onRoleUpdateRef = useRef<typeof onRoleUpdate | null>(onRoleUpdate ?? null);
 
   useEffect(() => {
@@ -258,8 +322,9 @@ export function useBoardRealtime({
       const now = new Date().toISOString();
       runWithHistory(() => {
         const existing = coerceElementEntry(element.id, map);
+        const normalized = normalizeElementDimensions(element);
         const patch: Partial<BoardElement> = {
-          ...element,
+          ...normalized,
           created_at: element.created_at ?? now,
           updated_at: element.updated_at ?? now,
         };
@@ -286,7 +351,8 @@ export function useBoardRealtime({
       if (!current) return;
       const next = updater(current);
       if (!next) return;
-      const patch = diffElementPatch(current, next);
+      const normalized = normalizeElementDimensions(next);
+      const patch = diffElementPatch(current, normalized);
       if (!patch) return;
       const now = new Date().toISOString();
       runWithHistory(() => {
@@ -902,6 +968,11 @@ export function useBoardRealtime({
         joinedRef.current = true;
         setPresenceStatus("active");
         schedulePresenceTimers();
+        if (syncStartAtRef.current !== null) {
+          const duration = Date.now() - syncStartAtRef.current;
+          logWsSyncComplete(boardId, duration);
+          syncStartAtRef.current = null;
+        }
       };
 
       const handleTextMessage = (text: string) => {
@@ -913,6 +984,7 @@ export function useBoardRealtime({
         }
         const event = parseServerEvent(parsed);
         if (!event) return;
+        logWsMessage(boardId, event.type, text.length);
         switch (event.type) {
           case "board:joined":
             handleBoardJoined(event.payload);
@@ -971,6 +1043,9 @@ export function useBoardRealtime({
           existing.close(1000, "reconnect");
         }
         updateSyncStatus({ connection: "connecting" }, true);
+        const attempt = reconnectAttemptRef.current + 1;
+        logWsConnect(boardId, attempt);
+        syncStartAtRef.current = Date.now();
         const socket = new WebSocket(wsUrl);
         wsRef.current = socket;
         socket.binaryType = "arraybuffer";
@@ -983,6 +1058,7 @@ export function useBoardRealtime({
           }
           const bytes = await toUint8Array(event.data);
           if (!bytes || bytes.length === 0 || !awareness) return;
+          logWsMessage(boardId, "binary", bytes.length);
           const roleUpdate = handleWsMessage(bytes, doc, awareness);
           if (roleUpdate) {
             onRoleUpdateRef.current?.(roleUpdate);
@@ -997,6 +1073,7 @@ export function useBoardRealtime({
             return;
           }
           reconnectAttemptRef.current = 0;
+          logWsConnected(boardId);
           updateSyncStatus({ connection: "online" }, true);
           const syncPayload = Y.encodeStateVector(doc);
           sendMessage(WS_MESSAGE.SyncStep1, syncPayload);
@@ -1007,7 +1084,7 @@ export function useBoardRealtime({
 
         socket.onerror = (event) => {
           if (disposed || wsRef.current !== socket) return;
-          console.warn("ws error", event);
+          logWsError(boardId);
           updateSyncStatus(
             { connection: navigator.onLine ? "reconnecting" : "offline" },
             true,
@@ -1018,7 +1095,7 @@ export function useBoardRealtime({
           if (disposed || wsRef.current !== socket) return;
           wsRef.current = null;
           joinedRef.current = false;
-          console.log("ws close", event.code, event.reason);
+          logWsDisconnected(boardId, event.code, event.reason);
           const nextConnection = navigator.onLine ? "reconnecting" : "offline";
           updateSyncStatus({ connection: nextConnection }, true);
           if (nextConnection === "reconnecting") {

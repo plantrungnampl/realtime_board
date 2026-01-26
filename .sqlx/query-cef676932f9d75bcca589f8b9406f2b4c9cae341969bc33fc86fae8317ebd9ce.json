@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT COALESCE(MAX(snapshot_seq), 0) as \"snapshot_seq!\"\n        FROM crdt.board_snapshot\n        WHERE board_id = $1\n        ",
+  "query": "\n            SELECT COALESCE(MAX(snapshot_seq), 0) as \"snapshot_seq!\"\n            FROM crdt.board_snapshot\n            WHERE board_id = $1\n            ",
   "describe": {
     "columns": [
       {
@@ -18,5 +18,5 @@
       null
     ]
   },
-  "hash": "9928faa155d2fb3750a9c57087aa4855002729e551ac020e278263874e8bb2d1"
+  "hash": "cef676932f9d75bcca589f8b9406f2b4c9cae341969bc33fc86fae8317ebd9ce"
 }

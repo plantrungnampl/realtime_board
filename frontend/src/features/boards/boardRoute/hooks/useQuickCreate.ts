@@ -9,6 +9,7 @@ import {
   getNextZIndex,
 } from "@/features/boards/boardRoute/elements";
 import { getElementBounds } from "@/features/boards/elementMove.utils";
+import { applyConnectorRouting } from "@/features/boards/boardCanvas/connectorRouting";
 import { clamp } from "@/features/boards/boardRoute.utils";
 
 const QUICK_CREATE_SIZE = { width: 180, height: 120 };
@@ -54,7 +55,10 @@ type UseQuickCreateOptions = {
   canvasWidth: number;
   stageHeight: number;
   routeObstacles: Set<BoardElement["element_type"]>;
-  buildConnectorRoute: (connector: BoardElement, obstacleElements: BoardElement[]) => BoardElement;
+  buildConnectorRoute: (
+    connector: BoardElement,
+    obstacleElements: BoardElement[],
+  ) => Promise<BoardElement>;
   persistElement: (element: BoardElement) => void;
   startHistoryEntry: () => void;
   upsertElement: (element: BoardElement) => void;
@@ -211,7 +215,7 @@ export const useQuickCreate = ({
       strokeWidth:
         primarySelectedElement.style.strokeWidth ??
         DEFAULT_SHAPE_STYLE.strokeWidth,
-      fill: primarySelectedElement.style.fill ?? DEFAULT_SHAPE_STYLE.fill,
+      fill: DEFAULT_SHAPE_STYLE.fill,
       cornerRadius: primarySelectedElement.style.cornerRadius,
     };
 
@@ -315,9 +319,6 @@ export const useQuickCreate = ({
       const inheritedStyle =
         primarySelectedElement.element_type === "Shape"
           ? {
-              ...(primarySelectedElement.style.fill
-                ? { fill: primarySelectedElement.style.fill }
-                : {}),
               ...(primarySelectedElement.style.stroke
                 ? { stroke: primarySelectedElement.style.stroke }
                 : {}),
@@ -398,14 +399,18 @@ export const useQuickCreate = ({
         },
       };
 
-      const routedConnector = buildConnectorRoute(connector, [
+      void buildConnectorRoute(connector, [
         ...elements,
         sizedElement,
-      ]);
+      ]).then((routedConnector) => {
+        if (routedConnector.id !== connector.id) return;
+        upsertElement(routedConnector);
+        persistElement(routedConnector);
+      });
 
-      upsertElement(routedConnector);
+      upsertElement(connector);
       upsertElement(sizedElement);
-      persistElement(routedConnector);
+      persistElement(connector);
       persistElement(sizedElement);
       setSelectedElementIds([sizedElement.id]);
     },

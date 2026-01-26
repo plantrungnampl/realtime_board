@@ -648,6 +648,7 @@ async fn clone_template_elements(
     user_id: Uuid,
     template_elements: Vec<BoardElement>,
 ) -> Result<Vec<BoardElement>, AppError> {
+    element_repo::lock_board_elements(tx, board_id).await?;
     let mut id_map = HashMap::with_capacity(template_elements.len());
     for element in &template_elements {
         id_map.insert(element.id, Uuid::new_v4());

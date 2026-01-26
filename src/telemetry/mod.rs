@@ -4,10 +4,8 @@ pub mod events;
 pub mod otel;
 pub mod subscriber;
 
-pub use database::log_query;
 pub use events::{BusinessEvent, redact_email};
 pub use http::{
-    RequestContext,
     extract_header,
     extract_or_generate_header,
     request_logging_middleware,

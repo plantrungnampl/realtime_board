@@ -1,6 +1,6 @@
 use axum::{
     Router,
-    http::{HeaderValue, Method, header},
+    http::{HeaderName, HeaderValue, Method, header},
     middleware,
     routing::{delete, get, patch, post, put},
 };
@@ -33,7 +33,18 @@ pub fn build_router(state: AppState) -> Router {
             Method::DELETE,
             Method::OPTIONS,
         ])
-        .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION, header::ACCEPT]);
+        .allow_headers([
+            header::CONTENT_TYPE,
+            header::AUTHORIZATION,
+            header::ACCEPT,
+            HeaderName::from_static("x-trace-id"),
+            HeaderName::from_static("traceparent"),
+        ])
+        .expose_headers([
+            HeaderName::from_static("x-request-id"),
+            HeaderName::from_static("x-trace-id"),
+            HeaderName::from_static("traceparent"),
+        ]);
 
     let auth_routes = Router::new()
         .route("/auth/register", post(auth_http::register_handle))

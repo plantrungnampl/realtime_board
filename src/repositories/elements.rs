@@ -65,6 +65,7 @@ pub struct ElementProjectionDefaults {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub version: i32,
+    pub deleted_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
@@ -262,6 +263,19 @@ pub async fn create_element(
     )?;
 
     Ok(element)
+}
+
+pub async fn lock_board_elements(
+    tx: &mut Transaction<'_, Postgres>,
+    board_id: Uuid,
+) -> Result<(), AppError> {
+    crate::log_query_execute!(
+        "elements.lock_board_elements",
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))")
+            .bind(board_id.to_string())
+            .execute(&mut **tx)
+    )?;
+    Ok(())
 }
 
 pub async fn set_actor_id(
@@ -490,13 +504,33 @@ pub async fn list_projection_defaults(
         "elements.list_projection_defaults",
         sqlx::query_as::<_, ElementProjectionDefaults>(
             r#"
-                SELECT id, created_by, created_at, updated_at, version
+                SELECT id, created_by, created_at, updated_at, version, deleted_at
                 FROM board.element
                 WHERE board_id = $1
             "#,
         )
         .bind(board_id)
         .fetch_all(pool)
+    )?;
+
+    Ok(rows)
+}
+
+pub async fn list_projection_defaults_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    board_id: Uuid,
+) -> Result<Vec<ElementProjectionDefaults>, AppError> {
+    let rows = crate::log_query_fetch_all!(
+        "elements.list_projection_defaults_tx",
+        sqlx::query_as::<_, ElementProjectionDefaults>(
+            r#"
+                SELECT id, created_by, created_at, updated_at, version, deleted_at
+                FROM board.element
+                WHERE board_id = $1
+            "#,
+        )
+        .bind(board_id)
+        .fetch_all(&mut **tx)
     )?;
 
     Ok(rows)

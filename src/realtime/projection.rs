@@ -8,6 +8,7 @@ use yrs::Doc;
 
 use crate::{
     error::AppError,
+    models::elements::ElementType,
     realtime::{element_crdt, room::Room, room::Rooms},
     repositories::boards as board_repo,
     repositories::elements as element_repo,
@@ -66,7 +67,36 @@ async fn project_elements(
     board_id: Uuid,
     elements: Vec<element_crdt::ElementMaterialized>,
 ) -> Result<(), AppError> {
+    let mut elements = elements;
+    elements.sort_by_key(|element| element.id.as_u128());
     let element_count = elements.len();
+
+    const MAX_RETRIES: usize = 3;
+    let mut attempt = 0;
+    loop {
+        attempt += 1;
+        match project_elements_once(db, board_id, &elements, element_count).await {
+            Ok(()) => return Ok(()),
+            Err(error) if is_deadlock_error(&error) && attempt < MAX_RETRIES => {
+                let backoff = Duration::from_millis(50 * attempt as u64);
+                tracing::warn!(
+                    board_id = %board_id,
+                    attempt,
+                    "Deadlock detected while projecting CRDT state; retrying"
+                );
+                tokio::time::sleep(backoff).await;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
+
+async fn project_elements_once(
+    db: &PgPool,
+    board_id: Uuid,
+    elements: &[element_crdt::ElementMaterialized],
+    element_count: usize,
+) -> Result<(), AppError> {
     let board = board_repo::find_board_by_id_including_deleted(db, board_id)
         .await?
         .ok_or_else(|| AppError::NotFound("Board not found".to_string()))?;
@@ -82,17 +112,20 @@ async fn project_elements(
         sqlx::query("SELECT set_config('app.crdt_projection', 'on', true)")
             .execute(&mut *tx)
     )?;
+    element_repo::lock_board_elements(&mut tx, board_id).await?;
 
-    let defaults = element_repo::list_projection_defaults(db, board_id).await?;
+    let defaults = element_repo::list_projection_defaults_tx(&mut tx, board_id).await?;
     let defaults_map: HashMap<Uuid, element_repo::ElementProjectionDefaults> = defaults
         .into_iter()
         .map(|row| (row.id, row))
         .collect();
     for element in elements {
         let defaults = defaults_map.get(&element.id);
-        match to_projected_params(board_id, element, defaults, &fallback) {
+        match to_projected_params(board_id, element.clone(), defaults, &fallback) {
             Ok(params) => {
-                element_repo::upsert_projected_element(&mut tx, params).await?;
+                if should_write_projection(defaults, &params) {
+                    element_repo::upsert_projected_element(&mut tx, params).await?;
+                }
             }
             Err(error) => {
                 tracing::warn!(
@@ -119,7 +152,13 @@ fn to_projected_params(
     fallback: &ProjectionFallback,
 ) -> Result<element_repo::ProjectedElementParams, AppError> {
     let rotation = normalize_rotation(element.rotation);
-    let (width, height) = normalize_dimensions(board_id, element.id, element.width, element.height);
+    let (width, height) = normalize_dimensions(
+        board_id,
+        element.id,
+        element.element_type,
+        element.width,
+        element.height,
+    );
     let created_by = defaults
         .map(|row| row.created_by)
         .or(element.created_by);
@@ -161,7 +200,25 @@ fn to_projected_params(
     })
 }
 
-fn normalize_dimensions(board_id: Uuid, element_id: Uuid, width: f64, height: f64) -> (f64, f64) {
+fn should_write_projection(
+    defaults: Option<&element_repo::ElementProjectionDefaults>,
+    params: &element_repo::ProjectedElementParams,
+) -> bool {
+    let Some(defaults) = defaults else {
+        return true;
+    };
+    params.version != defaults.version
+        || params.updated_at != defaults.updated_at
+        || params.deleted_at != defaults.deleted_at
+}
+
+fn normalize_dimensions(
+    board_id: Uuid,
+    element_id: Uuid,
+    element_type: ElementType,
+    width: f64,
+    height: f64,
+) -> (f64, f64) {
     const MIN_DIMENSION: f64 = 1.0;
     let normalized_width = if width.is_finite() && width > 0.0 {
         width
@@ -175,15 +232,29 @@ fn normalize_dimensions(board_id: Uuid, element_id: Uuid, width: f64, height: f6
     };
 
     if normalized_width != width || normalized_height != height {
-        tracing::warn!(
-            "Normalized non-positive element dimensions for board {} element {}: width {} -> {}, height {} -> {}",
-            board_id,
-            element_id,
-            width,
-            normalized_width,
-            height,
-            normalized_height
-        );
+        if should_warn_invalid_dimensions(element_type) {
+            tracing::warn!(
+                "Normalized non-positive element dimensions for board {} element {} type {:?}: width {} -> {}, height {} -> {}",
+                board_id,
+                element_id,
+                element_type,
+                width,
+                normalized_width,
+                height,
+                normalized_height
+            );
+        } else {
+            tracing::debug!(
+                "Normalized element dimensions for board {} element {} type {:?}: width {} -> {}, height {} -> {}",
+                board_id,
+                element_id,
+                element_type,
+                width,
+                normalized_width,
+                height,
+                normalized_height
+            );
+        }
     }
 
     (normalized_width, normalized_height)
@@ -202,4 +273,18 @@ fn normalize_rotation(value: f64) -> f64 {
     } else {
         normalized
     }
+}
+
+fn should_warn_invalid_dimensions(element_type: ElementType) -> bool {
+    !matches!(element_type, ElementType::Connector | ElementType::Drawing)
+}
+
+fn is_deadlock_error(error: &AppError) -> bool {
+    let AppError::Database(db_error) = error else {
+        return false;
+    };
+    let sqlx::Error::Database(db_error) = db_error else {
+        return false;
+    };
+    matches!(db_error.code().as_deref(), Some("40P01"))
 }

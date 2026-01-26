@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT snapshot_seq, state_bin\n        FROM crdt.board_snapshot\n        WHERE board_id = $1\n        ORDER BY snapshot_seq DESC\n        LIMIT 1\n        ",
+  "query": "\n            SELECT snapshot_seq, state_bin\n            FROM crdt.board_snapshot\n            WHERE board_id = $1\n            ORDER BY snapshot_seq DESC\n            LIMIT 1\n            ",
   "describe": {
     "columns": [
       {
@@ -24,5 +24,5 @@
       false
     ]
   },
-  "hash": "426db0993dc0c587e00cf4346a37d7162e7b5dee5b4ca2ec2c126890ace5347c"
+  "hash": "a0dc00f892f533d4c639e844cf6580c88cc00a1fd0dddd8bdf4954351cf67469"
 }

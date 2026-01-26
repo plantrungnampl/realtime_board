@@ -4,6 +4,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
+import { useLogger } from '@/lib/logger/hooks'
 import { useAppStore } from '@/store/useAppStore'
 
 type LoginSearch = {
@@ -34,6 +35,7 @@ function Login() {
   const login = useAppStore((state) => state.login);
   const isLoading = useAppStore((state) => state.isLoading);
   const error = useAppStore((state) => state.error);
+  const logger = useLogger("LoginRoute");
   const search = Route.useSearch() as LoginSearch;
   const redirectTarget = resolveRedirectTarget(search.redirect);
 
@@ -49,8 +51,8 @@ function Login() {
         to: redirectTarget,
         search: buildRedirectSearch(redirectTarget, search.email),
       });
-    } catch (error) {
-      console.warn("login failed", error);
+    } catch (_error) {
+      logger.warn("Login failed");
     }
   }
 

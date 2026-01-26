@@ -4,6 +4,7 @@ import { RouterProvider, createRouter } from '@tanstack/react-router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import './index.css'
 import './i18n'
+import { ClientErrorBoundary } from './components/ClientErrorBoundary'
 import { clientLogger } from './lib/logger'
 
 // Import the generated route tree
@@ -36,7 +37,9 @@ declare module '@tanstack/react-router' {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <ClientErrorBoundary>
+        <RouterProvider router={router} />
+      </ClientErrorBoundary>
     </QueryClientProvider>
   </StrictMode>,
 )

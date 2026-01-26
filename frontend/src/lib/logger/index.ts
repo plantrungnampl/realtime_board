@@ -1,5 +1,6 @@
 import { getToken } from "@/features/auth/storage";
 import { apiClient } from "@/shared/api/client";
+import { getActiveTraceContext } from "./trace";
 
 type ClientLogLevel = "debug" | "info" | "warn" | "error";
 
@@ -26,6 +27,7 @@ type LoggerConfig = {
   batchSize: number;
   flushIntervalMs: number;
   sampleRate: number;
+  maxBufferSize: number;
 };
 
 const defaultConfig: LoggerConfig = {
@@ -36,6 +38,7 @@ const defaultConfig: LoggerConfig = {
   batchSize: 50,
   flushIntervalMs: 5000,
   sampleRate: 0.2,
+  maxBufferSize: 200,
 };
 
 const levelOrder: Record<ClientLogLevel, number> = {
@@ -45,18 +48,32 @@ const levelOrder: Record<ClientLogLevel, number> = {
   error: 40,
 };
 
-class ClientLogger {
+export type Logger = {
+  debug: (message: string, context?: Record<string, unknown>) => void;
+  info: (message: string, context?: Record<string, unknown>) => void;
+  warn: (message: string, context?: Record<string, unknown>) => void;
+  error: (message: string, context?: Record<string, unknown>, error?: Error) => void;
+  child: (context: Record<string, unknown>) => Logger;
+};
+
+class ClientLogger implements Logger {
   private config: LoggerConfig;
   private buffer: ClientLogEvent[] = [];
   private flushTimer: number | null = null;
   private sessionId: string;
   private initialized = false;
   private remoteUrl: string;
+  private flushInProgress = false;
+  private baseContext: Record<string, unknown> = {};
 
   constructor(config: Partial<LoggerConfig> = {}) {
     this.config = { ...defaultConfig, ...config };
     this.sessionId = this.generateId();
     this.remoteUrl = this.resolveRemoteUrl(this.config.remoteEndpoint);
+    this.baseContext = {
+      app: "realtime-board",
+      env: import.meta.env.MODE,
+    };
   }
 
   init(): void {
@@ -69,6 +86,14 @@ class ClientLogger {
       this.startFlushTimer();
       window.addEventListener("pagehide", () => {
         void this.flush(true);
+      });
+      window.addEventListener("online", () => {
+        void this.flush();
+      });
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "hidden") {
+          void this.flush(true);
+        }
       });
     }
 
@@ -107,6 +132,10 @@ class ClientLogger {
     this.log("error", message, context, stack);
   }
 
+  child(context: Record<string, unknown>): Logger {
+    return new ChildLogger(this, context);
+  }
+
   private log(
     level: ClientLogLevel,
     message: string,
@@ -117,16 +146,20 @@ class ClientLogger {
       return;
     }
 
+    const traceContext = getActiveTraceContext();
+    const enrichedContext = this.mergeContext(context, traceContext?.requestId);
     const event: ClientLogEvent = {
       level,
       message,
-      context,
+      context: enrichedContext,
       stack,
       timestamp: new Date().toISOString(),
-      url: window.location.href,
+      url: `${window.location.origin}${window.location.pathname}`,
       route: window.location.pathname,
       user_agent: navigator.userAgent,
       session_id: this.sessionId,
+      trace_id: traceContext?.traceId,
+      span_id: traceContext?.spanId,
       source: "frontend",
     };
 
@@ -149,6 +182,10 @@ class ClientLogger {
       return;
     }
 
+    if (this.flushInProgress && !useBeacon) {
+      return;
+    }
+
     const batch = this.buffer.splice(0, this.config.batchSize);
     const payload = JSON.stringify({ events: batch });
 
@@ -167,6 +204,7 @@ class ClientLogger {
     }
 
     try {
+      this.flushInProgress = true;
       await fetch(this.remoteUrl, {
         method: "POST",
         headers,
@@ -174,7 +212,9 @@ class ClientLogger {
         keepalive: true,
       });
     } catch {
-      // Drop errors to avoid feedback loops.
+      this.requeue(batch);
+    } finally {
+      this.flushInProgress = false;
     }
   }
 
@@ -244,6 +284,68 @@ class ClientLogger {
     } catch {
       return String(value);
     }
+  }
+
+  private requeue(batch: ClientLogEvent[]): void {
+    const merged = [...batch, ...this.buffer];
+    if (merged.length > this.config.maxBufferSize) {
+      merged.splice(0, merged.length - this.config.maxBufferSize);
+    }
+    this.buffer = merged;
+  }
+
+  private mergeContext(
+    context: Record<string, unknown> | undefined,
+    requestId?: string,
+  ): Record<string, unknown> | undefined {
+    const merged: Record<string, unknown> = {
+      ...this.baseContext,
+      ...(context ?? {}),
+    };
+    if (requestId && merged.request_id == null) {
+      merged.request_id = requestId;
+    }
+    return Object.keys(merged).length ? merged : undefined;
+  }
+}
+
+class ChildLogger implements Logger {
+  private parent: ClientLogger;
+  private context: Record<string, unknown>;
+
+  constructor(parent: ClientLogger, context: Record<string, unknown>) {
+    this.parent = parent;
+    this.context = context;
+  }
+
+  debug(message: string, context?: Record<string, unknown>): void {
+    this.parent.debug(message, this.mergeContext(context));
+  }
+
+  info(message: string, context?: Record<string, unknown>): void {
+    this.parent.info(message, this.mergeContext(context));
+  }
+
+  warn(message: string, context?: Record<string, unknown>): void {
+    this.parent.warn(message, this.mergeContext(context));
+  }
+
+  error(message: string, context?: Record<string, unknown>, error?: Error): void {
+    this.parent.error(message, this.mergeContext(context), error);
+  }
+
+  child(context: Record<string, unknown>): Logger {
+    return new ChildLogger(this.parent, {
+      ...this.context,
+      ...context,
+    });
+  }
+
+  private mergeContext(context?: Record<string, unknown>): Record<string, unknown> {
+    return {
+      ...this.context,
+      ...(context ?? {}),
+    };
   }
 }
 

@@ -112,6 +112,7 @@ const clampColor = (value: number, fallback: number) =>
 
 const parseColor = (value?: string, fallback = 0x000000) => {
   if (!value) return fallback;
+  if (value === "transparent") return fallback;
   if (value.startsWith("#")) {
     return clampColor(Number.parseInt(value.slice(1), 16), fallback);
   }
@@ -123,6 +124,28 @@ const parseColor = (value?: string, fallback = 0x000000) => {
   }
   const hex = Number.parseInt(value.replace(/[^0-9A-Fa-f]/g, ""), 16);
   return clampColor(Number.isFinite(hex) ? hex : fallback, fallback);
+};
+
+const resolveFillStyle = (value?: string, fallback = 0x000000) => {
+  if (!value || value === "transparent") {
+    return { color: fallback, alpha: 0 };
+  }
+  if (value.startsWith("rgba")) {
+    const parts = value.match(/\d+(\.\d+)?/g);
+    if (!parts || parts.length < 4) {
+      return { color: fallback, alpha: 0 };
+    }
+    const [r, g, b, a] = parts.map((part) => Number(part));
+    const color = clampColor(
+      (Math.max(0, Math.min(255, r)) << 16)
+        + (Math.max(0, Math.min(255, g)) << 8)
+        + Math.max(0, Math.min(255, b)),
+      fallback,
+    );
+    const alpha = Math.max(0, Math.min(1, a));
+    return { color, alpha };
+  }
+  return { color: parseColor(value, fallback), alpha: 1 };
 };
 
 const isValidDrawingPoints = (points: number[]) =>
@@ -167,13 +190,25 @@ const resolveConnectorEndpoints = (element: BoardElement) => {
 
 const resolveConnectorPoints = (element: BoardElement) => {
   if (element.element_type !== "Connector") return null;
+  const routingMode = element.properties?.routing?.mode;
   const storedPoints = element.properties?.points;
   if (Array.isArray(storedPoints)) {
     if (!isValidPointArray(storedPoints)) return null;
+    if (routingMode === "straight") {
+      return storedPoints;
+    }
     return normalizeOrthogonalPoints(storedPoints);
   }
   const endpoints = resolveConnectorEndpoints(element);
   if (!endpoints) return null;
+  if (routingMode === "straight") {
+    return [
+      endpoints.start.x,
+      endpoints.start.y,
+      endpoints.end.x,
+      endpoints.end.y,
+    ];
+  }
   return buildOrthogonalFallbackPoints(endpoints.start, endpoints.end);
 };
 
@@ -852,11 +887,11 @@ function PixiScene({
                   draw={(graphics) => {
                   graphics.clear();
                   const stroke = parseColor(element.style.stroke, 0xffffff);
-                  const fill = parseColor(element.style.fill, 0x000000);
+                  const fill = resolveFillStyle(element.style.fill, 0x000000);
                   const strokeWidth = element.style.strokeWidth ?? 1;
                   setStrokeStyle(graphics, strokeWidth, stroke);
-                  setFillStyle(graphics, fill);
                   graphics.rect(0, 0, rect.width, rect.height);
+                  setFillStyle(graphics, fill.color, fill.alpha);
                   graphics.fill();
                   graphics.stroke();
                 }}
@@ -897,11 +932,11 @@ function PixiScene({
                   draw={(graphics) => {
                   graphics.clear();
                   const stroke = parseColor(element.style.stroke, 0xffffff);
-                  const fill = parseColor(element.style.fill, 0x000000);
+                  const fill = resolveFillStyle(element.style.fill, 0x000000);
                   const strokeWidth = element.style.strokeWidth ?? 1;
                   setStrokeStyle(graphics, strokeWidth, stroke);
-                  setFillStyle(graphics, fill);
                   graphics.circle(0, 0, radius);
+                  setFillStyle(graphics, fill.color, fill.alpha);
                   graphics.fill();
                   graphics.stroke();
                 }}
@@ -1039,11 +1074,11 @@ function PixiScene({
                 draw={(graphics) => {
                   graphics.clear();
                   const stroke = parseColor(element.style.stroke, 0xffffff);
-                  const fill = parseColor(element.style.fill, 0xfff9c2);
+                  const fill = resolveFillStyle(element.style.fill, 0xfff9c2);
                   const strokeWidth = element.style.strokeWidth ?? 1;
                   setStrokeStyle(graphics, strokeWidth, stroke);
-                  setFillStyle(graphics, fill);
                   graphics.roundRect(0, 0, rect.width, rect.height, element.style.cornerRadius ?? 12);
+                  setFillStyle(graphics, fill.color, fill.alpha);
                   graphics.fill();
                   graphics.stroke();
                 }}
@@ -1093,7 +1128,7 @@ function PixiScene({
                   graphics.clear();
                   drawPolyline(
                     graphics,
-                    normalizeOrthogonalPoints(points),
+                    points,
                     element.style.strokeWidth ?? 2,
                     parseColor(element.style.stroke, 0xffffff),
                   );
@@ -1117,9 +1152,12 @@ function PixiScene({
                 (ghostElement.style.strokeWidth ?? 2) / stageScale,
                 parseColor(ghostElement.style.stroke),
               );
-              setFillStyle(graphics, parseColor(ghostElement.style.fill), 0.25);
               graphics.rect(rect.x, rect.y, rect.width, rect.height);
-              graphics.fill();
+              const fill = resolveFillStyle(ghostElement.style.fill);
+              if (fill.alpha > 0) {
+                setFillStyle(graphics, fill.color, fill.alpha * 0.25);
+                graphics.fill();
+              }
               graphics.stroke();
             }
           }}

@@ -29,7 +29,7 @@ services:
     restart: unless-stopped
 
   tempo:
-    image: grafana/tempo:latest
+    image: grafana/tempo:2.9.0
     container_name: realtime_board_tempo
     command: -config.file=/etc/tempo/tempo-config.yml
     ports:

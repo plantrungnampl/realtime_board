@@ -25,9 +25,13 @@ import {
   getElementBounds,
 } from "@/features/boards/elementMove.utils";
 import {
+  applyConnectorRouteResult,
   applyConnectorRouting,
   arePointsEqual,
+  buildConnectorRouteContext,
+  buildObstacleIndex,
   isNonOrthogonalPoints,
+  pruneAutoAnchorCache,
 } from "@/features/boards/boardCanvas/connectorRouting";
 import {
   isRectLikeElement,
@@ -38,6 +42,7 @@ import {
 import { useCanvasZoom } from "@/features/boards/boardCanvas/useCanvasZoom";
 import { useElementHitTest } from "@/features/boards/boardCanvas/useElementHitTest";
 import { useElementTransformHandlers } from "@/features/boards/boardCanvas/useElementTransformHandlers";
+import { useConnectorRoutingWorker } from "@/features/boards/routing/useConnectorRoutingWorker";
 
 type UseBoardCanvasInteractionsOptions = {
   boardId: string;
@@ -318,10 +323,75 @@ export function useBoardCanvasInteractions({
       connector: BoardElement,
       snapshot: BoardElement[],
       elementIndex: Map<string, BoardElement>,
-      options?: { avoidObstacles?: boolean; lockAutoSide?: boolean },
+      options?: {
+        avoidObstacles?: boolean;
+        lockAutoSide?: boolean;
+        obstacleIndex?: ReturnType<typeof buildObstacleIndex> | null;
+      },
     ) => applyConnectorRouting(connector, snapshot, elementIndex, options),
     [],
   );
+  const { requestRoute } = useConnectorRoutingWorker();
+  const routeSeqRef = useRef(new Map<string, number>());
+
+  const requestConnectorRoute = useCallback(
+    (
+      context: ReturnType<typeof buildConnectorRouteContext>,
+      fallback: () => ConnectorElement,
+      onResult: (next: ConnectorElement, provisional: boolean) => void,
+      options?: { provisional?: boolean },
+    ) => {
+      if (!context) {
+        const next = fallback();
+        onResult(next, false);
+        return Promise.resolve(next);
+      }
+      const base = applyConnectorRouteResult(context);
+      if (!context.requiresRoute) {
+        onResult(base, false);
+        return Promise.resolve(base);
+      }
+      const connectorId = base.id;
+      const nextSeq = (routeSeqRef.current.get(connectorId) ?? 0) + 1;
+      routeSeqRef.current.set(connectorId, nextSeq);
+      if (options?.provisional !== false) {
+        onResult(base, true);
+      }
+      const pending = requestRoute({
+        start: context.routeStart,
+        end: context.routeEnd,
+        obstacles: context.obstacles,
+        options: context.routeOptions,
+      });
+      if (!pending) {
+        const next = fallback();
+        onResult(next, false);
+        return Promise.resolve(next);
+      }
+      return pending
+        .then((result) => {
+          if (routeSeqRef.current.get(connectorId) !== nextSeq) {
+            return base;
+          }
+          const next = applyConnectorRouteResult(context, result);
+          onResult(next, false);
+          return next;
+        })
+        .catch(() => {
+          if (routeSeqRef.current.get(connectorId) !== nextSeq) {
+            return base;
+          }
+          const next = fallback();
+          onResult(next, false);
+          return next;
+        });
+    },
+    [applyConnectorRouteResult, requestRoute],
+  );
+
+  useEffect(() => {
+    pruneAutoAnchorCache(renderElements);
+  }, [renderElements]);
 
 
   const setLocalOverride = useCallback((id: string, element: BoardElement) => {
@@ -350,6 +420,7 @@ export function useBoardCanvasInteractions({
       if (!connectors || connectors.length === 0) return;
       const snapshot = buildElementsSnapshot();
       const elementIndex = buildElementIndex(snapshot);
+      const obstacleIndex = buildObstacleIndex(snapshot);
       const movedElement = mode === "live" ? elementIndex.get(elementId) : null;
       if (mode === "live" && movedElement) {
         const rotation = movedElement.rotation ?? 0;
@@ -370,82 +441,102 @@ export function useBoardCanvasInteractions({
           ?? elementIndex.get(connector.id)
           ?? connector;
         const connectorCurrent = current as ConnectorElement;
-        let next = applyConnectorRoutingMemo(
+        const routingOptions =
+          mode === "live"
+            ? { avoidObstacles: true, lockAutoSide: true, obstacleIndex }
+            : { obstacleIndex };
+        const context = buildConnectorRouteContext(
           connectorCurrent,
           snapshot,
           elementIndex,
-          mode === "live"
-            ? { avoidObstacles: true, lockAutoSide: true }
-            : undefined,
-        ) as ConnectorElement;
+          routingOptions,
+        );
 
-        if (
-          mode === "live" &&
-          connectorCurrent.properties.points &&
-          next.properties.points &&
-          connectorCurrent.properties.points.length === next.properties.points.length
-        ) {
-          const currentPoints = connectorCurrent.properties.points;
-          const targetPoints = next.properties.points;
-          const smoothedPoints = targetPoints.map((value, index) => {
-            const current = currentPoints[index] ?? value;
-            return current + (value - current) * LIVE_ROUTE_SMOOTHING;
-          });
-          next = {
-            ...next,
-            properties: {
-              ...next.properties,
-              points: smoothedPoints,
-              start: {
-                x:
-                  (connectorCurrent.properties.start?.x ?? next.properties.start.x) +
-                  (next.properties.start.x -
-                    (connectorCurrent.properties.start?.x ?? next.properties.start.x)) *
-                    LIVE_ROUTE_SMOOTHING,
-                y:
-                  (connectorCurrent.properties.start?.y ?? next.properties.start.y) +
-                  (next.properties.start.y -
-                    (connectorCurrent.properties.start?.y ?? next.properties.start.y)) *
-                    LIVE_ROUTE_SMOOTHING,
-              },
-              end: {
-                x:
-                  (connectorCurrent.properties.end?.x ?? next.properties.end.x) +
-                  (next.properties.end.x -
-                    (connectorCurrent.properties.end?.x ?? next.properties.end.x)) *
-                    LIVE_ROUTE_SMOOTHING,
-                y:
-                  (connectorCurrent.properties.end?.y ?? next.properties.end.y) +
-                  (next.properties.end.y -
-                    (connectorCurrent.properties.end?.y ?? next.properties.end.y)) *
-                    LIVE_ROUTE_SMOOTHING,
-              },
-            },
-          };
-        }
+        void requestConnectorRoute(
+          context,
+          () =>
+            applyConnectorRoutingMemo(
+              connectorCurrent,
+              snapshot,
+              elementIndex,
+              routingOptions,
+            ) as ConnectorElement,
+          (next, provisional) => {
+            let smoothed = next;
+            if (
+              mode === "live" &&
+              !provisional &&
+              connectorCurrent.properties.points &&
+              next.properties.points &&
+              connectorCurrent.properties.points.length === next.properties.points.length
+            ) {
+              const currentPoints = connectorCurrent.properties.points;
+              const targetPoints = next.properties.points;
+              const smoothedPoints = targetPoints.map((value, index) => {
+                const currentValue = currentPoints[index] ?? value;
+                return currentValue + (value - currentValue) * LIVE_ROUTE_SMOOTHING;
+              });
+              smoothed = {
+                ...next,
+                properties: {
+                  ...next.properties,
+                  points: smoothedPoints,
+                  start: {
+                    x:
+                      (connectorCurrent.properties.start?.x ?? next.properties.start.x) +
+                      (next.properties.start.x -
+                        (connectorCurrent.properties.start?.x ?? next.properties.start.x)) *
+                        LIVE_ROUTE_SMOOTHING,
+                    y:
+                      (connectorCurrent.properties.start?.y ?? next.properties.start.y) +
+                      (next.properties.start.y -
+                        (connectorCurrent.properties.start?.y ?? next.properties.start.y)) *
+                        LIVE_ROUTE_SMOOTHING,
+                  },
+                  end: {
+                    x:
+                      (connectorCurrent.properties.end?.x ?? next.properties.end.x) +
+                      (next.properties.end.x -
+                        (connectorCurrent.properties.end?.x ?? next.properties.end.x)) *
+                        LIVE_ROUTE_SMOOTHING,
+                    y:
+                      (connectorCurrent.properties.end?.y ?? next.properties.end.y) +
+                      (next.properties.end.y -
+                        (connectorCurrent.properties.end?.y ?? next.properties.end.y)) *
+                        LIVE_ROUTE_SMOOTHING,
+                  },
+                },
+              };
+            }
 
-        // Skip update if points haven't changed significantly (only for Connector type)
-        if (connectorCurrent.element_type === "Connector" && next.element_type === "Connector") {
-          const pointsChanged = !arePointsEqual(
-            connectorCurrent.properties.points,
-            next.properties.points
-          );
-          const endpointsChanged =
-            Math.abs((connectorCurrent.properties.start?.x ?? 0) - (next.properties.start?.x ?? 0)) > POSITION_CHANGE_THRESHOLD ||
-            Math.abs((connectorCurrent.properties.start?.y ?? 0) - (next.properties.start?.y ?? 0)) > POSITION_CHANGE_THRESHOLD ||
-            Math.abs((connectorCurrent.properties.end?.x ?? 0) - (next.properties.end?.x ?? 0)) > POSITION_CHANGE_THRESHOLD ||
-            Math.abs((connectorCurrent.properties.end?.y ?? 0) - (next.properties.end?.y ?? 0)) > POSITION_CHANGE_THRESHOLD;
+            if (
+              connectorCurrent.element_type === "Connector"
+              && smoothed.element_type === "Connector"
+            ) {
+              const pointsChanged = !arePointsEqual(
+                connectorCurrent.properties.points,
+                smoothed.properties.points,
+              );
+              const endpointsChanged =
+                Math.abs((connectorCurrent.properties.start?.x ?? 0) - (smoothed.properties.start?.x ?? 0)) > POSITION_CHANGE_THRESHOLD
+                || Math.abs((connectorCurrent.properties.start?.y ?? 0) - (smoothed.properties.start?.y ?? 0)) > POSITION_CHANGE_THRESHOLD
+                || Math.abs((connectorCurrent.properties.end?.x ?? 0) - (smoothed.properties.end?.x ?? 0)) > POSITION_CHANGE_THRESHOLD
+                || Math.abs((connectorCurrent.properties.end?.y ?? 0) - (smoothed.properties.end?.y ?? 0)) > POSITION_CHANGE_THRESHOLD;
 
-          if (!pointsChanged && !endpointsChanged) return;
-        }
+              if (!pointsChanged && !endpointsChanged) return;
+            }
 
-        if (mode === "live") {
-          setLocalOverride(connector.id, next);
-          return;
-        }
-        updateElement(connector.id, () => next);
-        persistElement(next);
-        clearLocalOverride(connector.id);
+            if (mode === "live") {
+              setLocalOverride(connector.id, smoothed);
+              return;
+            }
+            if (provisional) return;
+            updateElement(connector.id, () => smoothed);
+            persistElement(smoothed);
+            clearLocalOverride(connector.id);
+          },
+          { provisional: mode === "live" },
+        );
       });
       if (mode === "live" && movedElement) {
         lastLiveElementRouteRef.current.set(elementId, {
@@ -459,10 +550,13 @@ export function useBoardCanvasInteractions({
     },
     [
       applyConnectorRoutingMemo,
+      buildObstacleIndex,
+      buildConnectorRouteContext,
       buildElementIndex,
       buildElementsSnapshot,
       clearLocalOverride,
       persistElement,
+      requestConnectorRoute,
       setLocalOverride,
       updateElement,
     ],
@@ -731,6 +825,7 @@ export function useBoardCanvasInteractions({
       if (currentElement && currentElement.element_type === "Connector") {
         const connector = currentElement as ConnectorElement;
         let normalized = normalizeConnectorBounds(currentElement) as ConnectorElement;
+        const connectorId = currentShapeId.current;
         const bindSnapshot = buildElementsSnapshot();
         const startTarget = findBindableElement(
           normalized.properties.start,
@@ -777,23 +872,40 @@ export function useBoardCanvasInteractions({
         }
         const snapshot = buildElementsSnapshot();
         const elementIndex = buildElementIndex(snapshot);
-      const routed = applyConnectorRoutingMemo(
-        normalized,
-        snapshot,
-        elementIndex,
-        undefined,
-      ) as ConnectorElement;
-        if (
-          routed.position_x !== connector.position_x ||
-          routed.position_y !== connector.position_y ||
-          routed.width !== connector.width ||
-          routed.height !== connector.height ||
-          !arePointsEqual(connector.properties.points, routed.properties.points) ||
-          connector.properties.routing?.mode !== routed.properties.routing?.mode
-        ) {
-          updateElement(currentShapeId.current, () => routed);
-          elementToPersist = routed;
-        }
+        const obstacleIndex = buildObstacleIndex(snapshot);
+        const routingContext = buildConnectorRouteContext(
+          normalized,
+          snapshot,
+          elementIndex,
+          { obstacleIndex },
+        );
+        void requestConnectorRoute(
+          routingContext,
+          () =>
+            applyConnectorRoutingMemo(
+              normalized,
+              snapshot,
+              elementIndex,
+              { obstacleIndex },
+            ) as ConnectorElement,
+          (routed) => {
+            if (
+              routed.position_x !== connector.position_x ||
+              routed.position_y !== connector.position_y ||
+              routed.width !== connector.width ||
+              routed.height !== connector.height ||
+              !arePointsEqual(connector.properties.points, routed.properties.points) ||
+              connector.properties.routing?.mode !== routed.properties.routing?.mode
+            ) {
+              if (connectorId) {
+                updateElement(connectorId, () => routed);
+                persistElement(routed);
+              }
+            }
+          },
+          { provisional: false },
+        );
+        elementToPersist = null;
       }
 
       if (currentElement && isRectLikeElement(currentElement)) {
@@ -923,9 +1035,11 @@ export function useBoardCanvasInteractions({
 
   useEffect(() => {
     if (action !== "none") return;
+    let cancelled = false;
     const snapshot = buildElementsSnapshot();
     const elementIndex = buildElementIndex(snapshot);
-    const updates: BoardElement[] = [];
+    const obstacleIndex = buildObstacleIndex(snapshot);
+    const promises: Promise<ConnectorElement | null>[] = [];
     snapshot.forEach((element) => {
       if (element.element_type !== "Connector") return;
       if (lockedElementIds.has(element.id)) return;
@@ -992,41 +1106,66 @@ export function useBoardCanvasInteractions({
           };
         }
       }
-      const routed = applyConnectorRoutingMemo(
+      const context = buildConnectorRouteContext(
         next,
         snapshot,
         elementIndex,
-        { lockAutoSide: true },
-      ) as ConnectorElement;
-      const pointsChanged = !arePointsEqual(points, routed.properties.points);
-      const routingChanged =
-        connector.properties.routing?.mode !== routed.properties.routing?.mode;
-      if (!pointsChanged && !routingChanged) {
+        { lockAutoSide: true, obstacleIndex },
+      );
+      const promise = requestConnectorRoute(
+        context,
+        () =>
+          applyConnectorRoutingMemo(
+            next,
+            snapshot,
+            elementIndex,
+            { lockAutoSide: true, obstacleIndex },
+          ) as ConnectorElement,
+        () => {},
+        { provisional: false },
+      ).then((routed) => {
+        if (cancelled) return null;
+        const pointsChanged = !arePointsEqual(points, routed.properties.points);
+        const routingChanged =
+          connector.properties.routing?.mode !== routed.properties.routing?.mode;
+        if (!pointsChanged && !routingChanged) {
+          if (shouldRouteOnLoad) {
+            routedOnLoadRef.current.add(connector.id);
+          }
+          return null;
+        }
         if (shouldRouteOnLoad) {
           routedOnLoadRef.current.add(connector.id);
         }
-        return;
-      }
-      updates.push(routed);
-      if (shouldRouteOnLoad) {
-        routedOnLoadRef.current.add(connector.id);
-      }
+        return routed;
+      });
+      promises.push(promise);
     });
-    if (updates.length === 0) return;
-    updates.forEach((next) => {
-      updateElement(next.id, () => next);
+    if (promises.length === 0) return;
+    void Promise.all(promises).then((resolved) => {
+      if (cancelled) return;
+      const updates = resolved.filter((item): item is ConnectorElement => !!item);
+      if (updates.length === 0) return;
+      updates.forEach((next) => {
+        updateElement(next.id, () => next);
+      });
+      updates.forEach((next) => {
+        persistElement(next);
+      });
     });
-    updates.forEach((next) => {
-      persistElement(next);
-    });
+    return () => {
+      cancelled = true;
+    };
   }, [
     action,
     applyConnectorRoutingMemo,
+    buildObstacleIndex,
     buildElementIndex,
     buildElementsSnapshot,
     elementsCount,
     lockedElementIds,
     persistElement,
+    requestConnectorRoute,
     updateElement,
   ]);
 

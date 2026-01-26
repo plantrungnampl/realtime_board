@@ -13,7 +13,7 @@ type RouteOptions = {
   bendPenalty?: number;
 };
 
-type RouteResult = {
+export type RouteResult = {
   points: number[];
   bounds: Rect;
 };
@@ -60,6 +60,7 @@ const popLowestFScore = (
 const DEFAULT_PADDING = 12;
 const DEFAULT_MARGIN = 320;
 const DEFAULT_BEND_PENALTY = 20;
+const MAX_MARGIN_MULTIPLIER = 4;
 const EPS = 0.0001;
 
 const buildBounds = (points: Node[]): Rect => {
@@ -263,6 +264,22 @@ const reconstructPath = (cameFrom: Map<StateKey, StateKey>, current: StateKey, n
   return nodes;
 };
 
+const buildPointList = (nodes: Node[]) => nodes.flatMap((point) => [point.x, point.y]);
+
+const pathIntersectsObstacles = (nodes: Node[], obstacles: Rect[]) => {
+  if (nodes.length < 2) return false;
+  for (let i = 0; i < nodes.length - 1; i += 1) {
+    const start = nodes[i];
+    const end = nodes[i + 1];
+    for (const rect of obstacles) {
+      if (segmentIntersectsRect(start, end, rect) || isInsideRect(start, rect) || isInsideRect(end, rect)) {
+        return true;
+      }
+    }
+  }
+  return false;
+};
+
 export const routeOrthogonalPath = (
   start: Point,
   end: Point,
@@ -279,79 +296,94 @@ export const routeOrthogonalPath = (
     return { points: [start.x, start.y, end.x, end.y], bounds };
   }
   const padding = options?.padding ?? DEFAULT_PADDING;
-  const margin = options?.margin ?? DEFAULT_MARGIN;
+  const baseMargin = options?.margin ?? DEFAULT_MARGIN;
   const bendPenalty = options?.bendPenalty ?? DEFAULT_BEND_PENALTY;
 
   const paddedObstacles = obstacles.map((rect) => addPadding(rect, padding));
   const startNode: Node = { x: start.x, y: start.y };
   const endNode: Node = { x: end.x, y: end.y };
 
-  const { nodes, edges } = buildGraph(startNode, endNode, paddedObstacles, margin);
-  const startKey = toKey(startNode);
-  const endKey = toKey(endNode);
+  let lastPath: Node[] | null = null;
+  let lastBounds: Rect | null = null;
+  const maxMargin = baseMargin * MAX_MARGIN_MULTIPLIER;
+  for (let margin = baseMargin; margin <= maxMargin; margin *= 2) {
+    const { nodes, edges } = buildGraph(startNode, endNode, paddedObstacles, margin);
+    const startKey = toKey(startNode);
+    const endKey = toKey(endNode);
 
-  if (!nodes.has(startKey) || !nodes.has(endKey)) {
-    const fallback = buildFallbackPath(startNode, endNode);
-    const bounds = buildBounds(fallback);
-    return { points: fallback.flatMap((point) => [point.x, point.y]), bounds };
+    if (!nodes.has(startKey) || !nodes.has(endKey)) {
+      continue;
+    }
+
+    const open: State[] = [];
+    const openKeys = new Set<StateKey>();
+    const gScore = new Map<StateKey, number>();
+    const fScore = new Map<StateKey, number>();
+    const cameFrom = new Map<StateKey, StateKey>();
+    const nodeMap = new Map<StateKey, Node>();
+
+    const startStateKey = stateKey(startNode, null);
+    gScore.set(startStateKey, 0);
+    fScore.set(startStateKey, heuristic(startNode, endNode));
+    open.push({ key: startStateKey, node: startNode, dir: null });
+    openKeys.add(startStateKey);
+    nodeMap.set(startStateKey, startNode);
+
+    const visited = new Set<StateKey>();
+
+    let foundPath: Node[] | null = null;
+    while (open.length > 0) {
+      const current = popLowestFScore(open, fScore);
+      if (!current) break;
+      openKeys.delete(current.key);
+      if (current.node.x === endNode.x && current.node.y === endNode.y) {
+        const path = reconstructPath(cameFrom, current.key, nodeMap);
+        foundPath = compressPoints(path);
+        break;
+      }
+      visited.add(current.key);
+
+      const neighbors = edges.get(toKey(current.node)) ?? [];
+      neighbors.forEach((neighbor) => {
+        const dir: Direction = neighbor.x === current.node.x ? "v" : "h";
+        const nextKey = stateKey(neighbor, dir);
+        if (visited.has(nextKey)) return;
+
+        const currentScore = gScore.get(current.key) ?? Number.POSITIVE_INFINITY;
+        const penalty = current.dir && current.dir !== dir ? bendPenalty : 0;
+        const tentativeG = currentScore + heuristic(current.node, neighbor) + penalty;
+        const bestKnown = gScore.get(nextKey);
+        if (bestKnown === undefined || tentativeG < bestKnown) {
+          cameFrom.set(nextKey, current.key);
+          gScore.set(nextKey, tentativeG);
+          fScore.set(nextKey, tentativeG + heuristic(neighbor, endNode));
+          nodeMap.set(nextKey, neighbor);
+          // Perf: track open membership to avoid O(n) scans per neighbor.
+          if (!openKeys.has(nextKey)) {
+            open.push({ key: nextKey, node: neighbor, dir });
+            openKeys.add(nextKey);
+          }
+        }
+      });
+    }
+
+    if (foundPath) {
+      lastPath = foundPath;
+      lastBounds = buildBounds(foundPath);
+      if (!pathIntersectsObstacles(foundPath, paddedObstacles)) {
+        return {
+          points: buildPointList(foundPath),
+          bounds: lastBounds,
+        };
+      }
+    }
   }
 
-  const open: State[] = [];
-  const openKeys = new Set<StateKey>();
-  const gScore = new Map<StateKey, number>();
-  const fScore = new Map<StateKey, number>();
-  const cameFrom = new Map<StateKey, StateKey>();
-  const nodeMap = new Map<StateKey, Node>();
-
-  const startStateKey = stateKey(startNode, null);
-  gScore.set(startStateKey, 0);
-  fScore.set(startStateKey, heuristic(startNode, endNode));
-  open.push({ key: startStateKey, node: startNode, dir: null });
-  openKeys.add(startStateKey);
-  nodeMap.set(startStateKey, startNode);
-
-  const visited = new Set<StateKey>();
-
-  while (open.length > 0) {
-    const current = popLowestFScore(open, fScore);
-    if (!current) break;
-    openKeys.delete(current.key);
-    if (current.node.x === endNode.x && current.node.y === endNode.y) {
-      const path = reconstructPath(cameFrom, current.key, nodeMap);
-      const compressed = compressPoints(path);
-      const bounds = buildBounds(compressed);
-      return {
-        points: compressed.flatMap((point) => [point.x, point.y]),
-        bounds,
-      };
-    }
-    visited.add(current.key);
-
-    const neighbors = edges.get(toKey(current.node)) ?? [];
-    neighbors.forEach((neighbor) => {
-      const dir: Direction = neighbor.x === current.node.x ? "v" : "h";
-      const nextKey = stateKey(neighbor, dir);
-      if (visited.has(nextKey)) return;
-
-      const currentScore = gScore.get(current.key) ?? Number.POSITIVE_INFINITY;
-      const penalty = current.dir && current.dir !== dir ? bendPenalty : 0;
-      const tentativeG = currentScore + heuristic(current.node, neighbor) + penalty;
-      const bestKnown = gScore.get(nextKey);
-      if (bestKnown === undefined || tentativeG < bestKnown) {
-        cameFrom.set(nextKey, current.key);
-        gScore.set(nextKey, tentativeG);
-        fScore.set(nextKey, tentativeG + heuristic(neighbor, endNode));
-        nodeMap.set(nextKey, neighbor);
-        // Perf: track open membership to avoid O(n) scans per neighbor.
-        if (!openKeys.has(nextKey)) {
-          open.push({ key: nextKey, node: neighbor, dir });
-          openKeys.add(nextKey);
-        }
-      }
-    });
+  if (lastPath && lastBounds) {
+    return { points: buildPointList(lastPath), bounds: lastBounds };
   }
 
   const fallback = buildFallbackPath(startNode, endNode);
   const bounds = buildBounds(fallback);
-  return { points: fallback.flatMap((point) => [point.x, point.y]), bounds };
+  return { points: buildPointList(fallback), bounds };
 };
