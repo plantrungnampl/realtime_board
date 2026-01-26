@@ -386,7 +386,7 @@ export function useBoardCanvasInteractions({
           return next;
         });
     },
-    [applyConnectorRouteResult, requestRoute],
+    [requestRoute],
   );
 
   useEffect(() => {
@@ -550,8 +550,6 @@ export function useBoardCanvasInteractions({
     },
     [
       applyConnectorRoutingMemo,
-      buildObstacleIndex,
-      buildConnectorRouteContext,
       buildElementIndex,
       buildElementsSnapshot,
       clearLocalOverride,
@@ -959,6 +957,7 @@ export function useBoardCanvasInteractions({
     getElementById,
     openTextEditor,
     persistElement,
+    requestConnectorRoute,
     removeElement,
     stopPanning,
     updateElement,
@@ -1159,7 +1158,6 @@ export function useBoardCanvasInteractions({
   }, [
     action,
     applyConnectorRoutingMemo,
-    buildObstacleIndex,
     buildElementIndex,
     buildElementsSnapshot,
     elementsCount,

@@ -9,7 +9,6 @@ import {
   getNextZIndex,
 } from "@/features/boards/boardRoute/elements";
 import { getElementBounds } from "@/features/boards/elementMove.utils";
-import { applyConnectorRouting } from "@/features/boards/boardCanvas/connectorRouting";
 import { clamp } from "@/features/boards/boardRoute.utils";
 
 const QUICK_CREATE_SIZE = { width: 180, height: 120 };

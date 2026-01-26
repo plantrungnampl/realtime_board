@@ -1,3 +1,4 @@
+/// <reference lib="webworker" />
 import { routeOrthogonalPath } from "./orthogonalRouter";
 
 type Point = {

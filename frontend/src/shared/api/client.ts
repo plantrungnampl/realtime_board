@@ -1,4 +1,4 @@
-import axios from "axios";
+import axios, { AxiosHeaders } from "axios";
 
 import { getToken } from "@/features/auth/storage";
 import {
@@ -17,16 +17,29 @@ export const apiClient = axios.create({
   },
 });
 
+const normalizeHeaders = (
+  headers: unknown,
+): Record<string, string | string[] | undefined> => {
+  if (!headers) return {};
+  if (headers instanceof AxiosHeaders) {
+    return headers.toJSON() as Record<string, string | string[] | undefined>;
+  }
+  return headers as Record<string, string | string[] | undefined>;
+};
+
 apiClient.interceptors.request.use((config) => {
   const token = getToken();
+  const nextHeaders = new AxiosHeaders(config.headers);
   if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+    nextHeaders.set("Authorization", `Bearer ${token}`);
   }
   const { headers, traceContext } = buildTraceHeaders();
-  config.headers = {
-    ...(config.headers ?? {}),
-    ...headers,
-  };
+  Object.entries(headers).forEach(([key, value]) => {
+    if (value !== undefined) {
+      nextHeaders.set(key, value);
+    }
+  });
+  config.headers = nextHeaders;
   (config as ApiClientConfig).metadata = { traceContext };
   setActiveTraceContextFromRequest(traceContext);
   return config;
@@ -35,7 +48,7 @@ apiClient.interceptors.request.use((config) => {
 apiClient.interceptors.response.use(
   (response) => {
     const traceContext =
-      updateTraceContextFromHeaders(response.headers)
+      updateTraceContextFromHeaders(normalizeHeaders(response.headers))
       ?? (response.config as ApiClientConfig).metadata?.traceContext
       ?? null;
     if (traceContext) {
@@ -44,8 +57,7 @@ apiClient.interceptors.response.use(
     return response;
   },
   (error) => {
-    const responseHeaders =
-      error?.response?.headers as Record<string, string | string[] | undefined> | undefined;
+    const responseHeaders = normalizeHeaders(error?.response?.headers);
     const traceContext =
       (responseHeaders && updateTraceContextFromHeaders(responseHeaders))
       ?? (error?.config as ApiClientConfig | undefined)?.metadata?.traceContext

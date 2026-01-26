@@ -59,7 +59,6 @@ export type Logger = {
 class ClientLogger implements Logger {
   private config: LoggerConfig;
   private buffer: ClientLogEvent[] = [];
-  private flushTimer: number | null = null;
   private sessionId: string;
   private initialized = false;
   private remoteUrl: string;
@@ -219,7 +218,7 @@ class ClientLogger implements Logger {
   }
 
   private startFlushTimer(): void {
-    this.flushTimer = window.setInterval(() => {
+    window.setInterval(() => {
       void this.flush();
     }, this.config.flushIntervalMs);
   }

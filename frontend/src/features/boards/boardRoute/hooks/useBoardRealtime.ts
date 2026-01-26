@@ -685,7 +685,11 @@ export function useBoardRealtime({
     let disposed = false;
     let awareness: Awareness | null = null;
     let yElements: Y.Map<Y.Map<unknown>> | null = null;
-    let observer: (() => void) | null = null;
+    type DeepObserver = (
+      events: Y.YEvent<Y.AbstractType<unknown>>[],
+      transaction: Y.Transaction,
+    ) => void;
+    let observer: DeepObserver | null = null;
     let onUpdate: ((update: Uint8Array, origin: unknown) => void) | null = null;
     let heartbeatId: number | null = null;
     let presenceHeartbeatId: number | null = null;
@@ -808,7 +812,7 @@ export function useBoardRealtime({
         refreshHistoryState();
       });
 
-      observer = (events: Y.YEvent<Y.Map<unknown>>[]) => {
+      observer = (events, transaction) => {
         if (disposed || !yElements) return;
         const changedIds = new Set<string>();
         events.forEach((event) => {
@@ -823,10 +827,11 @@ export function useBoardRealtime({
               return;
             }
           }
-        if (event.target === yElements && "keysChanged" in event) {
-          event.keysChanged.forEach((key) => changedIds.add(String(key)));
-        }
+          if (event.target === yElements && event instanceof Y.YMapEvent) {
+            event.keysChanged.forEach((key) => changedIds.add(String(key)));
+          }
         });
+        void transaction;
         applyElementChanges(changedIds, yElements);
       };
       yElements.observeDeep(observer);
@@ -1178,7 +1183,7 @@ export function useBoardRealtime({
           sendMessage(WS_MESSAGE.Awareness, payload);
         };
 
-        socket.onerror = (event) => {
+        socket.onerror = () => {
           if (disposed || wsRef.current !== socket) return;
           logWsError(boardId);
           updateSyncStatus(
@@ -1322,6 +1327,8 @@ export function useBoardRealtime({
     refreshHistoryState,
     resetRealtimeState,
     updateSyncStatus,
+    applyElementChanges,
+    rebuildElementsState,
   ]);
 
   useEffect(() => {

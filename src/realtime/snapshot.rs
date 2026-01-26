@@ -1,6 +1,12 @@
 use sqlx::PgPool;
-use std::{sync::Arc, time::Instant};
-use tokio::sync::Mutex;
+use std::{
+    sync::{
+        Arc,
+        atomic::Ordering,
+    },
+    time::Instant,
+};
+use tokio::sync::{Mutex, Semaphore};
 use tokio::time::{Duration, timeout};
 use uuid::Uuid;
 use yrs::{Doc, ReadTxn, StateVector, Transact, merge_updates_v1, updates::decoder::Decode};
@@ -20,36 +26,68 @@ pub fn spawn_maintenance(db: PgPool, rooms: Rooms) {
         const SNAPSHOT_INTERVAL_SECS: u64 = 60;
         const SNAPSHOT_MIN_UPDATES: i64 = 200;
         const CLEANUP_INTERVAL_SECS: u64 = 300;
+        const SNAPSHOT_MAX_CONCURRENCY: usize = 4;
 
         let mut snapshot_interval =
             tokio::time::interval(std::time::Duration::from_secs(SNAPSHOT_INTERVAL_SECS));
         let mut cleanup_interval =
             tokio::time::interval(std::time::Duration::from_secs(CLEANUP_INTERVAL_SECS));
+        let semaphore = Arc::new(Semaphore::new(SNAPSHOT_MAX_CONCURRENCY));
 
         loop {
             tokio::select! {
                 _ = snapshot_interval.tick() => {
+                    let tick_started = Instant::now();
                     let rooms_snapshot: Vec<Arc<Room>> = rooms.iter().map(|entry| entry.value().clone()).collect();
+                    let rooms_total = rooms_snapshot.len();
+                    let mut skipped = 0usize;
+                    let mut tasks = Vec::new();
                     for room in rooms_snapshot {
-                        let pending_updates = {
-                            let mut pending = room.pending_updates.lock().await;
-                            if pending.is_empty() {
-                                Vec::new()
-                            } else {
-                                pending.drain(..).collect()
-                            }
-                        };
-
-                        if !pending_updates.is_empty() {
-                            save_update_logs(room.board_id, None, pending_updates, db.clone()).await;
-                            let mut last_save = room.last_save.lock().await;
-                            *last_save = Instant::now();
+                        let has_pending = room.pending_update_count.load(Ordering::Acquire) > 0;
+                        if !has_pending {
+                            skipped += 1;
+                            continue;
                         }
+                        let permit = semaphore.clone().acquire_owned().await.expect("semaphore closed");
+                        let db = db.clone();
+                        let room = room.clone();
+                        tasks.push(tokio::spawn(async move {
+                            let _permit = permit;
+                            let pending_updates = {
+                                let mut pending = room.pending_updates.lock().await;
+                                if pending.is_empty() {
+                                    Vec::new()
+                                } else {
+                                    pending.drain(..).collect()
+                                }
+                            };
 
-                        if let Err(e) = maybe_create_snapshot(&db, room.board_id, room.doc.clone(), SNAPSHOT_MIN_UPDATES).await {
-                            tracing::error!("Failed to create snapshot for board {}: {}", room.board_id, e);
+                            if !pending_updates.is_empty() {
+                                save_update_logs(room.board_id, None, pending_updates, db.clone()).await;
+                                let mut last_save = room.last_save.lock().await;
+                                *last_save = Instant::now();
+                                room.pending_update_count.store(0, Ordering::Release);
+                            }
+
+                            if let Err(e) = maybe_create_snapshot(&db, room.board_id, room.doc.clone(), SNAPSHOT_MIN_UPDATES).await {
+                                tracing::error!("Failed to create snapshot for board {}: {}", room.board_id, e);
+                            }
+                        }));
+                    }
+                    if !tasks.is_empty() {
+                        for task in tasks {
+                            if let Err(error) = task.await {
+                                tracing::error!("Snapshot maintenance task failed: {}", error);
+                            }
                         }
                     }
+                    tracing::debug!(
+                        rooms_total,
+                        processed = tasks.len(),
+                        skipped,
+                        duration_ms = tick_started.elapsed().as_millis(),
+                        "Snapshot maintenance tick completed"
+                    );
                 }
                 _ = cleanup_interval.tick() => {
                     let mut room_to_remove = Vec::new();

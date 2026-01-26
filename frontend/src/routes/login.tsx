@@ -51,7 +51,7 @@ function Login() {
         to: redirectTarget,
         search: buildRedirectSearch(redirectTarget, search.email),
       });
-    } catch (_error) {
+    } catch {
       logger.warn("Login failed");
     }
   }

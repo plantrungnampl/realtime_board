@@ -432,6 +432,153 @@ pub async fn upsert_projected_element(
     Ok(())
 }
 
+pub async fn upsert_projected_elements_batch(
+    tx: &mut Transaction<'_, Postgres>,
+    params: &[ProjectedElementParams],
+) -> Result<(), AppError> {
+    if params.is_empty() {
+        return Ok(());
+    }
+
+    let mut ids = Vec::with_capacity(params.len());
+    let mut board_ids = Vec::with_capacity(params.len());
+    let mut layer_ids = Vec::with_capacity(params.len());
+    let mut parent_ids = Vec::with_capacity(params.len());
+    let mut created_by = Vec::with_capacity(params.len());
+    let mut element_types = Vec::with_capacity(params.len());
+    let mut position_x = Vec::with_capacity(params.len());
+    let mut position_y = Vec::with_capacity(params.len());
+    let mut width = Vec::with_capacity(params.len());
+    let mut height = Vec::with_capacity(params.len());
+    let mut rotation = Vec::with_capacity(params.len());
+    let mut z_index = Vec::with_capacity(params.len());
+    let mut styles = Vec::with_capacity(params.len());
+    let mut properties = Vec::with_capacity(params.len());
+    let mut metadata = Vec::with_capacity(params.len());
+    let mut versions = Vec::with_capacity(params.len());
+    let mut created_at = Vec::with_capacity(params.len());
+    let mut updated_at = Vec::with_capacity(params.len());
+    let mut deleted_at = Vec::with_capacity(params.len());
+
+    for param in params {
+        ids.push(param.id);
+        board_ids.push(param.board_id);
+        layer_ids.push(param.layer_id);
+        parent_ids.push(param.parent_id);
+        created_by.push(param.created_by);
+        element_types.push(param.element_type);
+        position_x.push(param.position_x);
+        position_y.push(param.position_y);
+        width.push(param.width);
+        height.push(param.height);
+        rotation.push(param.rotation);
+        z_index.push(param.z_index);
+        styles.push(sqlx::types::Json(param.style.clone()));
+        properties.push(sqlx::types::Json(param.properties.clone()));
+        metadata.push(sqlx::types::Json(param.metadata.clone()));
+        versions.push(param.version);
+        created_at.push(param.created_at);
+        updated_at.push(param.updated_at);
+        deleted_at.push(param.deleted_at);
+    }
+
+    crate::log_query_execute!(
+        "elements.upsert_projected_elements_batch",
+        sqlx::query(
+            r#"
+                INSERT INTO board.element (
+                    id,
+                    board_id,
+                    layer_id,
+                    parent_id,
+                    created_by,
+                    element_type,
+                    position_x,
+                    position_y,
+                    width,
+                    height,
+                    rotation,
+                    z_index,
+                    style,
+                    properties,
+                    metadata,
+                    version,
+                    created_at,
+                    updated_at,
+                    deleted_at
+                )
+                SELECT *
+                FROM UNNEST(
+                    $1::uuid[],
+                    $2::uuid[],
+                    $3::uuid[],
+                    $4::uuid[],
+                    $5::uuid[],
+                    $6::board.element_type[],
+                    $7::double precision[],
+                    $8::double precision[],
+                    $9::double precision[],
+                    $10::double precision[],
+                    $11::double precision[],
+                    $12::int4[],
+                    $13::jsonb[],
+                    $14::jsonb[],
+                    $15::jsonb[],
+                    $16::int4[],
+                    $17::timestamptz[],
+                    $18::timestamptz[],
+                    $19::timestamptz[]
+                )
+                ON CONFLICT (id) DO UPDATE
+                SET
+                    board_id = EXCLUDED.board_id,
+                    layer_id = EXCLUDED.layer_id,
+                    parent_id = EXCLUDED.parent_id,
+                    created_by = EXCLUDED.created_by,
+                    element_type = EXCLUDED.element_type,
+                    position_x = EXCLUDED.position_x,
+                    position_y = EXCLUDED.position_y,
+                    width = EXCLUDED.width,
+                    height = EXCLUDED.height,
+                    rotation = EXCLUDED.rotation,
+                    z_index = EXCLUDED.z_index,
+                    style = EXCLUDED.style,
+                    properties = EXCLUDED.properties,
+                    metadata = EXCLUDED.metadata,
+                    version = EXCLUDED.version,
+                    created_at = EXCLUDED.created_at,
+                    updated_at = EXCLUDED.updated_at,
+                    deleted_at = EXCLUDED.deleted_at
+                WHERE board.element.version IS DISTINCT FROM EXCLUDED.version
+                   OR board.element.deleted_at IS DISTINCT FROM EXCLUDED.deleted_at
+                   OR board.element.updated_at IS DISTINCT FROM EXCLUDED.updated_at
+            "#,
+        )
+        .bind(ids)
+        .bind(board_ids)
+        .bind(layer_ids)
+        .bind(parent_ids)
+        .bind(created_by)
+        .bind(element_types)
+        .bind(position_x)
+        .bind(position_y)
+        .bind(width)
+        .bind(height)
+        .bind(rotation)
+        .bind(z_index)
+        .bind(styles)
+        .bind(properties)
+        .bind(metadata)
+        .bind(versions)
+        .bind(created_at)
+        .bind(updated_at)
+        .bind(deleted_at)
+        .execute(&mut **tx)
+    )?;
+
+    Ok(())
+}
+
 pub async fn list_element_versions(
     pool: &PgPool,
     board_id: Uuid,

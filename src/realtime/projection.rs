@@ -1,4 +1,11 @@
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    sync::{
+        Arc,
+        atomic::Ordering,
+    },
+    time::{Duration, Instant},
+};
 
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
@@ -27,16 +34,31 @@ pub fn spawn_projection(db: PgPool, rooms: Rooms) {
         let mut interval = tokio::time::interval(Duration::from_secs(PROJECTION_INTERVAL_SECS));
         loop {
             interval.tick().await;
+            let tick_started = Instant::now();
+            let mut projected = 0usize;
+            let mut skipped = 0usize;
             let rooms_snapshot: Vec<Arc<Room>> =
                 rooms.iter().map(|entry| entry.value().clone()).collect();
             for room in rooms_snapshot {
-                if let Err(error) = project_room(&db, &room).await {
-                    tracing::error!(
-                        "Failed to project board {} CRDT state: {}",
-                        room.board_id,
-                        error
-                    );
+                match project_room(&db, &room).await {
+                    Ok(true) => projected += 1,
+                    Ok(false) => skipped += 1,
+                    Err(error) => {
+                        tracing::error!(
+                            "Failed to project board {} CRDT state: {}",
+                            room.board_id,
+                            error
+                        );
+                    }
                 }
+            }
+            if projected > 0 || skipped > 0 {
+                tracing::debug!(
+                    projected,
+                    skipped,
+                    duration_ms = tick_started.elapsed().as_millis(),
+                    "CRDT projection tick completed"
+                );
             }
         }
     });
@@ -54,12 +76,19 @@ pub async fn project_doc(
     project_elements(db, board_id, elements).await
 }
 
-async fn project_room(db: &PgPool, room: &Arc<Room>) -> Result<(), AppError> {
+async fn project_room(db: &PgPool, room: &Arc<Room>) -> Result<bool, AppError> {
+    let projection_seq = room.projection_seq.load(Ordering::Acquire);
+    let projected_seq = room.projected_seq.load(Ordering::Relaxed);
+    if projection_seq == projected_seq {
+        return Ok(false);
+    }
     let elements = {
         let doc_guard = room.doc.lock().await;
         element_crdt::materialize_elements(&doc_guard)
     };
-    project_elements(db, room.board_id, elements).await
+    project_elements(db, room.board_id, elements).await?;
+    room.projected_seq.store(projection_seq, Ordering::Release);
+    Ok(true)
 }
 
 async fn project_elements(
@@ -119,12 +148,13 @@ async fn project_elements_once(
         .into_iter()
         .map(|row| (row.id, row))
         .collect();
+    let mut upserts = Vec::new();
     for element in elements {
         let defaults = defaults_map.get(&element.id);
         match to_projected_params(board_id, element.clone(), defaults, &fallback) {
             Ok(params) => {
                 if should_write_projection(defaults, &params) {
-                    element_repo::upsert_projected_element(&mut tx, params).await?;
+                    upserts.push(params);
                 }
             }
             Err(error) => {
@@ -136,6 +166,7 @@ async fn project_elements_once(
             }
         }
     }
+    element_repo::upsert_projected_elements_batch(&mut tx, &upserts).await?;
     tx.commit().await?;
     BusinessEvent::CrdtProjectionCompleted {
         board_id,

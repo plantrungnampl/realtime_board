@@ -34,30 +34,31 @@ export const useConnectorRoutingWorker = () => {
       new URL("./connectorRouting.worker.ts", import.meta.url),
       { type: "module" },
     );
+    const pending = pendingRef.current;
     workerRef.current = worker;
     worker.onmessage = (event: MessageEvent<RouteResponse>) => {
       const message = event.data;
-      const pending = pendingRef.current.get(message.id);
-      if (!pending) return;
-      pendingRef.current.delete(message.id);
+      const pendingRequest = pending.get(message.id);
+      if (!pendingRequest) return;
+      pending.delete(message.id);
       if ("error" in message) {
-        pending.reject(new Error(message.error));
+        pendingRequest.reject(new Error(message.error));
       } else {
-        pending.resolve(message.result);
+        pendingRequest.resolve(message.result);
       }
     };
     worker.onerror = (event) => {
       const error = new Error(event.message || "Connector routing worker failed");
-      pendingRef.current.forEach(({ reject }) => reject(error));
-      pendingRef.current.clear();
+      pending.forEach(({ reject }) => reject(error));
+      pending.clear();
     };
     return () => {
       worker.terminate();
       workerRef.current = null;
-      pendingRef.current.forEach(({ reject }) => {
+      pending.forEach(({ reject }) => {
         reject(new Error("Connector routing worker terminated"));
       });
-      pendingRef.current.clear();
+      pending.clear();
     };
   }, []);
 

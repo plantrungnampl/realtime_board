@@ -1,7 +1,14 @@
 use axum::body::Bytes;
 use dashmap::{DashMap, DashSet, Entry};
 use sqlx::PgPool;
-use std::{collections::VecDeque, sync::Arc, time::Instant};
+use std::{
+    collections::VecDeque,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::Instant,
+};
 use tokio::sync::{Mutex, Notify, RwLock, broadcast};
 use uuid::Uuid;
 use yrs::{Doc, sync::Awareness};
@@ -26,6 +33,9 @@ pub struct Room {
     pub pending_updates: Arc<Mutex<Vec<Vec<u8>>>>,
     pub last_active: Mutex<Instant>,
     pub last_save: Mutex<Instant>,
+    pub pending_update_count: AtomicU64,
+    pub projection_seq: AtomicU64,
+    pub projected_seq: AtomicU64,
 }
 
 impl Room {
@@ -40,6 +50,9 @@ impl Room {
         let edit_permissions = Arc::new(DashMap::new());
         let queue = Arc::new(Mutex::new(VecDeque::new()));
         let last_active = Mutex::new(Instant::now());
+        let pending_update_count = AtomicU64::new(0);
+        let projection_seq = AtomicU64::new(0);
+        let projected_seq = AtomicU64::new(0);
         Self {
             doc,
             tx,
@@ -52,6 +65,9 @@ impl Room {
             pending_updates,
             last_active,
             last_save,
+            pending_update_count,
+            projection_seq,
+            projected_seq,
         }
     }
 

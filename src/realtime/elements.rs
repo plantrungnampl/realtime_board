@@ -231,6 +231,7 @@ async fn broadcast_update(room: &Arc<crate::realtime::room::Room>, update: Vec<u
         let mut pending = room.pending_updates.lock().await;
         pending.push(update.clone());
     }
+    room.pending_update_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     *room.last_active.lock().await = Instant::now();
 
     let mut message = vec![protocol::OP_UPDATE];

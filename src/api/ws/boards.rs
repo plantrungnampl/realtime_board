@@ -26,6 +26,7 @@ use yrs::{
     sync::awareness::AwarenessUpdate,
     updates::{decoder::Decode, encoder::Encode},
 };
+use std::sync::atomic::Ordering;
 use tracing::Instrument;
 
 use crate::{
@@ -573,8 +574,12 @@ pub async fn handle_socket(
                                     );
                                 });
                             }
+                            room_clone.projection_seq.fetch_add(1, Ordering::Relaxed);
                             let mut pending = room_clone.pending_updates.lock().await;
                             pending.push(payload.to_vec());
+                            room_clone
+                                .pending_update_count
+                                .fetch_add(1, Ordering::Relaxed);
                         }
                         protocol::OP_AWARENESS => match AwarenessUpdate::decode_v1(payload) {
                             Ok(update) => {
