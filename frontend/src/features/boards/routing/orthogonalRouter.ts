@@ -82,10 +82,14 @@ type GraphCache = {
 
 const GRAPH_CACHE_LIMIT = 6;
 const graphCache = new Map<string, GraphCache>();
+const obstacleHashCache = new WeakMap<Rect[], number>();
 
 const hashNumber = (value: number) => Math.round(value * 1000);
 
 const hashObstacles = (obstacles: Rect[]) => {
+  if (obstacleHashCache.has(obstacles)) {
+    return obstacleHashCache.get(obstacles) ?? 0;
+  }
   let hash = 2166136261;
   const values: number[] = [];
   obstacles.forEach((rect) => {
@@ -101,7 +105,9 @@ const hashObstacles = (obstacles: Rect[]) => {
     hash ^= value;
     hash = Math.imul(hash, 16777619);
   });
-  return hash >>> 0;
+  const normalized = hash >>> 0;
+  obstacleHashCache.set(obstacles, normalized);
+  return normalized;
 };
 
 const buildBounds = (points: Node[]): Rect => {
@@ -398,11 +404,11 @@ export const routeOrthogonalPath = (
   for (let paddingIndex = 0; paddingIndex < paddingOptions.length; paddingIndex += 1) {
     const pad = paddingOptions[paddingIndex];
     const paddedObstacles = obstacles.map((rect) => addPadding(rect, pad));
+    const obstacleHash = hashObstacles(paddedObstacles);
     let lastPath: Node[] | null = null;
     let lastBounds: Rect | null = null;
     const maxMargin = baseMargin * MAX_MARGIN_MULTIPLIER;
     for (let margin = baseMargin; margin <= maxMargin; margin *= 2) {
-      const obstacleHash = hashObstacles(paddedObstacles);
       const cacheKey = `${start.x}:${start.y}:${end.x}:${end.y}:${margin}:${maxNodes}:${obstacleHash}`;
       const cached = graphCache.get(cacheKey);
       const graph = cached ?? buildGraph(
