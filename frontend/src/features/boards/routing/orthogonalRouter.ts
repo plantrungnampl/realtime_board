@@ -228,14 +228,24 @@ const buildGraph = (
   const yList = Array.from(ys).sort((a, b) => a - b);
 
   const nodes = new Map<string, Node>();
+  const nodeObstaclesByX = new Map<number, Rect[]>();
+  const getNodeObstaclesForX = (x: number) => {
+    let list = nodeObstaclesByX.get(x);
+    if (!list) {
+      list = relevantObstacles.filter((rect) => x > rect.left + EPS && x < rect.right - EPS);
+      nodeObstaclesByX.set(x, list);
+    }
+    return list;
+  };
   for (let xi = 0; xi < xList.length; xi += 1) {
     const x = xList[xi];
+    if (x < searchBounds.left || x > searchBounds.right) continue;
+    const xObstacles = getNodeObstaclesForX(x);
     for (let yi = 0; yi < yList.length; yi += 1) {
       const y = yList[yi];
       const node = { x, y };
-      if (node.x < searchBounds.left || node.x > searchBounds.right) continue;
       if (node.y < searchBounds.top || node.y > searchBounds.bottom) continue;
-      if (relevantObstacles.some((rect) => isInsideRect(node, rect))) continue;
+      if (xObstacles.some((rect) => y > rect.top + EPS && y < rect.bottom - EPS)) continue;
       nodes.set(toKey(node), node);
       if (nodes.size > maxNodes) {
         break;
