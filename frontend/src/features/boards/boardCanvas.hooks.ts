@@ -130,6 +130,35 @@ const resolveBindingSide = (element: BoardElement, target: Point): ConnectorBind
   return dy >= 0 ? "bottom" : "top";
 };
 
+const hashString = (value: string) => {
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 31 + value.charCodeAt(i)) | 0;
+  }
+  return hash;
+};
+
+const buildObstacleIndexKey = (snapshot: BoardElement[]) => {
+  let hash = 0;
+  let count = 0;
+  snapshot.forEach((element) => {
+    if (element.element_type !== "Text" && !isRectLikeElement(element)) return;
+    const bounds = getElementBounds(element);
+    const roundedBounds = [
+      Math.round(bounds.left * 1000),
+      Math.round(bounds.right * 1000),
+      Math.round(bounds.top * 1000),
+      Math.round(bounds.bottom * 1000),
+    ];
+    roundedBounds.forEach((value) => {
+      hash = (hash * 31 + value) | 0;
+    });
+    hash = (hash * 31 + hashString(element.id)) | 0;
+    count += 1;
+  });
+  return `${count}:${hash}`;
+};
+
 const findBindableElement = (
   point: Point,
   snapshot: BoardElement[],
@@ -215,6 +244,10 @@ export function useBoardCanvasInteractions({
   const panStartRef = useRef<Point | null>(null);
   const panStageStartRef = useRef<{ x: number; y: number } | null>(null);
   const elementsCount = elements.length;
+  const obstacleIndexRef = useRef<{
+    key: string;
+    index: ReturnType<typeof buildObstacleIndex> | null;
+  } | null>(null);
 
   const {
     stageRef,
@@ -316,6 +349,17 @@ export function useBoardCanvasInteractions({
       map.set(element.id, element);
     });
     return map;
+  }, []);
+
+  const getObstacleIndex = useCallback((snapshot: BoardElement[]) => {
+    const key = buildObstacleIndexKey(snapshot);
+    const cached = obstacleIndexRef.current;
+    if (cached?.key === key) {
+      return cached.index;
+    }
+    const index = buildObstacleIndex(snapshot);
+    obstacleIndexRef.current = { key, index };
+    return index;
   }, []);
 
   const applyConnectorRoutingMemo = useCallback(
@@ -420,7 +464,7 @@ export function useBoardCanvasInteractions({
       if (!connectors || connectors.length === 0) return;
       const snapshot = buildElementsSnapshot();
       const elementIndex = buildElementIndex(snapshot);
-      const obstacleIndex = buildObstacleIndex(snapshot);
+      const obstacleIndex = getObstacleIndex(snapshot);
       const movedElement = mode === "live" ? elementIndex.get(elementId) : null;
       if (mode === "live" && movedElement) {
         const rotation = movedElement.rotation ?? 0;
@@ -870,7 +914,7 @@ export function useBoardCanvasInteractions({
         }
         const snapshot = buildElementsSnapshot();
         const elementIndex = buildElementIndex(snapshot);
-        const obstacleIndex = buildObstacleIndex(snapshot);
+        const obstacleIndex = getObstacleIndex(snapshot);
         const routingContext = buildConnectorRouteContext(
           normalized,
           snapshot,
@@ -1037,7 +1081,7 @@ export function useBoardCanvasInteractions({
     let cancelled = false;
     const snapshot = buildElementsSnapshot();
     const elementIndex = buildElementIndex(snapshot);
-    const obstacleIndex = buildObstacleIndex(snapshot);
+    const obstacleIndex = getObstacleIndex(snapshot);
     const promises: Promise<ConnectorElement | null>[] = [];
     snapshot.forEach((element) => {
       if (element.element_type !== "Connector") return;
