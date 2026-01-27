@@ -87,9 +87,8 @@ const obstacleHashCache = new WeakMap<Rect[], number>();
 const hashNumber = (value: number) => Math.round(value * 1000);
 
 const hashObstacles = (obstacles: Rect[]) => {
-  const cached = obstacleHashCache.get(obstacles);
-  if (cached !== undefined) {
-    return cached;
+  if (obstacleHashCache.has(obstacles)) {
+    return obstacleHashCache.get(obstacles) ?? 0;
   }
   let hash = 2166136261;
   const values: number[] = [];
