@@ -7,9 +7,7 @@ use axum::{
 };
 use uuid::Uuid;
 
-use crate::{
-    app::state::AppState, auth::jwt::JwtConfig, error::AppError, repositories::users as user_repo,
-};
+use crate::{app::state::AppState, error::AppError, repositories::users as user_repo};
 
 #[derive(Debug, Clone)]
 pub struct AuthUser {
@@ -23,31 +21,23 @@ pub async fn auth_middleware(
     mut req: Request,
     next: Next,
 ) -> Result<Response, AppError> {
-    let token = match req
+    let token = req
         .headers()
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
         .and_then(|val| val.strip_prefix("Bearer "))
-    {
-        Some(t) => {
-            println!("Auth middleware: Found token in header");
-            t.to_string()
-        }
-        None => {
+        .map(str::to_string)
+        .or_else(|| {
             let query = req.uri().query().unwrap_or("");
-            println!("Auth middleware: Checking query params: {}", query);
             let params: std::collections::HashMap<String, String> =
                 serde_urlencoded::from_str(query).unwrap_or_default();
-            params.get("token").cloned().ok_or(AppError::Unauthorized(
-                "Missing authorization token".to_string(),
-            ))?
-        }
-    };
+            params.get("token").cloned()
+        })
+        .ok_or(AppError::Unauthorized(
+            "Missing authorization token".to_string(),
+        ))?;
 
-    let jwt_config = JwtConfig {
-        secret: state.jwt_secret.clone(),
-        expiration_hours: 24,
-    };
+    let jwt_config = state.jwt_config.clone();
 
     let claim = jwt_config
         .verify_token(&token)
