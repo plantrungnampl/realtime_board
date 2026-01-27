@@ -2,6 +2,8 @@ import { Graphics as PixiGraphics } from "pixi.js";
 import type { BoardElement } from "@/types/board";
 import { normalizeOrthogonalPoints } from "@/features/boards/boardCanvas/connectorRouting";
 
+export const DOUBLE_TAP_THRESHOLD = 350;
+
 export const coerceNumber = (value: number | null | undefined, fallback: number) =>
   Number.isFinite(value) ? (value as number) : fallback;
 
@@ -125,5 +127,56 @@ export const drawPolyline = (graphics: PixiGraphics, points: number[], strokeWid
   for (let i = 2; i < points.length; i += 2) {
     graphics.lineTo(points[i], points[i + 1]);
   }
+  graphics.stroke();
+};
+
+export const applyStrokeAndFill = (
+  graphics: PixiGraphics,
+  element: BoardElement,
+  defaultFill: number,
+) => {
+  const stroke = parseColor(element.style.stroke, 0xffffff);
+  const fill = resolveFillStyle(element.style.fill, defaultFill);
+  const strokeWidth = element.style.strokeWidth ?? 1;
+  setStrokeStyle(graphics, strokeWidth, stroke);
+  setFillStyle(graphics, fill.color, fill.alpha);
+};
+
+export const drawRectShape = (
+  graphics: PixiGraphics,
+  element: BoardElement,
+  rect: { width: number; height: number },
+  defaultFill: number = 0x000000,
+) => {
+  graphics.clear();
+  applyStrokeAndFill(graphics, element, defaultFill);
+  graphics.rect(0, 0, rect.width, rect.height);
+  graphics.fill();
+  graphics.stroke();
+};
+
+export const drawCircleShape = (
+  graphics: PixiGraphics,
+  element: BoardElement,
+  radius: number,
+  defaultFill: number = 0x000000,
+) => {
+  graphics.clear();
+  applyStrokeAndFill(graphics, element, defaultFill);
+  graphics.circle(0, 0, radius);
+  graphics.fill();
+  graphics.stroke();
+};
+
+export const drawRoundedRectShape = (
+  graphics: PixiGraphics,
+  element: BoardElement,
+  rect: { width: number; height: number },
+  defaultFill: number = 0xfff9c2,
+) => {
+  graphics.clear();
+  applyStrokeAndFill(graphics, element, defaultFill);
+  graphics.roundRect(0, 0, rect.width, rect.height, element.style.cornerRadius ?? 12);
+  graphics.fill();
   graphics.stroke();
 };

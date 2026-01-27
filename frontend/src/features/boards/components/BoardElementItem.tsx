@@ -9,9 +9,10 @@ import {
   isValidDrawingPoints,
   parseColor,
   resolveConnectorPoints,
-  resolveFillStyle,
-  setFillStyle,
-  setStrokeStyle,
+  DOUBLE_TAP_THRESHOLD,
+  drawRectShape,
+  drawCircleShape,
+  drawRoundedRectShape,
 } from "@/features/boards/boardCanvas/renderUtils";
 
 const DEG_TO_RAD = Math.PI / 180;
@@ -37,6 +38,81 @@ type BoardElementItemProps = {
   registerRef: (id: string, node: PixiContainer | null) => void;
 };
 
+type ElementContainerProps = {
+  element: BoardElement;
+  isInteractive: boolean;
+  registerRef: (id: string, node: PixiContainer | null) => void;
+  onPointerDown: (event: FederatedPointerEvent, element: BoardElement) => void;
+  x?: number;
+  y?: number;
+  onPointerTap?: (event: FederatedPointerEvent) => void;
+  children: React.ReactNode;
+};
+
+function ElementContainer({
+  element,
+  isInteractive,
+  registerRef,
+  onPointerDown,
+  x,
+  y,
+  onPointerTap,
+  children,
+}: ElementContainerProps) {
+  return (
+    <pixiContainer
+      ref={(node: PixiContainer | null) => registerRef(element.id, node)}
+      x={x}
+      y={y}
+      rotation={(element.rotation ?? 0) * DEG_TO_RAD}
+      eventMode={isInteractive ? "static" : "passive"}
+      onPointerDown={(event: FederatedPointerEvent) => onPointerDown(event, element)}
+      onPointerTap={onPointerTap}
+    >
+      {children}
+    </pixiContainer>
+  );
+}
+
+type BuildTextEditorPayloadArgs = {
+  element: BoardElement;
+  x: number;
+  y: number;
+  content: string;
+  fontSize: number;
+  color: string;
+  elementType: "Text" | "StickyNote";
+  backgroundColor?: string;
+  editorWidth?: number;
+  editorHeight?: number;
+};
+
+function buildTextEditorPayload({
+  element,
+  x,
+  y,
+  content,
+  fontSize,
+  color,
+  elementType,
+  backgroundColor,
+  editorWidth,
+  editorHeight,
+}: BuildTextEditorPayloadArgs): TextEditorPayload {
+  return {
+    x,
+    y,
+    value: content,
+    elementId: element.id,
+    fontSize,
+    color,
+    elementType,
+    backgroundColor,
+    editorWidth,
+    editorHeight,
+  };
+}
+
 export const BoardElementItem = memo(function BoardElementItem({
   element,
   isInteractive,
@@ -50,7 +126,7 @@ export const BoardElementItem = memo(function BoardElementItem({
     const now = event.originalEvent.timeStamp ?? performance.now();
     const last = lastTapRef.current;
     lastTapRef.current = now;
-    if (now - last < 350) {
+    if (now - last < DOUBLE_TAP_THRESHOLD) {
       callback();
     }
   };
@@ -59,28 +135,16 @@ export const BoardElementItem = memo(function BoardElementItem({
     if (element.properties.shapeType === "rectangle") {
       const rect = getRectBounds(element);
       return (
-        <pixiContainer
-          ref={(node: PixiContainer | null) => registerRef(element.id, node)}
+        <ElementContainer
+          element={element}
+          isInteractive={isInteractive}
+          registerRef={registerRef}
+          onPointerDown={onPointerDown}
           x={rect.x}
           y={rect.y}
-          rotation={(element.rotation ?? 0) * DEG_TO_RAD}
-          eventMode={isInteractive ? "static" : "passive"}
-          onPointerDown={(event: FederatedPointerEvent) => onPointerDown(event, element)}
         >
-          <pixiGraphics
-            draw={(graphics) => {
-              graphics.clear();
-              const stroke = parseColor(element.style.stroke, 0xffffff);
-              const fill = resolveFillStyle(element.style.fill, 0x000000);
-              const strokeWidth = element.style.strokeWidth ?? 1;
-              setStrokeStyle(graphics, strokeWidth, stroke);
-              graphics.rect(0, 0, rect.width, rect.height);
-              setFillStyle(graphics, fill.color, fill.alpha);
-              graphics.fill();
-              graphics.stroke();
-            }}
-          />
-        </pixiContainer>
+          <pixiGraphics draw={(g) => drawRectShape(g, element, rect)} />
+        </ElementContainer>
       );
     }
     if (element.properties.shapeType === "circle") {
@@ -88,28 +152,16 @@ export const BoardElementItem = memo(function BoardElementItem({
       const positionX = coerceNumber(element.position_x, 0);
       const positionY = coerceNumber(element.position_y, 0);
       return (
-        <pixiContainer
-          ref={(node: PixiContainer | null) => registerRef(element.id, node)}
+        <ElementContainer
+          element={element}
+          isInteractive={isInteractive}
+          registerRef={registerRef}
+          onPointerDown={onPointerDown}
           x={positionX}
           y={positionY}
-          rotation={(element.rotation ?? 0) * DEG_TO_RAD}
-          eventMode={isInteractive ? "static" : "passive"}
-          onPointerDown={(event: FederatedPointerEvent) => onPointerDown(event, element)}
         >
-          <pixiGraphics
-            draw={(graphics) => {
-              graphics.clear();
-              const stroke = parseColor(element.style.stroke, 0xffffff);
-              const fill = resolveFillStyle(element.style.fill, 0x000000);
-              const strokeWidth = element.style.strokeWidth ?? 1;
-              setStrokeStyle(graphics, strokeWidth, stroke);
-              graphics.circle(0, 0, radius);
-              setFillStyle(graphics, fill.color, fill.alpha);
-              graphics.fill();
-              graphics.stroke();
-            }}
-          />
-        </pixiContainer>
+          <pixiGraphics draw={(g) => drawCircleShape(g, element, radius)} />
+        </ElementContainer>
       );
     }
   }
@@ -120,13 +172,13 @@ export const BoardElementItem = memo(function BoardElementItem({
     const positionX = coerceNumber(element.position_x, 0);
     const positionY = coerceNumber(element.position_y, 0);
     return (
-      <pixiContainer
-        ref={(node: PixiContainer | null) => registerRef(element.id, node)}
+      <ElementContainer
+        element={element}
+        isInteractive={isInteractive}
+        registerRef={registerRef}
+        onPointerDown={onPointerDown}
         x={positionX}
         y={positionY}
-        rotation={(element.rotation ?? 0) * DEG_TO_RAD}
-        eventMode={isInteractive ? "static" : "passive"}
-        onPointerDown={(event: FederatedPointerEvent) => onPointerDown(event, element)}
       >
         <pixiGraphics
           draw={(graphics) => {
@@ -139,7 +191,7 @@ export const BoardElementItem = memo(function BoardElementItem({
             );
           }}
         />
-      </pixiContainer>
+      </ElementContainer>
     );
   }
 
@@ -148,37 +200,40 @@ export const BoardElementItem = memo(function BoardElementItem({
     const positionY = coerceNumber(element.position_y, 0);
     const fontSize = element.style.fontSize ?? DEFAULT_TEXT_STYLE.fontSize ?? 16;
     const content = element.properties?.content ?? "";
+    const color = element.style.textColor ?? DEFAULT_TEXT_STYLE.fill ?? "#1F2937";
 
     return (
-      <pixiContainer
-        ref={(node: PixiContainer | null) => registerRef(element.id, node)}
+      <ElementContainer
+        element={element}
+        isInteractive={isInteractive}
+        registerRef={registerRef}
+        onPointerDown={onPointerDown}
         x={positionX}
         y={positionY}
-        rotation={(element.rotation ?? 0) * DEG_TO_RAD}
-        eventMode={isInteractive ? "static" : "passive"}
-        onPointerDown={(event: FederatedPointerEvent) => onPointerDown(event, element)}
-        onPointerTap={(event: FederatedPointerEvent) => {
+        onPointerTap={(event) =>
           handleTap(event, () => {
-            onOpenTextEditor({
-              x: positionX,
-              y: positionY,
-              value: content,
-              elementId: element.id,
-              fontSize,
-              color: element.style.textColor ?? DEFAULT_TEXT_STYLE.fill ?? "#1F2937",
-              elementType: "Text",
-            });
-          });
-        }}
+            onOpenTextEditor(
+              buildTextEditorPayload({
+                element,
+                x: positionX,
+                y: positionY,
+                content,
+                fontSize,
+                color,
+                elementType: "Text",
+              }),
+            );
+          })
+        }
       >
         <pixiText
           text={content}
           style={{
             fontSize,
-            fill: element.style.textColor ?? DEFAULT_TEXT_STYLE.fill ?? "#1F2937",
+            fill: color,
           }}
         />
-      </pixiContainer>
+      </ElementContainer>
     );
   }
 
@@ -187,56 +242,48 @@ export const BoardElementItem = memo(function BoardElementItem({
     const fontSize = element.style.fontSize ?? 16;
     const content = element.properties?.content ?? "";
     const padding = 12;
+    const color = element.style.textColor ?? "#1F2937";
+
     return (
-      <pixiContainer
-        ref={(node: PixiContainer | null) => registerRef(element.id, node)}
+      <ElementContainer
+        element={element}
+        isInteractive={isInteractive}
+        registerRef={registerRef}
+        onPointerDown={onPointerDown}
         x={rect.x}
         y={rect.y}
-        rotation={(element.rotation ?? 0) * DEG_TO_RAD}
-        eventMode={isInteractive ? "static" : "passive"}
-        onPointerDown={(event: FederatedPointerEvent) => onPointerDown(event, element)}
-        onPointerTap={(event: FederatedPointerEvent) => {
+        onPointerTap={(event) =>
           handleTap(event, () => {
-            onOpenTextEditor({
-              x: rect.x + padding,
-              y: rect.y + padding,
-              value: content,
-              elementId: element.id,
-              fontSize,
-              color: element.style.textColor ?? "#1F2937",
-              elementType: "StickyNote",
-              backgroundColor: element.style.fill,
-              editorWidth: Math.max(0, rect.width - padding * 2),
-              editorHeight: Math.max(0, rect.height - padding * 2),
-            });
-          });
-        }}
+            onOpenTextEditor(
+              buildTextEditorPayload({
+                element,
+                x: rect.x + padding,
+                y: rect.y + padding,
+                content,
+                fontSize,
+                color,
+                elementType: "StickyNote",
+                backgroundColor: element.style.fill,
+                editorWidth: Math.max(0, rect.width - padding * 2),
+                editorHeight: Math.max(0, rect.height - padding * 2),
+              }),
+            );
+          })
+        }
       >
-        <pixiGraphics
-          draw={(graphics) => {
-            graphics.clear();
-            const stroke = parseColor(element.style.stroke, 0xffffff);
-            const fill = resolveFillStyle(element.style.fill, 0xfff9c2);
-            const strokeWidth = element.style.strokeWidth ?? 1;
-            setStrokeStyle(graphics, strokeWidth, stroke);
-            graphics.roundRect(0, 0, rect.width, rect.height, element.style.cornerRadius ?? 12);
-            setFillStyle(graphics, fill.color, fill.alpha);
-            graphics.fill();
-            graphics.stroke();
-          }}
-        />
+        <pixiGraphics draw={(g) => drawRoundedRectShape(g, element, rect)} />
         <pixiText
           text={content}
           x={padding}
           y={padding}
           style={{
             fontSize,
-            fill: element.style.textColor ?? "#1F2937",
+            fill: color,
             wordWrap: true,
             wordWrapWidth: Math.max(0, rect.width - padding * 2),
           }}
         />
-      </pixiContainer>
+      </ElementContainer>
     );
   }
 
@@ -244,10 +291,11 @@ export const BoardElementItem = memo(function BoardElementItem({
     const points = resolveConnectorPoints(element);
     if (!points || points.length < 4) return null;
     return (
-      <pixiContainer
-        ref={(node: PixiContainer | null) => registerRef(element.id, node)}
-        eventMode={isInteractive ? "static" : "passive"}
-        onPointerDown={(event: FederatedPointerEvent) => onPointerDown(event, element)}
+      <ElementContainer
+        element={element}
+        isInteractive={isInteractive}
+        registerRef={registerRef}
+        onPointerDown={onPointerDown}
       >
         <pixiGraphics
           draw={(graphics) => {
@@ -260,7 +308,7 @@ export const BoardElementItem = memo(function BoardElementItem({
             );
           }}
         />
-      </pixiContainer>
+      </ElementContainer>
     );
   }
 
