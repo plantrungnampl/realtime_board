@@ -14,27 +14,23 @@ import { DEFAULT_TEXT_STYLE } from "@/features/boards/boardRoute/elements";
 import { getTextMetrics } from "@/features/boards/boardRoute.utils";
 import type { SnapGuide } from "@/features/boards/elementMove.utils";
 import { getElementBounds, getAnchorPosition } from "@/features/boards/elementMove.utils";
-import { normalizeOrthogonalPoints } from "@/features/boards/boardCanvas/connectorRouting";
 import type { CanvasPointerEvent, CanvasWheelEvent } from "@/features/boards/boardCanvas.hooks";
+import {
+  coerceNumber,
+  parseColor,
+  resolveFillStyle,
+  getRectBounds,
+  toRectBounds,
+  setStrokeStyle,
+  setFillStyle,
+} from "@/features/boards/boardCanvas/renderUtils";
+import { BoardElementItem, type TextEditorPayload } from "@/features/boards/components/BoardElementItem";
 
 extend({
   Container: PixiContainer,
   Graphics: PixiGraphics,
   Text: PixiText,
 });
-
-type TextEditorPayload = {
-  x: number;
-  y: number;
-  value: string;
-  elementId: string;
-  fontSize: number;
-  color: string;
-  elementType: "Text" | "StickyNote";
-  backgroundColor?: string;
-  editorWidth?: number;
-  editorHeight?: number;
-};
 
 type SelectionOverlay = {
   key: string;
@@ -109,132 +105,6 @@ const SELECTION_STROKE = "#60A5FA";
 const SNAP_GUIDE_COLORS = {
   vertical: "#7DD3FC",
   horizontal: "#F472B6",
-};
-
-const coerceNumber = (value: number | null | undefined, fallback: number) =>
-  Number.isFinite(value) ? (value as number) : fallback;
-
-const clampColor = (value: number, fallback: number) =>
-  Number.isFinite(value) && value >= 0 && value <= 0xffffff ? value : fallback;
-
-const parseColor = (value?: string, fallback = 0x000000) => {
-  if (!value) return fallback;
-  if (value === "transparent") return fallback;
-  if (value.startsWith("#")) {
-    return clampColor(Number.parseInt(value.slice(1), 16), fallback);
-  }
-  if (value.startsWith("rgb")) {
-    const parts = value.match(/\d+(\.\d+)?/g);
-    if (!parts || parts.length < 3) return fallback;
-    const [r, g, b] = parts.map((part) => Math.max(0, Math.min(255, Number(part))));
-    return clampColor((r << 16) + (g << 8) + b, fallback);
-  }
-  const hex = Number.parseInt(value.replace(/[^0-9A-Fa-f]/g, ""), 16);
-  return clampColor(Number.isFinite(hex) ? hex : fallback, fallback);
-};
-
-const resolveFillStyle = (value?: string, fallback = 0x000000) => {
-  if (!value || value === "transparent") {
-    return { color: fallback, alpha: 0 };
-  }
-  if (value.startsWith("rgba")) {
-    const parts = value.match(/\d+(\.\d+)?/g);
-    if (!parts || parts.length < 4) {
-      return { color: fallback, alpha: 0 };
-    }
-    const [r, g, b, a] = parts.map((part) => Number(part));
-    const color = clampColor(
-      (Math.max(0, Math.min(255, r)) << 16)
-        + (Math.max(0, Math.min(255, g)) << 8)
-        + Math.max(0, Math.min(255, b)),
-      fallback,
-    );
-    const alpha = Math.max(0, Math.min(1, a));
-    return { color, alpha };
-  }
-  return { color: parseColor(value, fallback), alpha: 1 };
-};
-
-const isValidDrawingPoints = (points: number[]) =>
-  points.length >= 4 && points.every((value) => Number.isFinite(value));
-
-const isValidPointArray = (points: number[]) =>
-  points.length >= 2 && points.every((value) => Number.isFinite(value));
-
-const buildOrthogonalFallbackPoints = (start: { x: number; y: number }, end: { x: number; y: number }) =>
-  [start.x, start.y, end.x, start.y, end.x, end.y];
-
-const getRectBounds = (element: BoardElement) => {
-  const width = coerceNumber(element.width, 0);
-  const height = coerceNumber(element.height, 0);
-  const x = coerceNumber(element.position_x, 0) + Math.min(0, width);
-  const y = coerceNumber(element.position_y, 0) + Math.min(0, height);
-  return {
-    x,
-    y,
-    width: Math.abs(width),
-    height: Math.abs(height),
-  };
-};
-
-const toRectBounds = (bounds: { left: number; right: number; top: number; bottom: number }) => ({
-  x: bounds.left,
-  y: bounds.top,
-  width: bounds.right - bounds.left,
-  height: bounds.bottom - bounds.top,
-});
-
-const resolveConnectorEndpoints = (element: BoardElement) => {
-  if (element.element_type !== "Connector") return null;
-  const start = element.properties?.start;
-  const end = element.properties?.end;
-  if (!start || !end) return null;
-  if (!Number.isFinite(start.x) || !Number.isFinite(start.y) || !Number.isFinite(end.x) || !Number.isFinite(end.y)) {
-    return null;
-  }
-  return { start, end };
-};
-
-const resolveConnectorPoints = (element: BoardElement) => {
-  if (element.element_type !== "Connector") return null;
-  const routingMode = element.properties?.routing?.mode;
-  const storedPoints = element.properties?.points;
-  if (Array.isArray(storedPoints)) {
-    if (!isValidPointArray(storedPoints)) return null;
-    if (routingMode === "straight") {
-      return storedPoints;
-    }
-    return normalizeOrthogonalPoints(storedPoints);
-  }
-  const endpoints = resolveConnectorEndpoints(element);
-  if (!endpoints) return null;
-  if (routingMode === "straight") {
-    return [
-      endpoints.start.x,
-      endpoints.start.y,
-      endpoints.end.x,
-      endpoints.end.y,
-    ];
-  }
-  return buildOrthogonalFallbackPoints(endpoints.start, endpoints.end);
-};
-
-const setStrokeStyle = (graphics: PixiGraphics, width: number, color: number, alpha = 1) => {
-  graphics.setStrokeStyle({ width, color, alpha, alignment: 0.5 });
-};
-
-const setFillStyle = (graphics: PixiGraphics, color: number, alpha = 1) => {
-  graphics.setFillStyle({ color, alpha });
-};
-
-const drawPolyline = (graphics: PixiGraphics, points: number[], strokeWidth: number, strokeColor: number) => {
-  if (points.length < 4) return;
-  setStrokeStyle(graphics, strokeWidth, strokeColor);
-  graphics.moveTo(points[0], points[1]);
-  for (let i = 2; i < points.length; i += 2) {
-    graphics.lineTo(points[i], points[i + 1]);
-  }
-  graphics.stroke();
 };
 
 const EMPTY_DRAG_PRESENCE: DragPresence[] = [];
@@ -640,7 +510,6 @@ function PixiScene({
     pointerId: number;
     offset: { x: number; y: number };
   } | null>(null);
-  const lastTapRef = useRef<{ id: string; time: number } | null>(null);
 
   const primarySelectedId =
     selectedElementIds.length === 1 ? selectedElementIds[0] : null;
@@ -1097,14 +966,6 @@ function PixiScene({
     [],
   );
 
-  const isDoubleTap = useCallback((id: string, event: FederatedPointerEvent) => {
-    const now = event.originalEvent.timeStamp ?? performance.now();
-    const last = lastTapRef.current;
-    lastTapRef.current = { id, time: now };
-    if (!last) return false;
-    return last.id === id && now - last.time < 350;
-  }, []);
-
   const selectionOverlays = useMemo(() => {
     if (selectionPresence.length === 0) return [];
     const overlays: SelectionOverlay[] = [];
@@ -1197,219 +1058,16 @@ function PixiScene({
       {renderElements.map((element) => {
         const isLocked = lockedElementIds.has(element.id);
         const isInteractive = isDragEnabled && !isLocked;
-        if (element.element_type === "Shape") {
-          if (element.properties.shapeType === "rectangle") {
-            const rect = getRectBounds(element);
-            return (
-              <pixiContainer
-                key={element.id}
-                ref={(node) => registerElementRef(element.id, node)}
-                x={rect.x}
-                y={rect.y}
-                rotation={(element.rotation ?? 0) * DEG_TO_RAD}
-                eventMode={isInteractive ? "static" : "passive"}
-                onPointerDown={(event: FederatedPointerEvent) => handleElementPointerDown(event, element)}
-              >
-                <pixiGraphics
-                  draw={(graphics) => {
-                  graphics.clear();
-                  const stroke = parseColor(element.style.stroke, 0xffffff);
-                  const fill = resolveFillStyle(element.style.fill, 0x000000);
-                  const strokeWidth = element.style.strokeWidth ?? 1;
-                  setStrokeStyle(graphics, strokeWidth, stroke);
-                  graphics.rect(0, 0, rect.width, rect.height);
-                  setFillStyle(graphics, fill.color, fill.alpha);
-                  graphics.fill();
-                  graphics.stroke();
-                }}
-              />
-            </pixiContainer>
-            );
-          }
-          if (element.properties.shapeType === "circle") {
-            const radius = Math.hypot(element.width || 0, element.height || 0);
-            const positionX = coerceNumber(element.position_x, 0);
-            const positionY = coerceNumber(element.position_y, 0);
-            return (
-              <pixiContainer
-                key={element.id}
-                ref={(node) => registerElementRef(element.id, node)}
-                x={positionX}
-                y={positionY}
-                rotation={(element.rotation ?? 0) * DEG_TO_RAD}
-                eventMode={isInteractive ? "static" : "passive"}
-                onPointerDown={(event: FederatedPointerEvent) => handleElementPointerDown(event, element)}
-              >
-                <pixiGraphics
-                  draw={(graphics) => {
-                  graphics.clear();
-                  const stroke = parseColor(element.style.stroke, 0xffffff);
-                  const fill = resolveFillStyle(element.style.fill, 0x000000);
-                  const strokeWidth = element.style.strokeWidth ?? 1;
-                  setStrokeStyle(graphics, strokeWidth, stroke);
-                  graphics.circle(0, 0, radius);
-                  setFillStyle(graphics, fill.color, fill.alpha);
-                  graphics.fill();
-                  graphics.stroke();
-                }}
-              />
-            </pixiContainer>
-            );
-          }
-        }
-
-        if (element.element_type === "Drawing") {
-          const points = element.properties.points;
-          if (!Array.isArray(points) || !isValidDrawingPoints(points)) return null;
-          const positionX = coerceNumber(element.position_x, 0);
-          const positionY = coerceNumber(element.position_y, 0);
-          return (
-            <pixiContainer
-              key={element.id}
-              ref={(node) => registerElementRef(element.id, node)}
-              x={positionX}
-              y={positionY}
-              rotation={(element.rotation ?? 0) * DEG_TO_RAD}
-              eventMode={isInteractive ? "static" : "passive"}
-              onPointerDown={(event: FederatedPointerEvent) => handleElementPointerDown(event, element)}
-            >
-              <pixiGraphics
-                draw={(graphics) => {
-                  graphics.clear();
-                  drawPolyline(
-                    graphics,
-                    points,
-                    element.style.strokeWidth ?? 2,
-                    parseColor(element.style.stroke, 0xffffff),
-                  );
-                }}
-              />
-            </pixiContainer>
-          );
-        }
-
-        if (element.element_type === "Text") {
-          const positionX = coerceNumber(element.position_x, 0);
-          const positionY = coerceNumber(element.position_y, 0);
-          const fontSize = element.style.fontSize ?? DEFAULT_TEXT_STYLE.fontSize ?? 16;
-          const content = element.properties?.content ?? "";
-          return (
-            <pixiContainer
-              key={element.id}
-              ref={(node) => registerElementRef(element.id, node)}
-              x={positionX}
-              y={positionY}
-              rotation={(element.rotation ?? 0) * DEG_TO_RAD}
-              eventMode={isInteractive ? "static" : "passive"}
-              onPointerDown={(event: FederatedPointerEvent) => handleElementPointerDown(event, element)}
-              onPointerTap={(event: FederatedPointerEvent) => {
-                if (!isDoubleTap(element.id, event)) return;
-                onOpenTextEditor({
-                  x: positionX,
-                  y: positionY,
-                  value: content,
-                  elementId: element.id,
-                  fontSize,
-                  color: element.style.textColor ?? DEFAULT_TEXT_STYLE.fill ?? "#1F2937",
-                  elementType: "Text",
-                });
-              }}
-            >
-              <pixiText
-                text={content}
-                style={{
-                  fontSize,
-                  fill: element.style.textColor ?? DEFAULT_TEXT_STYLE.fill ?? "#1F2937",
-                }}
-              />
-            </pixiContainer>
-          );
-        }
-
-        if (element.element_type === "StickyNote") {
-          const rect = getRectBounds(element);
-          const fontSize = element.style.fontSize ?? 16;
-          const content = element.properties?.content ?? "";
-          const padding = 12;
-          return (
-            <pixiContainer
-              key={element.id}
-              ref={(node) => registerElementRef(element.id, node)}
-              x={rect.x}
-              y={rect.y}
-              rotation={(element.rotation ?? 0) * DEG_TO_RAD}
-              eventMode={isInteractive ? "static" : "passive"}
-              onPointerDown={(event: FederatedPointerEvent) => handleElementPointerDown(event, element)}
-              onPointerTap={(event: FederatedPointerEvent) => {
-                if (!isDoubleTap(element.id, event)) return;
-                onOpenTextEditor({
-                  x: rect.x + padding,
-                  y: rect.y + padding,
-                  value: content,
-                  elementId: element.id,
-                  fontSize,
-                  color: element.style.textColor ?? "#1F2937",
-                  elementType: "StickyNote",
-                  backgroundColor: element.style.fill,
-                  editorWidth: Math.max(0, rect.width - padding * 2),
-                  editorHeight: Math.max(0, rect.height - padding * 2),
-                });
-              }}
-            >
-              <pixiGraphics
-                draw={(graphics) => {
-                  graphics.clear();
-                  const stroke = parseColor(element.style.stroke, 0xffffff);
-                  const fill = resolveFillStyle(element.style.fill, 0xfff9c2);
-                  const strokeWidth = element.style.strokeWidth ?? 1;
-                  setStrokeStyle(graphics, strokeWidth, stroke);
-                  graphics.roundRect(0, 0, rect.width, rect.height, element.style.cornerRadius ?? 12);
-                  setFillStyle(graphics, fill.color, fill.alpha);
-                  graphics.fill();
-                  graphics.stroke();
-                }}
-              />
-              <pixiText
-                text={content}
-                x={padding}
-                y={padding}
-                style={{
-                  fontSize,
-                  fill: element.style.textColor ?? "#1F2937",
-                  wordWrap: true,
-                  wordWrapWidth: Math.max(0, rect.width - padding * 2),
-                }}
-              />
-            </pixiContainer>
-          );
-        }
-
-        if (element.element_type === "Connector") {
-          const points = resolveConnectorPoints(element);
-          if (!points || points.length < 4) return null;
-          return (
-            <pixiContainer
-              key={element.id}
-              ref={(node) => registerElementRef(element.id, node)}
-              eventMode={isInteractive ? "static" : "passive"}
-              onPointerDown={(event: FederatedPointerEvent) => handleElementPointerDown(event, element)}
-            >
-              <pixiGraphics
-                draw={(graphics) => {
-                  graphics.clear();
-                  drawPolyline(
-                    graphics,
-                    points,
-                    element.style.strokeWidth ?? 2,
-                    parseColor(element.style.stroke, 0xffffff),
-                  );
-                }}
-              />
-            </pixiContainer>
-          );
-        }
-
-        return null;
+        return (
+          <BoardElementItem
+            key={element.id}
+            element={element}
+            isInteractive={isInteractive}
+            onPointerDown={handleElementPointerDown}
+            onOpenTextEditor={onOpenTextEditor}
+            registerRef={registerElementRef}
+          />
+        );
       })}
 
       {ghostElement && (
