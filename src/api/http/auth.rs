@@ -2,7 +2,6 @@ use axum::{Extension, Json, extract::State};
 
 use crate::{
     app::state::AppState,
-    auth::jwt::JwtConfig,
     auth::middleware::AuthUser,
     dto::auth::{
         ChangePasswordRequest, DeleteAccountRequest, LoginRequest, LoginResponse, MessageResponse,
@@ -19,10 +18,7 @@ pub async fn register_handle(
     State(state): State<AppState>,
     Json(req): Json<RegisterRequest>,
 ) -> Result<Json<LoginResponse>, AppError> {
-    let jwt_config = JwtConfig {
-        secret: state.jwt_secret.clone(),
-        expiration_hours: 24,
-    };
+    let jwt_config = state.jwt_config.clone();
     let response =
         UserServices::register_user(&state.db, &jwt_config, state.email_service.as_ref(), req)
             .await?;
@@ -32,10 +28,7 @@ pub async fn login_handle(
     State(state): State<AppState>,
     Json(req): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, AppError> {
-    let jwt_config = JwtConfig {
-        secret: state.jwt_secret.clone(),
-        expiration_hours: 24,
-    };
+    let jwt_config = state.jwt_config.clone();
     let response = UserServices::login(&state.db, &jwt_config, req).await?;
     Ok(Json(response))
 }
@@ -120,10 +113,7 @@ pub async fn request_verification_handle(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
 ) -> Result<Json<MessageResponse>, AppError> {
-    let jwt_config = JwtConfig {
-        secret: state.jwt_secret.clone(),
-        expiration_hours: 24,
-    };
+    let jwt_config = state.jwt_config.clone();
     UserServices::request_email_verification(
         &state.db,
         &jwt_config,
@@ -140,10 +130,7 @@ pub async fn verify_email_handle(
     State(state): State<AppState>,
     Json(req): Json<VerifyEmailRequest>,
 ) -> Result<Json<MessageResponse>, AppError> {
-    let jwt_config = JwtConfig {
-        secret: state.jwt_secret.clone(),
-        expiration_hours: 24,
-    };
+    let jwt_config = state.jwt_config.clone();
     UserServices::verify_email_token(&state.db, &jwt_config, &req.token).await?;
     Ok(Json(MessageResponse {
         message: "Email verified".to_string(),

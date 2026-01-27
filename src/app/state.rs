@@ -2,13 +2,13 @@ use redis::Client;
 use sqlx::PgPool;
 use std::sync::Arc;
 
-use crate::{realtime::room::Rooms, services::email::EmailService};
+use crate::{auth::jwt::JwtConfig, realtime::room::Rooms, services::email::EmailService};
 use tracing::warn;
 
 #[derive(Clone)]
 pub struct AppState {
     pub db: PgPool,
-    pub jwt_secret: String,
+    pub jwt_config: JwtConfig,
     pub rooms: Rooms,
     pub redis: Option<Client>,
     pub email_service: Option<EmailService>,
@@ -36,7 +36,9 @@ impl AppState {
 
         Self {
             db,
-            jwt_secret: std::env::var("JWT_SECRET").expect("JWT_SECRET must be set"),
+            jwt_config: JwtConfig::from_env(
+                std::env::var("JWT_SECRET").expect("JWT_SECRET must be set"),
+            ),
             rooms: Arc::new(dashmap::DashMap::new()),
             redis,
             email_service,

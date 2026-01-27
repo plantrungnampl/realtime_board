@@ -4,7 +4,9 @@ use axum::{
     middleware,
     routing::{delete, get, patch, post, put},
 };
-use tower_http::cors::CorsLayer;
+use std::num::NonZeroU32;
+use tower_governor::{GovernorConfigBuilder, GovernorLayer};
+use tower_http::cors::{AllowOrigin, CorsLayer};
 
 use crate::{
     api::{
@@ -23,28 +25,9 @@ use crate::{
 };
 
 pub fn build_router(state: AppState) -> Router {
-    let cors = CorsLayer::new()
-        .allow_origin("http://localhost:5173".parse::<HeaderValue>().unwrap())
-        .allow_methods([
-            Method::GET,
-            Method::POST,
-            Method::PUT,
-            Method::PATCH,
-            Method::DELETE,
-            Method::OPTIONS,
-        ])
-        .allow_headers([
-            header::CONTENT_TYPE,
-            header::AUTHORIZATION,
-            header::ACCEPT,
-            HeaderName::from_static("x-trace-id"),
-            HeaderName::from_static("traceparent"),
-        ])
-        .expose_headers([
-            HeaderName::from_static("x-request-id"),
-            HeaderName::from_static("x-trace-id"),
-            HeaderName::from_static("traceparent"),
-        ]);
+    let cors = build_cors_layer();
+    let auth_rate_limit = build_auth_rate_limiter();
+    let onboarding_rate_limit = build_auth_rate_limiter();
 
     let auth_routes = Router::new()
         .route("/auth/register", post(auth_http::register_handle))
@@ -53,7 +36,8 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/organizations/invites/validate",
             get(organizations_http::validate_invite_handle),
-        );
+        )
+        .layer(auth_rate_limit);
 
     let telemetry_routes = Router::new()
         .route("/api/telemetry/client", post(telemetry_http::ingest_client_logs));
@@ -74,7 +58,8 @@ pub fn build_router(state: AppState) -> Router {
         .layer(middleware::from_fn_with_state(
             state.clone(),
             auth_middleware,
-        ));
+        ))
+        .layer(onboarding_rate_limit);
 
     let verified_routes = Router::new()
         .route("/users/me", get(auth_http::get_me_handle))
@@ -225,4 +210,62 @@ pub fn build_router(state: AppState) -> Router {
         .layer(cors)
         .layer(middleware::from_fn(telemetry::request_logging_middleware))
         .with_state(state)
+}
+
+fn build_auth_rate_limiter() -> GovernorLayer {
+    let per_second = std::env::var("AUTH_RATE_LIMIT_PER_SECOND")
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(5);
+    let burst_size = std::env::var("AUTH_RATE_LIMIT_BURST")
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(10);
+    let config = GovernorConfigBuilder::default()
+        .per_second(NonZeroU32::new(per_second).expect("rate limit per_second must be non-zero"))
+        .burst_size(NonZeroU32::new(burst_size).expect("rate limit burst must be non-zero"))
+        .finish()
+        .expect("rate limiter config");
+    GovernorLayer::new(config)
+}
+
+fn build_cors_layer() -> CorsLayer {
+    let mut cors = CorsLayer::new()
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::PATCH,
+            Method::DELETE,
+            Method::OPTIONS,
+        ])
+        .allow_headers([
+            header::CONTENT_TYPE,
+            header::AUTHORIZATION,
+            header::ACCEPT,
+            HeaderName::from_static("x-trace-id"),
+            HeaderName::from_static("traceparent"),
+        ])
+        .expose_headers([
+            HeaderName::from_static("x-request-id"),
+            HeaderName::from_static("x-trace-id"),
+            HeaderName::from_static("traceparent"),
+        ]);
+
+    if let Ok(origins) = std::env::var("CORS_ALLOWED_ORIGINS") {
+        let values: Vec<HeaderValue> = origins
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .filter_map(|value| HeaderValue::from_str(value).ok())
+            .collect();
+        if !values.is_empty() {
+            cors = cors.allow_origin(AllowOrigin::list(values));
+            return cors;
+        }
+    }
+
+    cors.allow_origin("http://localhost:5173".parse::<HeaderValue>().unwrap())
 }

@@ -6,7 +6,7 @@ use axum::{
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::{app::state::AppState, auth::jwt::JwtConfig, error::AppError};
+use crate::{app::state::AppState, error::AppError};
 
 const MAX_EVENTS: usize = 50;
 const MAX_MESSAGE_LEN: usize = 2000;
@@ -70,10 +70,7 @@ fn maybe_extract_user_id(
         return Ok(None);
     };
 
-    let jwt_config = JwtConfig {
-        secret: state.jwt_secret.clone(),
-        expiration_hours: 24,
-    };
+    let jwt_config = state.jwt_config.clone();
 
     let claims = jwt_config
         .verify_token(&token)

@@ -4,7 +4,9 @@ use argon2::{
     password_hash::{SaltString, rand_core::OsRng},
 };
 use chrono::{Duration, Utc};
-use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
+use jsonwebtoken::{
+    Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode,
+};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -13,6 +15,10 @@ pub struct Claims {
     pub exp: i64,
     pub email: String,
     pub iat: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub iss: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aud: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -22,13 +28,41 @@ pub struct EmailVerificationClaims {
     pub email: String,
     pub iat: i64,
     pub typ: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub iss: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub aud: Option<String>,
 }
 #[derive(Clone)]
 pub struct JwtConfig {
     pub secret: String,
     pub expiration_hours: i64,
+    pub issuer: Option<String>,
+    pub audience: Option<String>,
 }
 impl JwtConfig {
+    pub fn from_env(secret: String) -> Self {
+        let expiration_hours = std::env::var("JWT_EXPIRATION_HOURS")
+            .ok()
+            .and_then(|value| value.parse::<i64>().ok())
+            .filter(|value| *value > 0)
+            .unwrap_or(24);
+        let issuer = std::env::var("JWT_ISSUER")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        let audience = std::env::var("JWT_AUDIENCE")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty());
+        Self {
+            secret,
+            expiration_hours,
+            issuer,
+            audience,
+        }
+    }
+
     pub fn create_token(
         &self,
         user_id: Uuid,
@@ -41,18 +75,27 @@ impl JwtConfig {
             email,
             exp: exp.timestamp(),
             iat: now.timestamp(),
+            iss: self.issuer.clone(),
+            aud: self.audience.clone(),
         };
         encode(
-            &Header::default(),
+            &Header::new(Algorithm::HS256),
             &claim,
             &EncodingKey::from_secret(self.secret.as_bytes()),
         )
     }
     pub fn verify_token(&self, token: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
+        let mut validation = Validation::new(Algorithm::HS256);
+        if let Some(issuer) = &self.issuer {
+            validation.set_issuer(&[issuer]);
+        }
+        if let Some(audience) = &self.audience {
+            validation.set_audience(&[audience]);
+        }
         let token_data = decode::<Claims>(
             token,
             &DecodingKey::from_secret(self.secret.as_bytes()),
-            &Validation::default(),
+            &validation,
         )?;
         Ok(token_data.claims)
     }
@@ -70,9 +113,11 @@ impl JwtConfig {
             exp: exp.timestamp(),
             iat: now.timestamp(),
             typ: "email_verification".to_string(),
+            iss: self.issuer.clone(),
+            aud: self.audience.clone(),
         };
         encode(
-            &Header::default(),
+            &Header::new(Algorithm::HS256),
             &claim,
             &EncodingKey::from_secret(self.secret.as_bytes()),
         )
@@ -82,10 +127,17 @@ impl JwtConfig {
         &self,
         token: &str,
     ) -> Result<EmailVerificationClaims, jsonwebtoken::errors::Error> {
+        let mut validation = Validation::new(Algorithm::HS256);
+        if let Some(issuer) = &self.issuer {
+            validation.set_issuer(&[issuer]);
+        }
+        if let Some(audience) = &self.audience {
+            validation.set_audience(&[audience]);
+        }
         let token_data = decode::<EmailVerificationClaims>(
             token,
             &DecodingKey::from_secret(self.secret.as_bytes()),
-            &Validation::default(),
+            &validation,
         )?;
         Ok(token_data.claims)
     }
