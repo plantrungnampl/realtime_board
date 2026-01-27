@@ -1,13 +1,15 @@
 import React from 'react';
 import { cn } from '@/lib/utils';
+import { Spinner } from './Spinner';
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'default' | 'secondary' | 'ghost' | 'link';
   size?: 'sm' | 'md' | 'lg';
+  isLoading?: boolean;
 }
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant = 'default', size = 'md', ...props }, ref) => {
+  ({ className, variant = 'default', size = 'md', isLoading, children, ...props }, ref) => {
     const baseStyles = 'inline-flex items-center justify-center whitespace-nowrap rounded-lg font-medium ring-offset-bg-base transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50';
     
     const variants = {
@@ -26,9 +28,13 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     return (
       <button
         ref={ref}
+        disabled={isLoading || props.disabled}
         className={cn(baseStyles, variants[variant], sizes[size], className)}
         {...props}
-      />
+      >
+        {isLoading && <Spinner className="mr-2 h-4 w-4" />}
+        {children}
+      </button>
     );
   }
 );
