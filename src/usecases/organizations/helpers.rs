@@ -141,55 +141,6 @@ pub(super) fn is_limit_exceeded(current: i64, additional: i64, limit: i32) -> bo
     current.saturating_add(additional) > i64::from(limit)
 }
 
-pub(super) fn collect_invite_emails(
-    email: Option<String>,
-    email_list: Option<Vec<String>>,
-) -> Result<Vec<String>, AppError> {
-    let mut emails = Vec::new();
-    if let Some(email) = email {
-        emails.push(email);
-    }
-    if let Some(list) = email_list {
-        emails.extend(list);
-    }
-
-    let mut unique = std::collections::HashSet::new();
-    let mut cleaned = Vec::new();
-    for email in emails {
-        let trimmed = email.trim().to_lowercase();
-        if trimmed.is_empty() {
-            continue;
-        }
-        if !unique.insert(trimmed.clone()) {
-            return Err(AppError::ValidationError(format!(
-                "Duplicate email in invite list: {}",
-                trimmed
-            )));
-        }
-        cleaned.push(trimmed);
-    }
-
-    if cleaned.is_empty() {
-        return Err(AppError::ValidationError(
-            "At least one email is required".to_string(),
-        ));
-    }
-
-    let invalid: Vec<String> = cleaned
-        .iter()
-        .filter(|email| !is_valid_email(email))
-        .cloned()
-        .collect();
-    if !invalid.is_empty() {
-        return Err(AppError::ValidationError(format!(
-            "Invalid email(s): {}",
-            invalid.join(", ")
-        )));
-    }
-
-    Ok(cleaned)
-}
-
 pub(super) async fn split_invite_targets(
     pool: &PgPool,
     emails: &[String],
@@ -222,32 +173,6 @@ pub(super) async fn suggest_slugs(pool: &PgPool, base: &str) -> Result<Vec<Strin
         }
     }
     Ok(suggestions)
-}
-
-pub(super) fn is_valid_email(email: &str) -> bool {
-    let trimmed = email.trim();
-    if trimmed.is_empty() || trimmed.contains(' ') {
-        return false;
-    }
-    let mut parts = trimmed.split('@');
-    let local = match parts.next() {
-        Some(value) => value,
-        None => return false,
-    };
-    let domain = match parts.next() {
-        Some(value) => value,
-        None => return false,
-    };
-    if parts.next().is_some() {
-        return false;
-    }
-    if local.is_empty() || domain.is_empty() {
-        return false;
-    }
-    if domain.starts_with('.') || domain.ends_with('.') {
-        return false;
-    }
-    domain.contains('.')
 }
 
 #[cfg(test)]

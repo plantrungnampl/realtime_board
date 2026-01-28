@@ -1,33 +1,42 @@
 Goal (incl. success criteria):
-- Diagnose and fix infinite PATCH requests when entering a board; stop request flood and ensure normal save/update cadence.
+- Implement shared invite email validation helpers with batch size cap and unit tests; remove duplicate helpers from board/org invite flows; update call sites; tests cover normalization, duplicates, invalid email, empty list, and batch size exceeded.
 
 Constraints/Assumptions:
-- Must read docs/README.md and all docs/*.md before analysis (done).
-- Follow AGENTS.md + frontend/AGENTS.md rules; use skills: context-compression, context-fundamentals, tool-design (always); for frontend work use vercel-react-best-practices + frontend + ui-ux-pro-max.
-- No destructive file ops; no git push without explicit user confirmation; avoid new deps without asking.
+- Must read docs/README.md and all docs/*.md before analysis.
+- Follow AGENTS.md rules; use skills: context-compression, context-fundamentals, tool-design (always) + using-superpowers + rust-axum-backend + security-review + TDD skills.
+- No git push without explicit user confirmation.
+- Use AppError for validation errors.
+- Default invite email limit is 25 with per-call override for tests.
 
 Key decisions:
-- Remove reliance on Y.MapEvent instanceof (undefined at runtime); use keysChanged feature check.
+- Invite limit error message must be: `Invite email limit exceeded (max {limit})`.
 
 State:
   - Done:
-    - Prior work includes multiple frontend performance optimizations and routing fixes (see previous ledger entries).
-    - Added element persist deduping to avoid redundant PATCH requests.
-    - Stabilized locked element ID sets to avoid rerunning load-time routing on presence heartbeats.
-    - Updated docs/CHANGELOG.md with the fix entry.
+    - Loaded skill guides (using-superpowers, context-compression, context-fundamentals, tool-design, rust-axum-backend, security-review, TDD).
+    - Refreshed CONTINUITY.md for current task.
+    - Read docs/README.md and docs/*.md (top-level).
+    - Read doc/Rust_Style_Guide.md.
+    - Added `src/usecases/invites.rs` with tests and shared helper implementation.
+    - Added `pub(crate) mod invites;` in `src/usecases/mod.rs`.
+    - Ran `cargo test normalizes_and_lowercases_emails` (failed at stub before implementation).
+    - Wired board/org invite flows to shared helper; removed duplicate helper functions.
+    - Updated docs/CHANGELOG.md with invite validation consolidation entry.
+    - Ran `cargo test usecases::invites` (passes; existing warnings remain).
   - Now:
-    - Validate whether PATCH flood is resolved and confirm trigger conditions.
+    - Self-review changes and prepare commit.
   - Next:
-    - Identify trigger loop, fix throttling/deduping logic, update docs/CHANGELOG.md if logic changes.
-    - Validate FE build/lint if requested.
-    - Push changes to user's GitHub after confirmation that fix is resolved.
+    - Commit changes (Conventional Commit) after review.
 
 Open questions (UNCONFIRMED if needed):
-- Does the request loop happen on a fresh board with no edits, or only after interacting?
-- Which branch/remote should be pushed, and should lint/build run before push?
+- None.
 
 Working set (files/ids/commands):
-- frontend/src/features/boards/hooks/useBoardElementMutations.ts
-- frontend/src/features/boards/boardRoute/hooks/useBoardRealtime.ts
-- docs/CHANGELOG.md
 - CONTINUITY.md
+- docs/README.md
+- docs/*.md
+- src/usecases/boards.rs
+- src/usecases/organizations/helpers.rs
+- src/usecases/organizations/invites.rs
+- src/usecases/invites.rs (new)
+- src/usecases/mod.rs

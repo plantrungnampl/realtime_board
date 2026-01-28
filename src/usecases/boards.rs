@@ -25,6 +25,7 @@ use crate::{
     realtime::snapshot,
     services::email::EmailService,
     telemetry::{BusinessEvent, redact_email},
+    usecases::invites::collect_invite_emails,
     usecases::organizations::{max_boards_for_tier, send_invite_emails},
 };
 pub struct BoardService;
@@ -476,7 +477,7 @@ impl BoardService {
             role,
         } = req;
         let role = normalize_board_role(role)?;
-        let emails = collect_invite_emails(email, emails)?;
+        let emails = collect_invite_emails(email, emails, None)?;
         let users = load_invite_users(pool, &emails).await?;
         let organization_id = board_repo::load_board_organization_id(pool, board_id).await?;
         if let Some(org_id) = organization_id {
@@ -1072,81 +1073,6 @@ mod tests {
 fn normalize_board_role(role: Option<BoardRole>) -> Result<BoardRole, AppError> {
     let role = role.unwrap_or(BoardRole::Viewer);
     Ok(role)
-}
-
-fn collect_invite_emails(
-    email: Option<String>,
-    email_list: Option<Vec<String>>,
-) -> Result<Vec<String>, AppError> {
-    let mut emails = Vec::new();
-    if let Some(email) = email {
-        emails.push(email);
-    }
-    if let Some(list) = email_list {
-        emails.extend(list);
-    }
-
-    let mut unique = std::collections::HashSet::new();
-    let mut cleaned = Vec::new();
-    for email in emails {
-        let trimmed = email.trim().to_lowercase();
-        if trimmed.is_empty() {
-            continue;
-        }
-        if !unique.insert(trimmed.clone()) {
-            return Err(AppError::ValidationError(format!(
-                "Duplicate email in invite list: {}",
-                trimmed
-            )));
-        }
-        cleaned.push(trimmed);
-    }
-
-    if cleaned.is_empty() {
-        return Err(AppError::ValidationError(
-            "At least one email is required".to_string(),
-        ));
-    }
-
-    let invalid: Vec<String> = cleaned
-        .iter()
-        .filter(|email| !is_valid_email(email))
-        .cloned()
-        .collect();
-    if !invalid.is_empty() {
-        return Err(AppError::ValidationError(format!(
-            "Invalid email(s): {}",
-            invalid.join(", ")
-        )));
-    }
-
-    Ok(cleaned)
-}
-
-fn is_valid_email(email: &str) -> bool {
-    let trimmed = email.trim();
-    if trimmed.is_empty() || trimmed.contains(' ') {
-        return false;
-    }
-    let mut parts = trimmed.split('@');
-    let local = match parts.next() {
-        Some(value) => value,
-        None => return false,
-    };
-    let domain = match parts.next() {
-        Some(value) => value,
-        None => return false,
-    };
-    if parts.next().is_some() {
-        return false;
-    }
-    if local.is_empty() || domain.is_empty() {
-        return false;
-    }
-    if domain.starts_with('.') || domain.ends_with('.') {
-        return false;
-    }
-    domain.contains('.')
 }
 
 async fn load_invite_users(

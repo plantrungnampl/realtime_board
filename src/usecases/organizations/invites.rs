@@ -13,12 +13,13 @@ use crate::{
     repositories::{boards as board_repo, organizations as org_repo, users as user_repo},
     services::email::EmailService,
     telemetry::{BusinessEvent, redact_email},
+    usecases::invites::collect_invite_emails,
 };
 
 use super::{
     helpers::{
-        collect_invite_emails, ensure_manager, ensure_member_capacity, normalize_invite_role,
-        require_member_role, split_invite_targets,
+        ensure_manager, ensure_member_capacity, normalize_invite_role, require_member_role,
+        split_invite_targets,
     },
     OrganizationService,
 };
@@ -108,7 +109,7 @@ impl OrganizationService {
             role,
         } = req;
         let role = normalize_invite_role(role)?;
-        let emails = collect_invite_emails(email, emails)?;
+        let emails = collect_invite_emails(email, emails, None)?;
         let (users, pending_emails) = split_invite_targets(pool, &emails).await?;
         let current_members = org_repo::count_organization_members(pool, organization_id).await?;
         let current_invites =
