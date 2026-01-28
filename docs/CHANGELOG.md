@@ -1,5 +1,15 @@
 # Documentation Changelog
 
+## Version 3.46 - 2026-01-28
+
+### 💬 Comments
+
+#### ✅ Add Comment (FR-CMT-01)
+
+- Added board/element comment creation and listing endpoints.
+- Enforced comment length (1–5000) and mention limit (max 20).
+- Added comment schema migration and API documentation.
+
 ## Version 3.45 - 2026-01-28
 
 ### 🛠️ Invites

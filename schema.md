@@ -659,7 +659,10 @@ CREATE TABLE collab.comment (
     deleted_at          TIMESTAMPTZ,
     
     -- Constraints
-    CONSTRAINT comment_content_not_empty CHECK (length(trim(content)) > 0)
+    CONSTRAINT comment_content_not_empty CHECK (length(trim(content)) > 0),
+    CONSTRAINT comment_position_required CHECK (
+        element_id IS NOT NULL OR (position_x IS NOT NULL AND position_y IS NOT NULL)
+    )
 );
 
 -- Indexes

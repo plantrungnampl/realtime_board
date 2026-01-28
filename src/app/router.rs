@@ -18,8 +18,9 @@ use uuid::Uuid;
 use crate::{
     api::{
         http::{
-            auth as auth_http, boards as boards_http, elements as elements_http,
-            organizations as organizations_http, telemetry as telemetry_http,
+            auth as auth_http, boards as boards_http, comments as comments_http,
+            elements as elements_http, organizations as organizations_http,
+            telemetry as telemetry_http,
         },
         ws::boards as boards_ws,
     },
@@ -199,6 +200,11 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/api/boards/{board_id}/members",
             get(boards_http::list_board_members_handle),
+        )
+        .route(
+            "/api/boards/{board_id}/comments",
+            get(comments_http::list_board_comments_handle)
+                .post(comments_http::create_board_comment_handle),
         )
         .route(
             "/api/boards/{board_id}/members/{member_id}",

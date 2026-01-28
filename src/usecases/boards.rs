@@ -117,6 +117,24 @@ impl BoardService {
             .permissions)
     }
 
+    pub async fn ensure_can_view(
+        pool: &PgPool,
+        board_id: Uuid,
+        user_id: Uuid,
+    ) -> Result<(), AppError> {
+        require_board_permission(pool, board_id, user_id, BoardPermission::View).await?;
+        Ok(())
+    }
+
+    pub async fn ensure_can_comment(
+        pool: &PgPool,
+        board_id: Uuid,
+        user_id: Uuid,
+    ) -> Result<(), AppError> {
+        require_board_permission(pool, board_id, user_id, BoardPermission::Comment).await?;
+        Ok(())
+    }
+
     pub async fn create_board(
         pool: &PgPool,
         req: CreateBoardRequest,
