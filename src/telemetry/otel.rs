@@ -1,7 +1,7 @@
 use std::{env, error::Error, sync::OnceLock};
 
-use opentelemetry::global;
 use opentelemetry::KeyValue;
+use opentelemetry::global;
 use opentelemetry::trace::TracerProvider;
 use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::{Resource, propagation::TraceContextPropagator, trace as sdktrace};
@@ -32,8 +32,8 @@ impl OtelConfig {
     }
 }
 
-pub fn build_otel_layer(
-) -> Result<Option<OpenTelemetryLayer<Registry, sdktrace::Tracer>>, Box<dyn Error + Send + Sync>> {
+pub fn build_otel_layer()
+-> Result<Option<OpenTelemetryLayer<Registry, sdktrace::Tracer>>, Box<dyn Error + Send + Sync>> {
     let config = match OtelConfig::from_env() {
         Some(config) => config,
         None => return Ok(None),

@@ -3,11 +3,7 @@ use std::time::Instant;
 use sqlx::postgres::PgQueryResult;
 use tracing::{Instrument, debug, info_span, warn};
 
-pub async fn log_query<F, T, E, R>(
-    query_name: &str,
-    query: F,
-    row_counter: R,
-) -> Result<T, E>
+pub async fn log_query<F, T, E, R>(query_name: &str, query: F, row_counter: R) -> Result<T, E>
 where
     F: std::future::Future<Output = Result<T, E>>,
     E: std::fmt::Debug,
@@ -34,10 +30,7 @@ where
     result
 }
 
-pub async fn log_query_execute<F, E>(
-    query_name: &str,
-    query: F,
-) -> Result<PgQueryResult, E>
+pub async fn log_query_execute<F, E>(query_name: &str, query: F) -> Result<PgQueryResult, E>
 where
     F: std::future::Future<Output = Result<PgQueryResult, E>>,
     E: std::fmt::Debug,
@@ -45,10 +38,7 @@ where
     log_query(query_name, query, |result| Some(result.rows_affected())).await
 }
 
-pub async fn log_query_fetch_all<F, T, E>(
-    query_name: &str,
-    query: F,
-) -> Result<Vec<T>, E>
+pub async fn log_query_fetch_all<F, T, E>(query_name: &str, query: F) -> Result<Vec<T>, E>
 where
     F: std::future::Future<Output = Result<Vec<T>, E>>,
     E: std::fmt::Debug,
@@ -56,10 +46,7 @@ where
     log_query(query_name, query, |rows| Some(rows.len() as u64)).await
 }
 
-pub async fn log_query_fetch_optional<F, T, E>(
-    query_name: &str,
-    query: F,
-) -> Result<Option<T>, E>
+pub async fn log_query_fetch_optional<F, T, E>(query_name: &str, query: F) -> Result<Option<T>, E>
 where
     F: std::future::Future<Output = Result<Option<T>, E>>,
     E: std::fmt::Debug,
@@ -67,10 +54,7 @@ where
     log_query(query_name, query, |row| Some(u64::from(row.is_some()))).await
 }
 
-pub async fn log_query_fetch_one<F, T, E>(
-    query_name: &str,
-    query: F,
-) -> Result<T, E>
+pub async fn log_query_fetch_one<F, T, E>(query_name: &str, query: F) -> Result<T, E>
 where
     F: std::future::Future<Output = Result<T, E>>,
     E: std::fmt::Debug,

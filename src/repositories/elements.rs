@@ -1,6 +1,6 @@
+use chrono::{DateTime, Utc};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
 use crate::{
     error::AppError,

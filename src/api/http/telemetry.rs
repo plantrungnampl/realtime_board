@@ -1,7 +1,7 @@
 use axum::{
+    Json,
     extract::State,
     http::{HeaderMap, header},
-    Json,
 };
 use serde::Deserialize;
 use uuid::Uuid;
@@ -56,10 +56,7 @@ pub async fn ingest_client_logs(
     Ok(())
 }
 
-fn maybe_extract_user_id(
-    state: &AppState,
-    headers: &HeaderMap,
-) -> Result<Option<Uuid>, AppError> {
+fn maybe_extract_user_id(state: &AppState, headers: &HeaderMap) -> Result<Option<Uuid>, AppError> {
     let token = headers
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
@@ -104,7 +101,9 @@ fn validate_event(event: &ClientLogEvent) -> Result<(), AppError> {
             .map_err(|_| AppError::BadRequest("Invalid context payload".to_string()))?
             .len();
         if context_len > MAX_CONTEXT_LEN {
-            return Err(AppError::BadRequest("Context payload too large".to_string()));
+            return Err(AppError::BadRequest(
+                "Context payload too large".to_string(),
+            ));
         }
     }
 

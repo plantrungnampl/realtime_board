@@ -18,7 +18,9 @@ use chrono::Utc;
 use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::sync::atomic::Ordering;
 use tokio::sync::watch;
+use tracing::Instrument;
 use uuid::Uuid;
 use yrs::{
     ReadTxn, StateVector, Transact,
@@ -26,8 +28,6 @@ use yrs::{
     sync::awareness::AwarenessUpdate,
     updates::{decoder::Decode, encoder::Encode},
 };
-use std::sync::atomic::Ordering;
-use tracing::Instrument;
 
 use crate::{
     app::state::AppState,
@@ -115,8 +115,7 @@ fn log_ws_message(direction: &str, message: &Message) {
     if !tracing::enabled!(target: "ws_message", tracing::Level::DEBUG) {
         return;
     }
-    static LOG_COUNTER: std::sync::atomic::AtomicU64 =
-        std::sync::atomic::AtomicU64::new(0);
+    static LOG_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let sample_rate = log_ws_message_sample_rate();
     let current = LOG_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     if current % sample_rate != 0 {
@@ -248,11 +247,7 @@ pub async fn ws_handler(
         }
         Err(error) => {
             tracing::error!("Failed to load board {}: {}", board_id, error);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Failed to load board",
-            )
-                .into_response();
+            return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to load board").into_response();
         }
     };
     let room = room::get_or_load_room(&state.rooms, &state.db, board_id).await;
@@ -316,75 +311,198 @@ pub async fn handle_socket(
     );
     tracing::info!(parent: &connection_span, "WebSocket connected");
 
-    let mut write_task = tokio::spawn(async move {
-        let mut sender = sender;
-        while let Some(msg) = out_rx.recv().await {
-            log_ws_message("outbound", &msg);
-            if sender.send(msg).await.is_err() {
-                tracing::warn!("Failed to send websocket message; client disconnected");
-                break;
+    let mut write_task = tokio::spawn(
+        async move {
+            let mut sender = sender;
+            while let Some(msg) = out_rx.recv().await {
+                log_ws_message("outbound", &msg);
+                if sender.send(msg).await.is_err() {
+                    tracing::warn!("Failed to send websocket message; client disconnected");
+                    break;
+                }
             }
         }
-    }.instrument(connection_span.clone()));
+        .instrument(connection_span.clone()),
+    );
 
     let out_tx_clone = out_tx.clone();
-    let mut send_task = tokio::spawn({
-        let join_rx = join_rx.clone();
-        async move {
-            let mut join_rx = join_rx;
-            if !wait_for_join(&mut join_rx).await {
-                return;
-            }
-            while let Ok(msg) = rx.recv().await {
-                if out_tx_clone.send(Message::Binary(msg)).is_err() {
-                    break;
+    let mut send_task = tokio::spawn(
+        {
+            let join_rx = join_rx.clone();
+            async move {
+                let mut join_rx = join_rx;
+                if !wait_for_join(&mut join_rx).await {
+                    return;
+                }
+                while let Ok(msg) = rx.recv().await {
+                    if out_tx_clone.send(Message::Binary(msg)).is_err() {
+                        break;
+                    }
                 }
             }
         }
-    }.instrument(connection_span.clone()));
+        .instrument(connection_span.clone()),
+    );
 
     let out_tx_text = out_tx.clone();
-    let mut text_task = tokio::spawn({
-        let join_rx = join_rx.clone();
-        async move {
-            let mut join_rx = join_rx;
-            if !wait_for_join(&mut join_rx).await {
-                return;
-            }
-            while let Ok(msg) = text_rx.recv().await {
-                if out_tx_text.send(Message::Text(msg.into())).is_err() {
-                    break;
+    let mut text_task = tokio::spawn(
+        {
+            let join_rx = join_rx.clone();
+            async move {
+                let mut join_rx = join_rx;
+                if !wait_for_join(&mut join_rx).await {
+                    return;
+                }
+                while let Ok(msg) = text_rx.recv().await {
+                    if out_tx_text.send(Message::Text(msg.into())).is_err() {
+                        break;
+                    }
                 }
             }
         }
-    }.instrument(connection_span.clone()));
+        .instrument(connection_span.clone()),
+    );
 
     let room_cleanup = room.clone();
     let db_cleanup = db.clone();
     let redis_cleanup = redis.clone();
-    let mut cleanup_task = tokio::spawn({
-        let join_rx = join_rx.clone();
+    let mut cleanup_task = tokio::spawn(
+        {
+            let join_rx = join_rx.clone();
+            async move {
+                let mut join_rx = join_rx;
+                if !wait_for_join(&mut join_rx).await {
+                    return;
+                }
+                let mut ticker =
+                    tokio::time::interval(Duration::from_millis(PRESENCE_CLEANUP_INTERVAL_MS));
+                ticker.tick().await;
+                loop {
+                    ticker.tick().await;
+                    let users = PresenceService::cleanup_stale_sessions(
+                        &db_cleanup,
+                        redis_cleanup.as_ref(),
+                        board_id,
+                    )
+                    .await
+                    .unwrap_or_default();
+                    if users.is_empty() {
+                        continue;
+                    }
+                    for stale_user_id in users {
+                        if let Some(Message::Text(text)) = build_text_message(
+                            "user:left",
+                            json!({
+                                "user_id": stale_user_id,
+                                "reason": "timeout",
+                                "timestamp": Utc::now().timestamp_millis(),
+                            }),
+                        ) {
+                            let _ = room_cleanup.text_tx.send(text.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        .instrument(connection_span.clone()),
+    );
+
+    let room_clone = room.clone();
+    let out_tx_recv = out_tx.clone();
+    let redis_clone = redis.clone();
+    let mut recv_task = tokio::spawn(
         async move {
-            let mut join_rx = join_rx;
-            if !wait_for_join(&mut join_rx).await {
+            let connection_id = Some(session_id.to_string());
+            let mut awareness_clients: HashSet<ClientID> = HashSet::new();
+            let mut close_reason: Option<String> = None;
+            let already_active = PresenceService::has_active_session(&db, board_id, user_id)
+                .await
+                .unwrap_or(false);
+            let active_count = PresenceService::count_active_users(&db, board_id)
+                .await
+                .unwrap_or(0);
+
+            if active_count >= MAX_CONCURRENT_USERS && !already_active {
+                let (notify, position) = room_clone.enqueue_session(session_id, user_id).await;
+                if let Some(msg) = build_text_message(
+                    "board:queued",
+                    json!({
+                        "board_id": board_id,
+                        "position": position,
+                    }),
+                ) {
+                    let _ = out_tx_recv.send(msg);
+                }
+
+                loop {
+                    tokio::select! {
+                        _ = notify.notified() => {
+                            break;
+                        }
+                        message = receiver.next() => {
+                            match message {
+                                Some(Ok(Message::Close(_))) | None => {
+                                    room_clone.remove_queued_session(session_id).await;
+                                    return;
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }
+
+            if let Err(error) = PresenceService::join(
+                &db,
+                redis_clone.as_ref(),
+                board_id,
+                user_id,
+                session_id,
+                connection_id,
+            )
+            .await
+            {
+                tracing::error!(
+                    "Failed to create presence for user {} on board {}: {}",
+                    user_id,
+                    board_id,
+                    error
+                );
                 return;
             }
-            let mut ticker =
-                tokio::time::interval(Duration::from_millis(PRESENCE_CLEANUP_INTERVAL_MS));
-            ticker.tick().await;
-            loop {
-                ticker.tick().await;
-                let users = PresenceService::cleanup_stale_sessions(
-                    &db_cleanup,
-                    redis_cleanup.as_ref(),
-                    board_id,
-                )
-                .await
-                .unwrap_or_default();
-                if users.is_empty() {
-                    continue;
-                }
-                for stale_user_id in users {
+            tracing::info!("WebSocket presence joined");
+
+            {
+                let sessions = room_clone.sessions.write().await;
+                sessions.insert(session_id);
+                *room_clone.last_active.lock().await = Instant::now();
+            }
+            room_clone.edit_permissions.insert(user_id, can_edit);
+            let _ = join_tx.send(true);
+
+            let (msg1, msg2) = {
+                let doc_guard = room_clone.doc.lock().await;
+                let txn = doc_guard.transact();
+
+                let sv = txn.state_vector().encode_v1();
+                let mut msg = vec![protocol::OP_SYNCSTEP_1];
+                msg.extend(sv);
+
+                let update = txn.encode_state_as_update_v1(&StateVector::default());
+                let mut msg2 = vec![protocol::OP_SYNCSTEP_2];
+                msg2.extend(update);
+                (msg, msg2)
+            };
+
+            let _ = out_tx_recv.send(Message::Binary(Bytes::from(msg1)));
+            let _ = out_tx_recv.send(Message::Binary(Bytes::from(msg2)));
+
+            let stale_users =
+                PresenceService::cleanup_stale_sessions(&db, redis_clone.as_ref(), board_id)
+                    .await
+                    .unwrap_or_default();
+            if !stale_users.is_empty() {
+                for stale_user_id in stale_users {
                     if let Some(Message::Text(text)) = build_text_message(
                         "user:left",
                         json!({
@@ -393,408 +511,302 @@ pub async fn handle_socket(
                             "timestamp": Utc::now().timestamp_millis(),
                         }),
                     ) {
-                        let _ = room_cleanup.text_tx.send(text.to_string());
+                        let _ = room_clone.text_tx.send(text.to_string());
                     }
                 }
             }
-        }
-    }.instrument(connection_span.clone()));
 
-    let room_clone = room.clone();
-    let out_tx_recv = out_tx.clone();
-    let redis_clone = redis.clone();
-    let mut recv_task = tokio::spawn(async move {
-        let connection_id = Some(session_id.to_string());
-        let mut awareness_clients: HashSet<ClientID> = HashSet::new();
-        let mut close_reason: Option<String> = None;
-        let already_active = PresenceService::has_active_session(&db, board_id, user_id)
-            .await
-            .unwrap_or(false);
-        let active_count = PresenceService::count_active_users(&db, board_id)
-            .await
-            .unwrap_or(0);
-
-        if active_count >= MAX_CONCURRENT_USERS && !already_active {
-            let (notify, position) = room_clone.enqueue_session(session_id, user_id).await;
+            let current_users =
+                PresenceService::list_active_users(&db, redis_clone.as_ref(), board_id)
+                    .await
+                    .unwrap_or_default();
             if let Some(msg) = build_text_message(
-                "board:queued",
+                "board:joined",
                 json!({
                     "board_id": board_id,
-                    "position": position,
+                    "board_name": board_name,
+                    "session_id": session_id,
+                    "current_users": current_users
+                        .iter()
+                        .filter(|user| user.status.is_visible())
+                        .map(presence_user_payload)
+                        .collect::<Vec<_>>(),
+                    "permissions": {
+                        "can_edit": permissions.can_edit,
+                        "can_comment": permissions.can_comment,
+                        "can_share": permissions.can_manage_members || permissions.can_manage_board,
+                    }
                 }),
             ) {
                 let _ = out_tx_recv.send(msg);
             }
 
-            loop {
-                tokio::select! {
-                    _ = notify.notified() => {
-                        break;
-                    }
-                    message = receiver.next() => {
-                        match message {
-                            Some(Ok(Message::Close(_))) | None => {
-                                room_clone.remove_queued_session(session_id).await;
-                                return;
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-            }
-        }
-
-        if let Err(error) = PresenceService::join(
-            &db,
-            redis_clone.as_ref(),
-            board_id,
-            user_id,
-            session_id,
-            connection_id,
-        )
-        .await
-        {
-            tracing::error!(
-                "Failed to create presence for user {} on board {}: {}",
-                user_id,
-                board_id,
-                error
-            );
-            return;
-        }
-        tracing::info!("WebSocket presence joined");
-
-        {
-            let sessions = room_clone.sessions.write().await;
-            sessions.insert(session_id);
-            *room_clone.last_active.lock().await = Instant::now();
-        }
-        room_clone.edit_permissions.insert(user_id, can_edit);
-        let _ = join_tx.send(true);
-
-        let (msg1, msg2) = {
-            let doc_guard = room_clone.doc.lock().await;
-            let txn = doc_guard.transact();
-
-            let sv = txn.state_vector().encode_v1();
-            let mut msg = vec![protocol::OP_SYNCSTEP_1];
-            msg.extend(sv);
-
-            let update = txn.encode_state_as_update_v1(&StateVector::default());
-            let mut msg2 = vec![protocol::OP_SYNCSTEP_2];
-            msg2.extend(update);
-            (msg, msg2)
-        };
-
-        let _ = out_tx_recv.send(Message::Binary(Bytes::from(msg1)));
-        let _ = out_tx_recv.send(Message::Binary(Bytes::from(msg2)));
-
-        let stale_users =
-            PresenceService::cleanup_stale_sessions(&db, redis_clone.as_ref(), board_id)
-                .await
-                .unwrap_or_default();
-        if !stale_users.is_empty() {
-            for stale_user_id in stale_users {
+            if let Some(joined_user) = current_users.iter().find(|user| user.user_id == user_id) {
                 if let Some(Message::Text(text)) = build_text_message(
-                    "user:left",
+                    "user:joined",
                     json!({
-                        "user_id": stale_user_id,
-                        "reason": "timeout",
+                        "user": presence_user_payload(joined_user),
                         "timestamp": Utc::now().timestamp_millis(),
                     }),
                 ) {
                     let _ = room_clone.text_tx.send(text.to_string());
                 }
             }
-        }
 
-        let current_users =
-            PresenceService::list_active_users(&db, redis_clone.as_ref(), board_id)
-                .await
-                .unwrap_or_default();
-        if let Some(msg) = build_text_message(
-            "board:joined",
-            json!({
-                "board_id": board_id,
-                "board_name": board_name,
-                "session_id": session_id,
-                "current_users": current_users
-                    .iter()
-                    .filter(|user| user.status.is_visible())
-                    .map(presence_user_payload)
-                    .collect::<Vec<_>>(),
-                "permissions": {
-                    "can_edit": permissions.can_edit,
-                    "can_comment": permissions.can_comment,
-                    "can_share": permissions.can_manage_members || permissions.can_manage_board,
-                }
-            }),
-        ) {
-            let _ = out_tx_recv.send(msg);
-        }
-
-        if let Some(joined_user) = current_users.iter().find(|user| user.user_id == user_id) {
-            if let Some(Message::Text(text)) = build_text_message(
-                "user:joined",
-                json!({
-                    "user": presence_user_payload(joined_user),
-                    "timestamp": Utc::now().timestamp_millis(),
-                }),
-            ) {
-                let _ = room_clone.text_tx.send(text.to_string());
-            }
-        }
-
-        while let Some(Ok(message)) = receiver.next().await {
-            *room_clone.last_active.lock().await = Instant::now();
-            match message {
-                Message::Binary(bin) => {
-                    log_ws_message("inbound", &Message::Binary(bin.clone()));
-                    if bin.is_empty() {
-                        continue;
-                    }
-                    let prefix = bin[0];
-                    let payload = &bin[1..];
-                    match prefix {
-                        protocol::OP_SYNCSTEP_1 => {
-                            let doc_guard = room_clone.doc.lock().await;
-                            let txn = doc_guard.transact_mut();
-                            if let Ok(sv) = StateVector::decode_v1(payload) {
-                                let update = txn.encode_state_as_update_v1(&sv);
-                                let mut msg = vec![protocol::OP_UPDATE];
-                                msg.extend(update);
-                                let _ = out_tx_recv.send(Message::Binary(Bytes::from(msg)));
-                            }
+            while let Some(Ok(message)) = receiver.next().await {
+                *room_clone.last_active.lock().await = Instant::now();
+                match message {
+                    Message::Binary(bin) => {
+                        log_ws_message("inbound", &Message::Binary(bin.clone()));
+                        if bin.is_empty() {
+                            continue;
                         }
-                        protocol::OP_SYNCSTEP_2 => {}
-                        protocol::OP_UPDATE => {
-                            let can_edit = room_clone
-                                .edit_permissions
-                                .get(&user_id)
-                                .map(|entry| *entry)
-                                .unwrap_or(false);
-                            if !can_edit {
-                                tracing::info!(
-                                    "Ignoring board update from read-only user {} on board {}",
-                                    user_id,
-                                    board_id
-                                );
-                                continue;
+                        let prefix = bin[0];
+                        let payload = &bin[1..];
+                        match prefix {
+                            protocol::OP_SYNCSTEP_1 => {
+                                let doc_guard = room_clone.doc.lock().await;
+                                let txn = doc_guard.transact_mut();
+                                if let Ok(sv) = StateVector::decode_v1(payload) {
+                                    let update = txn.encode_state_as_update_v1(&sv);
+                                    let mut msg = vec![protocol::OP_UPDATE];
+                                    msg.extend(update);
+                                    let _ = out_tx_recv.send(Message::Binary(Bytes::from(msg)));
+                                }
                             }
-                            let doc_guard = room_clone.doc.lock().await;
-                            let mut txn = doc_guard.transact_mut();
-                            if let Ok(update) = Decode::decode_v1(payload) {
-                                txn.apply_update(update).unwrap_or_else(|e| {
+                            protocol::OP_SYNCSTEP_2 => {}
+                            protocol::OP_UPDATE => {
+                                let can_edit = room_clone
+                                    .edit_permissions
+                                    .get(&user_id)
+                                    .map(|entry| *entry)
+                                    .unwrap_or(false);
+                                if !can_edit {
+                                    tracing::info!(
+                                        "Ignoring board update from read-only user {} on board {}",
+                                        user_id,
+                                        board_id
+                                    );
+                                    continue;
+                                }
+                                let doc_guard = room_clone.doc.lock().await;
+                                let mut txn = doc_guard.transact_mut();
+                                if let Ok(update) = Decode::decode_v1(payload) {
+                                    txn.apply_update(update).unwrap_or_else(|e| {
+                                        tracing::warn!(
+                                            "Failed to apply update from client {}: {}",
+                                            user_id,
+                                            e
+                                        );
+                                    });
+                                }
+                                room_clone.projection_seq.fetch_add(1, Ordering::Relaxed);
+                                let mut pending = room_clone.pending_updates.lock().await;
+                                pending.push(payload.to_vec());
+                                room_clone
+                                    .pending_update_count
+                                    .fetch_add(1, Ordering::Relaxed);
+                            }
+                            protocol::OP_AWARENESS => match AwarenessUpdate::decode_v1(payload) {
+                                Ok(update) => {
+                                    awareness_clients.extend(update.clients.keys().copied());
+                                    let awareness = room_clone.awareness.write().await;
+                                    awareness.apply_update(update).unwrap_or_else(|e| {
+                                        tracing::warn!(
+                                            "Failed to apply awareness update from client {}: {}",
+                                            user_id,
+                                            e
+                                        );
+                                    });
+                                }
+                                Err(e) => {
                                     tracing::warn!(
-                                        "Failed to apply update from client {}: {}",
+                                        "Failed to decode awareness update from client {}: {}",
                                         user_id,
                                         e
                                     );
-                                });
-                            }
-                            room_clone.projection_seq.fetch_add(1, Ordering::Relaxed);
-                            let mut pending = room_clone.pending_updates.lock().await;
-                            pending.push(payload.to_vec());
-                            room_clone
-                                .pending_update_count
-                                .fetch_add(1, Ordering::Relaxed);
+                                }
+                            },
+                            _ => {}
                         }
-                        protocol::OP_AWARENESS => match AwarenessUpdate::decode_v1(payload) {
-                            Ok(update) => {
-                                awareness_clients.extend(update.clients.keys().copied());
-                                let awareness = room_clone.awareness.write().await;
-                                awareness.apply_update(update).unwrap_or_else(|e| {
-                                    tracing::warn!(
-                                        "Failed to apply awareness update from client {}: {}",
-                                        user_id,
-                                        e
-                                    );
-                                });
-                            }
-                            Err(e) => {
-                                tracing::warn!(
-                                    "Failed to decode awareness update from client {}: {}",
-                                    user_id,
-                                    e
-                                );
-                            }
-                        },
-                        _ => {}
-                    }
 
-                    let _ = room_clone.tx.send(bin);
-                }
-                Message::Text(text) => {
-                    let Ok(event) = serde_json::from_str::<ClientEvent>(&text) else {
-                        tracing::warn!("Failed to parse websocket text message");
-                        continue;
-                    };
-                    tracing::info!(
-                        target: "ws_message",
-                        direction = "inbound",
-                        message_type = "text",
-                        event_type = %event.event_type,
-                        bytes = text.len(),
-                        "WebSocket text message"
-                    );
-                    match event.event_type.as_str() {
-                        "heartbeat" => {
-                            if PresenceService::heartbeat(&db, board_id, session_id)
+                        let _ = room_clone.tx.send(bin);
+                    }
+                    Message::Text(text) => {
+                        let Ok(event) = serde_json::from_str::<ClientEvent>(&text) else {
+                            tracing::warn!("Failed to parse websocket text message");
+                            continue;
+                        };
+                        tracing::info!(
+                            target: "ws_message",
+                            direction = "inbound",
+                            message_type = "text",
+                            event_type = %event.event_type,
+                            bytes = text.len(),
+                            "WebSocket text message"
+                        );
+                        match event.event_type.as_str() {
+                            "heartbeat" => {
+                                if PresenceService::heartbeat(&db, board_id, session_id)
+                                    .await
+                                    .is_ok()
+                                {
+                                    if let Some(msg) = build_text_message(
+                                        "heartbeat:ack",
+                                        json!({"server_time": Utc::now().timestamp_millis()}),
+                                    ) {
+                                        let _ = out_tx_recv.send(msg);
+                                    }
+                                }
+                            }
+                            "presence:update" => {
+                                let Some(payload) = event.payload else {
+                                    continue;
+                                };
+                                let Ok(payload) =
+                                    serde_json::from_value::<PresenceUpdatePayload>(payload)
+                                else {
+                                    continue;
+                                };
+                                let Some(status) =
+                                    PresenceStatus::normalize_client(payload.status.as_str())
+                                else {
+                                    continue;
+                                };
+                                if PresenceService::update_status(
+                                    &db,
+                                    redis_clone.as_ref(),
+                                    board_id,
+                                    session_id,
+                                    status,
+                                )
                                 .await
                                 .is_ok()
-                            {
-                                if let Some(msg) =
-                                    build_text_message("heartbeat:ack", json!({"server_time": Utc::now().timestamp_millis()}))
                                 {
-                                    let _ = out_tx_recv.send(msg);
+                                    if let Some(Message::Text(text)) = build_text_message(
+                                        "presence:update",
+                                        json!({
+                                            "user_id": user_id,
+                                            "status": status,
+                                            "metadata": payload.metadata,
+                                            "timestamp": Utc::now().timestamp_millis(),
+                                        }),
+                                    ) {
+                                        let _ = room_clone.text_tx.send(text.to_string());
+                                    }
                                 }
                             }
+                            _ => {}
                         }
-                        "presence:update" => {
-                            let Some(payload) = event.payload else {
-                                continue;
-                            };
-                            let Ok(payload) =
-                                serde_json::from_value::<PresenceUpdatePayload>(payload)
-                            else {
-                                continue;
-                            };
-                            let Some(status) =
-                                PresenceStatus::normalize_client(payload.status.as_str())
-                            else {
-                                continue;
-                            };
-                            if PresenceService::update_status(
-                                &db,
-                                redis_clone.as_ref(),
-                                board_id,
-                                session_id,
-                                status,
-                            )
-                            .await
-                            .is_ok()
-                            {
-                                if let Some(Message::Text(text)) = build_text_message(
-                                    "presence:update",
-                                    json!({
-                                        "user_id": user_id,
-                                        "status": status,
-                                        "metadata": payload.metadata,
-                                        "timestamp": Utc::now().timestamp_millis(),
-                                    }),
-                                ) {
-                                    let _ = room_clone.text_tx.send(text.to_string());
-                                }
-                            }
-                        }
-                        _ => {}
+                    }
+                    Message::Close(frame) => {
+                        close_reason = frame
+                            .as_ref()
+                            .map(|inner| inner.reason.to_string())
+                            .or_else(|| Some("client_close".to_string()));
+                        log_ws_message("inbound", &Message::Close(frame));
+                        break;
+                    }
+                    Message::Ping(payload) => {
+                        log_ws_message("inbound", &Message::Ping(payload));
+                    }
+                    Message::Pong(payload) => {
+                        log_ws_message("inbound", &Message::Pong(payload));
                     }
                 }
-                Message::Close(frame) => {
-                    close_reason = frame
-                        .as_ref()
-                        .map(|inner| inner.reason.to_string())
-                        .or_else(|| Some("client_close".to_string()));
-                    log_ws_message("inbound", &Message::Close(frame));
-                    break;
-                }
-                Message::Ping(payload) => {
-                    log_ws_message("inbound", &Message::Ping(payload));
-                }
-                Message::Pong(payload) => {
-                    log_ws_message("inbound", &Message::Pong(payload));
-                }
             }
-        }
 
-        if !awareness_clients.is_empty() {
-            let update = {
-                let awareness = room_clone.awareness.write().await;
-                for client_id in &awareness_clients {
-                    awareness.remove_state(*client_id);
-                }
-                awareness
-                    .update_with_clients(awareness_clients.iter().copied())
-                    .map_err(|error| {
-                        tracing::warn!(
-                            "Failed to build awareness removal update for user {}: {}",
-                            user_id,
-                            error
-                        );
-                    })
-                    .ok()
-            };
-
-            if let Some(update) = update {
-                let mut msg = vec![protocol::OP_AWARENESS];
-                msg.extend(update.encode_v1());
-                let _ = room_clone.tx.send(Bytes::from(msg));
-            }
-        }
-
-        {
-            let sessions = room_clone.sessions.write().await;
-            sessions.remove(&session_id);
-            room_clone.edit_permissions.remove(&user_id);
-            *room_clone.last_active.lock().await = Instant::now();
-            let remaining = sessions.len();
-            tracing::info!(
-                "Session {} left room {}. Remaining: {}",
-                session_id,
-                board_id,
-                remaining
-            );
-            if remaining == 0 {
-                let pending_updates = {
-                    let mut pending = room_clone.pending_updates.lock().await;
-                    if pending.is_empty() {
-                        Vec::new()
-                    } else {
-                        pending.drain(..).collect()
+            if !awareness_clients.is_empty() {
+                let update = {
+                    let awareness = room_clone.awareness.write().await;
+                    for client_id in &awareness_clients {
+                        awareness.remove_state(*client_id);
                     }
+                    awareness
+                        .update_with_clients(awareness_clients.iter().copied())
+                        .map_err(|error| {
+                            tracing::warn!(
+                                "Failed to build awareness removal update for user {}: {}",
+                                user_id,
+                                error
+                            );
+                        })
+                        .ok()
                 };
-                if !pending_updates.is_empty() {
-                    snapshot::save_update_logs(board_id, None, pending_updates, db.clone()).await;
+
+                if let Some(update) = update {
+                    let mut msg = vec![protocol::OP_AWARENESS];
+                    msg.extend(update.encode_v1());
+                    let _ = room_clone.tx.send(Bytes::from(msg));
                 }
             }
-        }
 
-        if let Err(error) =
-            PresenceService::disconnect(&db, redis_clone.as_ref(), board_id, session_id).await
-        {
-            tracing::warn!(
-                "Failed to mark disconnect for user {} on board {}: {}",
-                user_id,
-                board_id,
-                error
+            {
+                let sessions = room_clone.sessions.write().await;
+                sessions.remove(&session_id);
+                room_clone.edit_permissions.remove(&user_id);
+                *room_clone.last_active.lock().await = Instant::now();
+                let remaining = sessions.len();
+                tracing::info!(
+                    "Session {} left room {}. Remaining: {}",
+                    session_id,
+                    board_id,
+                    remaining
+                );
+                if remaining == 0 {
+                    let pending_updates = {
+                        let mut pending = room_clone.pending_updates.lock().await;
+                        if pending.is_empty() {
+                            Vec::new()
+                        } else {
+                            pending.drain(..).collect()
+                        }
+                    };
+                    if !pending_updates.is_empty() {
+                        snapshot::save_update_logs(board_id, None, pending_updates, db.clone())
+                            .await;
+                    }
+                }
+            }
+
+            if let Err(error) =
+                PresenceService::disconnect(&db, redis_clone.as_ref(), board_id, session_id).await
+            {
+                tracing::warn!(
+                    "Failed to mark disconnect for user {} on board {}: {}",
+                    user_id,
+                    board_id,
+                    error
+                );
+            }
+            tracing::info!(
+                reason = close_reason.unwrap_or_else(|| "server_shutdown".to_string()),
+                "WebSocket disconnected"
             );
-        }
-        tracing::info!(
-            reason = close_reason.unwrap_or_else(|| "server_shutdown".to_string()),
-            "WebSocket disconnected"
-        );
 
-        if should_emit_user_left(
-            PresenceService::has_active_session(&db, board_id, user_id).await,
-            board_id,
-            user_id,
-        ) {
-            if let Some(Message::Text(text)) = build_text_message(
-                "user:left",
-                json!({
-                    "user_id": user_id,
-                    "reason": "disconnect",
-                    "timestamp": Utc::now().timestamp_millis(),
-                }),
+            if should_emit_user_left(
+                PresenceService::has_active_session(&db, board_id, user_id).await,
+                board_id,
+                user_id,
             ) {
-                let _ = room_clone.text_tx.send(text.to_string());
+                if let Some(Message::Text(text)) = build_text_message(
+                    "user:left",
+                    json!({
+                        "user_id": user_id,
+                        "reason": "disconnect",
+                        "timestamp": Utc::now().timestamp_millis(),
+                    }),
+                ) {
+                    let _ = room_clone.text_tx.send(text.to_string());
+                }
+            }
+
+            if let Some(queued) = room_clone.pop_next_queued().await {
+                queued.notify.notify_one();
             }
         }
-
-        if let Some(queued) = room_clone.pop_next_queued().await {
-            queued.notify.notify_one();
-        }
-    }.instrument(connection_span.clone()));
+        .instrument(connection_span.clone()),
+    );
 
     tokio::select! {
         _ = (&mut write_task) => {},

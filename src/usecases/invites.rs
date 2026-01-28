@@ -111,10 +111,7 @@ fn is_valid_email(email: &str) -> bool {
 mod tests {
     use super::*;
 
-    fn assert_validation_error_contains(
-        result: Result<Vec<String>, AppError>,
-        expected: &str,
-    ) {
+    fn assert_validation_error_contains(result: Result<Vec<String>, AppError>, expected: &str) {
         match result {
             Err(AppError::ValidationError(message)) => {
                 assert!(
@@ -136,7 +133,10 @@ mod tests {
 
         assert_eq!(
             result.unwrap(),
-            vec!["alice@example.com".to_string(), "bob@example.com".to_string()]
+            vec![
+                "alice@example.com".to_string(),
+                "bob@example.com".to_string()
+            ]
         );
     }
 

@@ -17,12 +17,12 @@ use crate::{
         organizations::OrgRole,
         users::{SubscriptionTier, User},
     },
+    realtime::snapshot,
     repositories::boards as board_repo,
     repositories::elements as element_repo,
     repositories::organizations as org_repo,
     repositories::realtime as realtime_repo,
     repositories::users as user_repo,
-    realtime::snapshot,
     services::email::EmailService,
     telemetry::{BusinessEvent, redact_email},
     usecases::invites::collect_invite_emails,
@@ -112,7 +112,9 @@ impl BoardService {
         board_id: Uuid,
         user_id: Uuid,
     ) -> Result<BoardPermissions, AppError> {
-        Ok(resolve_board_access(pool, board_id, user_id).await?.permissions)
+        Ok(resolve_board_access(pool, board_id, user_id)
+            .await?
+            .permissions)
     }
 
     pub async fn create_board(
@@ -164,18 +166,12 @@ impl BoardService {
                 .await?
                 .ok_or(AppError::NotFound("Template board not found".to_string()))?;
             if !template.is_template {
-                return Err(AppError::BadRequest(
-                    "Template board not found".to_string(),
-                ));
+                return Err(AppError::BadRequest("Template board not found".to_string()));
             }
-            require_board_permission(
-                pool,
-                template_board_id,
-                user_id,
-                BoardPermission::View,
-            )
-            .await?;
-            template_elements = element_repo::list_elements_by_board(pool, template_board_id).await?;
+            require_board_permission(pool, template_board_id, user_id, BoardPermission::View)
+                .await?;
+            template_elements =
+                element_repo::list_elements_by_board(pool, template_board_id).await?;
             base_canvas_settings = template.canvas_settings;
         }
 
@@ -199,13 +195,8 @@ impl BoardService {
         let board = board_repo::create_board(&mut tx, params, user_id).await?;
         board_repo::add_owner_member(&mut tx, board.id, user_id).await?;
         if !template_elements.is_empty() {
-            let cloned = clone_template_elements(
-                &mut tx,
-                board.id,
-                user_id,
-                template_elements,
-            )
-            .await?;
+            let cloned =
+                clone_template_elements(&mut tx, board.id, user_id, template_elements).await?;
             let state_bin = snapshot::build_state_update_from_elements(&cloned)?;
             if !state_bin.is_empty() {
                 realtime_repo::insert_snapshot(&mut tx, board.id, 0, state_bin, Some(user_id))
@@ -272,13 +263,8 @@ impl BoardService {
     ) -> Result<BoardActionMessage, AppError> {
         let board = load_board_for_access(pool, board_id).await?;
         ensure_board_not_deleted(&board)?;
-        require_board_permission_with_board(
-            pool,
-            &board,
-            user_id,
-            BoardPermission::ManageBoard,
-        )
-        .await?;
+        require_board_permission_with_board(pool, &board, user_id, BoardPermission::ManageBoard)
+            .await?;
         if board.archived_at.is_some() {
             return Ok(BoardActionMessage {
                 message: "Board already archived".to_string(),
@@ -302,13 +288,8 @@ impl BoardService {
     ) -> Result<BoardActionMessage, AppError> {
         let board = load_board_for_access(pool, board_id).await?;
         ensure_board_not_deleted(&board)?;
-        require_board_permission_with_board(
-            pool,
-            &board,
-            user_id,
-            BoardPermission::ManageBoard,
-        )
-        .await?;
+        require_board_permission_with_board(pool, &board, user_id, BoardPermission::ManageBoard)
+            .await?;
         if board.archived_at.is_none() {
             return Ok(BoardActionMessage {
                 message: "Board already active".to_string(),
@@ -551,8 +532,8 @@ impl BoardService {
         let organization_id = board_repo::load_board_organization_id(pool, board_id).await?;
         let mut org_role: Option<OrgRole> = None;
         if let Some(org_id) = organization_id {
-            let member_record = org_repo::get_member_by_user_id(pool, org_id, member.user_id)
-                .await?;
+            let member_record =
+                org_repo::get_member_by_user_id(pool, org_id, member.user_id).await?;
             org_role = member_record.map(|record| record.role);
             ensure_guest_role_permissions(org_role, req.role, req.custom_permissions.as_ref())?;
         }
@@ -583,7 +564,9 @@ impl BoardService {
 
         let final_permissions = resolve_member_permissions(
             req.role,
-            req.custom_permissions.as_ref().or(member.custom_permissions.as_ref()),
+            req.custom_permissions
+                .as_ref()
+                .or(member.custom_permissions.as_ref()),
             organization_id.is_some(),
             org_role,
         );
@@ -657,9 +640,9 @@ async fn clone_template_elements(
 
     let mut cloned_elements = Vec::with_capacity(template_elements.len());
     for element in template_elements {
-        let new_id = *id_map.get(&element.id).ok_or_else(|| {
-            AppError::Internal("Missing template element id mapping".to_string())
-        })?;
+        let new_id = *id_map
+            .get(&element.id)
+            .ok_or_else(|| AppError::Internal("Missing template element id mapping".to_string()))?;
         let parent_id = element
             .parent_id
             .and_then(|parent| id_map.get(&parent).copied());
@@ -763,7 +746,10 @@ async fn resolve_board_access_with_board(
                 org_repo::get_member_by_user_id(pool, org_id, user_id),
             )?
         }
-        None => (board_repo::get_board_member_access(pool, board.id, user_id).await?, None),
+        None => (
+            board_repo::get_board_member_access(pool, board.id, user_id).await?,
+            None,
+        ),
     };
 
     if let Some(member) = board_member {
@@ -789,7 +775,10 @@ async fn resolve_board_access_with_board(
             }
         }
 
-        let permissions = member.role.permissions().apply_overrides(member.custom_permissions.as_ref());
+        let permissions = member
+            .role
+            .permissions()
+            .apply_overrides(member.custom_permissions.as_ref());
         return Ok(BoardAccess {
             role: member.role,
             permissions,
@@ -952,9 +941,7 @@ fn ensure_board_not_archived(board: &Board) -> Result<(), AppError> {
 
 fn ensure_board_not_deleted(board: &Board) -> Result<(), AppError> {
     if board.deleted_at.is_some() {
-        return Err(AppError::BoardDeleted(
-            "Board has been deleted".to_string(),
-        ));
+        return Err(AppError::BoardDeleted("Board has been deleted".to_string()));
     }
     Ok(())
 }
@@ -966,9 +953,9 @@ fn ensure_board_active(board: &Board) -> Result<(), AppError> {
 }
 
 fn ensure_board_restorable(board: &Board) -> Result<(), AppError> {
-    let deleted_at = board.deleted_at.ok_or(AppError::BadRequest(
-        "Board is not in trash".to_string(),
-    ))?;
+    let deleted_at = board
+        .deleted_at
+        .ok_or(AppError::BadRequest("Board is not in trash".to_string()))?;
     let expires_at = deleted_at + Duration::days(TRASH_RETENTION_DAYS);
     if Utc::now() > expires_at {
         return Err(AppError::BoardDeleted(
@@ -1024,7 +1011,13 @@ async fn prepare_org_invites(
     pool: &PgPool,
     organization_id: Option<Uuid>,
     users: &[User],
-) -> Result<(Option<crate::models::organizations::Organization>, Vec<User>), AppError> {
+) -> Result<
+    (
+        Option<crate::models::organizations::Organization>,
+        Vec<User>,
+    ),
+    AppError,
+> {
     let Some(organization_id) = organization_id else {
         return Ok((None, Vec::new()));
     };

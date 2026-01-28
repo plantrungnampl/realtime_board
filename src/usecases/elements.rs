@@ -87,13 +87,7 @@ impl ElementService {
 
         let updated_at = Utc::now();
         let applied = realtime_elements::apply_element_update(
-            rooms,
-            pool,
-            user_id,
-            board_id,
-            element_id,
-            &req,
-            updated_at,
+            rooms, pool, user_id, board_id, element_id, &req, updated_at,
         )
         .await?;
 
@@ -171,13 +165,7 @@ impl ElementService {
 
         let now = Utc::now();
         let result = realtime_elements::apply_element_deleted(
-            rooms,
-            pool,
-            user_id,
-            board_id,
-            element_id,
-            None,
-            now,
+            rooms, pool, user_id, board_id, element_id, None, now,
         )
         .await?;
 
@@ -197,7 +185,9 @@ impl ElementService {
     }
 }
 
-fn materialized_to_response(element: ElementMaterialized) -> Result<BoardElementResponse, AppError> {
+fn materialized_to_response(
+    element: ElementMaterialized,
+) -> Result<BoardElementResponse, AppError> {
     let created_by = require_field(element.created_by, "created_by")?;
     let created_at = require_field(element.created_at, "created_at")?;
     let updated_at = require_field(element.updated_at, "updated_at")?;
@@ -229,9 +219,9 @@ fn extract_delete_fields(
     element: &ElementMaterialized,
 ) -> Result<(i32, DateTime<Utc>, DateTime<Utc>), AppError> {
     let version = require_field(element.version, "version")?;
-    let deleted_at = element.deleted_at.ok_or_else(|| {
-        AppError::Internal("Deleted element missing deleted_at".to_string())
-    })?;
+    let deleted_at = element
+        .deleted_at
+        .ok_or_else(|| AppError::Internal("Deleted element missing deleted_at".to_string()))?;
     let updated_at = require_field(element.updated_at, "updated_at")?;
     Ok((version, deleted_at, updated_at))
 }
@@ -240,11 +230,7 @@ fn require_field<T>(value: Option<T>, label: &str) -> Result<T, AppError> {
     value.ok_or_else(|| AppError::Internal(format!("Missing element {}", label)))
 }
 
-async fn ensure_can_edit(
-    pool: &PgPool,
-    board_id: Uuid,
-    user_id: Uuid,
-) -> Result<(), AppError> {
+async fn ensure_can_edit(pool: &PgPool, board_id: Uuid, user_id: Uuid) -> Result<(), AppError> {
     let permissions = BoardService::get_access_permissions(pool, board_id, user_id).await?;
     if !permissions.can_edit {
         return Err(AppError::Forbidden(

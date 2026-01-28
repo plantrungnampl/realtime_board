@@ -1,9 +1,6 @@
 use std::{
     collections::HashMap,
-    sync::{
-        Arc,
-        atomic::Ordering,
-    },
+    sync::{Arc, atomic::Ordering},
     time::{Duration, Instant},
 };
 
@@ -138,16 +135,13 @@ async fn project_elements_once(
     let mut tx = db.begin().await?;
     crate::log_query_execute!(
         "realtime.set_crdt_projection",
-        sqlx::query("SELECT set_config('app.crdt_projection', 'on', true)")
-            .execute(&mut *tx)
+        sqlx::query("SELECT set_config('app.crdt_projection', 'on', true)").execute(&mut *tx)
     )?;
     element_repo::lock_board_elements(&mut tx, board_id).await?;
 
     let defaults = element_repo::list_projection_defaults_tx(&mut tx, board_id).await?;
-    let defaults_map: HashMap<Uuid, element_repo::ElementProjectionDefaults> = defaults
-        .into_iter()
-        .map(|row| (row.id, row))
-        .collect();
+    let defaults_map: HashMap<Uuid, element_repo::ElementProjectionDefaults> =
+        defaults.into_iter().map(|row| (row.id, row)).collect();
     let mut upserts = Vec::new();
     let mut skipped = 0usize;
     for element in elements {
@@ -168,11 +162,7 @@ async fn project_elements_once(
                 }
             }
             Err(error) => {
-                tracing::warn!(
-                    "Skipping projection for board {}: {}",
-                    board_id,
-                    error
-                );
+                tracing::warn!("Skipping projection for board {}: {}", board_id, error);
             }
         }
     }
@@ -207,18 +197,12 @@ fn to_projected_params(
         element.width,
         element.height,
     );
-    let created_by = defaults
-        .map(|row| row.created_by)
-        .or(element.created_by);
-    let created_at = defaults
-        .map(|row| row.created_at)
-        .or(element.created_at);
+    let created_by = defaults.map(|row| row.created_by).or(element.created_by);
+    let created_at = defaults.map(|row| row.created_at).or(element.created_at);
     let updated_at = element
         .updated_at
         .or_else(|| defaults.map(|row| row.updated_at));
-    let version = element
-        .version
-        .or_else(|| defaults.map(|row| row.version));
+    let version = element.version.or_else(|| defaults.map(|row| row.version));
 
     let created_by = created_by.unwrap_or(fallback.created_by);
     let created_at = created_at.unwrap_or(fallback.created_at);
@@ -316,11 +300,7 @@ fn normalize_rotation(value: f64) -> f64 {
     if normalized < 0.0 {
         normalized += 360.0;
     }
-    if normalized >= 360.0 {
-        0.0
-    } else {
-        normalized
-    }
+    if normalized >= 360.0 { 0.0 } else { normalized }
 }
 
 fn should_warn_invalid_dimensions(element_type: ElementType) -> bool {

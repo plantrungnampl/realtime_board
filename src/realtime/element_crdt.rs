@@ -2,17 +2,15 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
-use yrs::{
-    Any, Array, ArrayRef, Doc, Map, MapRef, Out, ReadTxn, Text, TextRef, Transact,
-    TransactionMut, WriteTxn,
-};
 use yrs::encoding::serde::{from_any, to_any};
 use yrs::types::ToJson;
+use yrs::{
+    Any, Array, ArrayRef, Doc, Map, MapRef, Out, ReadTxn, Text, TextRef, Transact, TransactionMut,
+    WriteTxn,
+};
 
 use crate::{
-    dto::elements::UpdateBoardElementRequest,
-    error::AppError,
-    models::elements::ElementType,
+    dto::elements::UpdateBoardElementRequest, error::AppError, models::elements::ElementType,
 };
 
 const ELEMENTS_MAP: &str = "elements";
@@ -358,11 +356,18 @@ fn materialize_from_json(json: &Value) -> Option<ElementMaterialized> {
     let height = parse_number(object.get(FIELD_HEIGHT))?;
     let rotation = parse_number(object.get(FIELD_ROTATION)).unwrap_or(0.0);
     let z_index = parse_number(object.get(FIELD_Z_INDEX)).unwrap_or(0.0) as i32;
-    let style = object.get(FIELD_STYLE).cloned().unwrap_or(Value::Object(Default::default()));
-    let properties =
-        object.get(FIELD_PROPERTIES).cloned().unwrap_or(Value::Object(Default::default()));
-    let metadata =
-        object.get(FIELD_METADATA).cloned().unwrap_or(Value::Object(Default::default()));
+    let style = object
+        .get(FIELD_STYLE)
+        .cloned()
+        .unwrap_or(Value::Object(Default::default()));
+    let properties = object
+        .get(FIELD_PROPERTIES)
+        .cloned()
+        .unwrap_or(Value::Object(Default::default()));
+    let metadata = object
+        .get(FIELD_METADATA)
+        .cloned()
+        .unwrap_or(Value::Object(Default::default()));
 
     Some(ElementMaterialized {
         id,
@@ -502,12 +507,7 @@ fn set_uuid(txn: &mut TransactionMut, map: &MapRef, key: &str, value: Uuid) {
     map.insert(txn, key.to_string(), value.to_string());
 }
 
-fn set_uuid_opt(
-    txn: &mut TransactionMut,
-    map: &MapRef,
-    key: &str,
-    value: Option<Uuid>,
-) {
+fn set_uuid_opt(txn: &mut TransactionMut, map: &MapRef, key: &str, value: Option<Uuid>) {
     if let Some(value) = value {
         set_uuid(txn, map, key, value);
     } else {
@@ -532,12 +532,7 @@ fn set_datetime_opt(
     }
 }
 
-fn set_if_missing_uuid(
-    txn: &mut TransactionMut,
-    map: &MapRef,
-    key: &str,
-    value: Uuid,
-) -> bool {
+fn set_if_missing_uuid(txn: &mut TransactionMut, map: &MapRef, key: &str, value: Uuid) -> bool {
     if map.get(txn, key).is_some() {
         return false;
     }
@@ -584,12 +579,7 @@ fn set_if_missing_datetime_opt(
     true
 }
 
-fn set_if_missing_string(
-    txn: &mut TransactionMut,
-    map: &MapRef,
-    key: &str,
-    value: &str,
-) -> bool {
+fn set_if_missing_string(txn: &mut TransactionMut, map: &MapRef, key: &str, value: &str) -> bool {
     if map.get(txn, key).is_some() {
         return false;
     }
@@ -597,12 +587,7 @@ fn set_if_missing_string(
     true
 }
 
-fn set_if_missing_number(
-    txn: &mut TransactionMut,
-    map: &MapRef,
-    key: &str,
-    value: f64,
-) -> bool {
+fn set_if_missing_number(txn: &mut TransactionMut, map: &MapRef, key: &str, value: f64) -> bool {
     if map.get(txn, key).is_some() {
         return false;
     }
@@ -610,12 +595,7 @@ fn set_if_missing_number(
     true
 }
 
-fn set_if_missing_object(
-    txn: &mut TransactionMut,
-    map: &MapRef,
-    key: &str,
-    value: &Value,
-) -> bool {
+fn set_if_missing_object(txn: &mut TransactionMut, map: &MapRef, key: &str, value: &Value) -> bool {
     if map.get(txn, key).is_some() {
         return false;
     }

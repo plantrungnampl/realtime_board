@@ -411,9 +411,17 @@ pub(crate) async fn send_invite_emails(
     };
 
     for user in users {
-        service
+        if let Err(err) = service
             .send_organization_invite(&user.email, &organization.name, &organization.slug, None)
-            .await?;
+            .await
+        {
+            tracing::error!(
+                org_id = %organization.id,
+                invitee_email_redacted = %redact_email(&user.email),
+                error = %err,
+                "Failed to send organization invite email"
+            );
+        }
     }
 
     Ok(())
@@ -429,9 +437,17 @@ async fn send_pre_signup_invites(
     };
 
     for (email, token) in invites {
-        service
+        if let Err(err) = service
             .send_organization_invite(email, &organization.name, &organization.slug, Some(token))
-            .await?;
+            .await
+        {
+            tracing::error!(
+                org_id = %organization.id,
+                invitee_email_redacted = %redact_email(email),
+                error = %err,
+                "Failed to send pre-signup organization invite email"
+            );
+        }
     }
 
     Ok(())

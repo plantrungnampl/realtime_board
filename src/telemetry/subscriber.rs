@@ -43,8 +43,8 @@ impl LogSettings {
 
 pub fn init_tracing() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let settings = LogSettings::from_env();
-    let env_filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(settings.default_filter()));
+    let env_filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new(settings.default_filter()));
     let otel_layer = otel::build_otel_layer()?;
     let registry = tracing_subscriber::registry();
 

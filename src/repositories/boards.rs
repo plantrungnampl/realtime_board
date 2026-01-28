@@ -151,10 +151,7 @@ pub async fn list_boards_for_user(
         .collect())
 }
 
-pub async fn find_board_by_id(
-    pool: &PgPool,
-    board_id: Uuid,
-) -> Result<Option<Board>, AppError> {
+pub async fn find_board_by_id(pool: &PgPool, board_id: Uuid) -> Result<Option<Board>, AppError> {
     let board = crate::log_query_fetch_optional!(
         "boards.find_by_id",
         sqlx::query_as::<_, Board>(
@@ -806,10 +803,7 @@ pub async fn count_boards_by_organization(
 }
 
 /// Counts active personal boards owned by a user.
-pub async fn count_personal_boards_by_owner(
-    pool: &PgPool,
-    user_id: Uuid,
-) -> Result<i64, AppError> {
+pub async fn count_personal_boards_by_owner(pool: &PgPool, user_id: Uuid) -> Result<i64, AppError> {
     let count = crate::log_query_fetch_one!(
         "boards.count_personal_by_owner",
         sqlx::query_scalar::<_, i64>(

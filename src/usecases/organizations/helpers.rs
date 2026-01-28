@@ -3,10 +3,7 @@ use uuid::Uuid;
 
 use crate::{
     error::AppError,
-    models::{
-        organizations::OrgRole,
-        users::User,
-    },
+    models::{organizations::OrgRole, users::User},
     repositories::{organizations as org_repo, users as user_repo},
 };
 
@@ -177,9 +174,7 @@ pub(super) async fn suggest_slugs(pool: &PgPool, base: &str) -> Result<Vec<Strin
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        build_slug, is_limit_exceeded, is_valid_slug, normalize_slug,
-    };
+    use super::{build_slug, is_limit_exceeded, is_valid_slug, normalize_slug};
 
     #[test]
     fn generate_slug_normalizes_name() {

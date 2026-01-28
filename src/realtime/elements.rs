@@ -12,8 +12,7 @@ use crate::{
     error::AppError,
     realtime::{
         element_crdt::{self, AppliedElement, ElementMaterialized, ElementSnapshot},
-        projection,
-        protocol,
+        projection, protocol,
         room::Rooms,
         snapshot,
     },
@@ -113,8 +112,12 @@ pub async fn apply_element_deleted(
             let doc_guard = room.doc.lock().await;
             let existing = element_crdt::materialize_element(&doc_guard, element_id);
             let was_deleted = existing.and_then(|element| element.deleted_at).is_some();
-            let applied = element_crdt::apply_deleted(&doc_guard, element_id, deleted_at, updated_at)?;
-            applied.map(|applied| DeletedApplied { applied, was_deleted })
+            let applied =
+                element_crdt::apply_deleted(&doc_guard, element_id, deleted_at, updated_at)?;
+            applied.map(|applied| DeletedApplied {
+                applied,
+                was_deleted,
+            })
         };
 
         if let Some(result) = result.as_ref() {
@@ -127,7 +130,10 @@ pub async fn apply_element_deleted(
         let existing = element_crdt::materialize_element(doc, element_id);
         let was_deleted = existing.and_then(|element| element.deleted_at).is_some();
         let applied = element_crdt::apply_deleted(doc, element_id, deleted_at, updated_at)?;
-        Ok(applied.map(|applied| DeletedApplied { applied, was_deleted }))
+        Ok(applied.map(|applied| DeletedApplied {
+            applied,
+            was_deleted,
+        }))
     })
     .await?;
 
@@ -231,7 +237,8 @@ async fn broadcast_update(room: &Arc<crate::realtime::room::Room>, update: Vec<u
         let mut pending = room.pending_updates.lock().await;
         pending.push(update.clone());
     }
-    room.pending_update_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    room.pending_update_count
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     *room.last_active.lock().await = Instant::now();
 
     let mut message = vec![protocol::OP_UPDATE];

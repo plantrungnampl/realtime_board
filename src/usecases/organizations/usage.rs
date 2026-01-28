@@ -7,7 +7,7 @@ use crate::{
     repositories::{boards as board_repo, organizations as org_repo},
 };
 
-use super::{helpers::require_member_role, OrganizationService};
+use super::{OrganizationService, helpers::require_member_role};
 
 #[derive(Debug, Clone, Copy)]
 pub(super) struct OrganizationUsageSnapshot {
