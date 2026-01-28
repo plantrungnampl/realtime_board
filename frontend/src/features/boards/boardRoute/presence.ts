@@ -131,6 +131,7 @@ export const parseBoardJoinedPayload = (
 export const buildCursorMap = (
   awareness: Awareness,
   cursorIdleMs: number,
+  prevCursors?: Record<string, CursorBroadcast>,
 ): Record<string, CursorBroadcast> => {
   const selected: Record<string, CursorBroadcast & { last_seen: number }> = {};
   const now = Date.now();
@@ -174,6 +175,13 @@ export const buildCursorMap = (
   });
   const next: Record<string, CursorBroadcast> = {};
   Object.entries(selected).forEach(([key, value]) => {
+    if (prevCursors) {
+      const prev = prevCursors[key];
+      if (prev && areCursorsEqual(prev, value)) {
+        next[key] = prev;
+        return;
+      }
+    }
     next[key] = {
       client_id: value.client_id,
       user_id: value.user_id,
@@ -206,6 +214,34 @@ export const areSelectionsEqual = (left: string[], right: string[]) => {
     if (left[i] !== right[i]) return false;
   }
   return true;
+};
+
+export const areDragPresenceEqual = (a: DragPresence | null, b: DragPresence | null) => {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    a.element_id === b.element_id &&
+    a.position_x === b.position_x &&
+    a.position_y === b.position_y &&
+    a.width === b.width &&
+    a.height === b.height &&
+    a.rotation === b.rotation
+  );
+};
+
+export const areCursorsEqual = (a: CursorBroadcast, b: CursorBroadcast) => {
+  if (a === b) return true;
+  return (
+    a.client_id === b.client_id &&
+    a.user_id === b.user_id &&
+    a.user_name === b.user_name &&
+    a.avatar_url === b.avatar_url &&
+    a.x === b.x &&
+    a.y === b.y &&
+    a.color === b.color &&
+    a.status === b.status &&
+    areDragPresenceEqual(a.dragging ?? null, b.dragging ?? null)
+  );
 };
 
 const normalizeEditingPresence = (value: unknown) => {
