@@ -12,6 +12,9 @@ use crate::{
     services::email::EmailService,
     telemetry::{BusinessEvent, redact_email},
 };
+
+const INVALID_CREDENTIALS_MSG: &str = "Invalid email or password";
+
 pub struct UserServices;
 impl UserServices {
     pub async fn register_user(
@@ -55,9 +58,7 @@ impl UserServices {
                 ))?;
             if let Some(expires_at) = invite.invite_expires_at {
                 if expires_at < chrono::Utc::now() {
-                    return Err(AppError::BadRequest(
-                        "Invitation has expired".to_string(),
-                    ));
+                    return Err(AppError::BadRequest("Invitation has expired".to_string()));
                 }
             }
             Some(invite)
@@ -152,8 +153,9 @@ impl UserServices {
                     reason: "user_not_found".to_string(),
                 }
                 .log();
+                // Unified error message to prevent user enumeration
                 return Err(AppError::InvalidCredentials(
-                    "invalid creadentials".to_string(),
+                    INVALID_CREDENTIALS_MSG.to_string(),
                 ));
             }
         };
@@ -163,15 +165,18 @@ impl UserServices {
             .ok_or(AppError::Internal("password hash not found".to_string()))?;
 
         //verify password
+        // TODO: Implement constant-time comparison or fake verification to prevent timing attacks.
         let verifypassword = verify_password_user(&req.password, hash)
-            .map_err(|_| AppError::InvalidCredentials("error password".to_string()))?;
+            .map_err(|_| AppError::InvalidCredentials(INVALID_CREDENTIALS_MSG.to_string()))?;
         if !verifypassword {
             BusinessEvent::LoginFailed {
                 email_redacted: redact_email(&req.email),
                 reason: "invalid_password".to_string(),
             }
             .log();
-            return Err(AppError::InvalidCredentials("error pass".to_string()));
+            return Err(AppError::InvalidCredentials(
+                INVALID_CREDENTIALS_MSG.to_string(),
+            ));
         }
         if !user.is_active {
             BusinessEvent::LoginFailed {
@@ -180,7 +185,7 @@ impl UserServices {
             }
             .log();
             return Err(AppError::InvalidCredentials(
-                "invalid creadential".to_string(),
+                INVALID_CREDENTIALS_MSG.to_string(),
             ));
         }
 
