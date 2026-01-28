@@ -12,6 +12,15 @@ use crate::{
     services::email::EmailService,
     telemetry::{BusinessEvent, redact_email},
 };
+use std::sync::OnceLock;
+
+const INVALID_CREDENTIALS_MSG: &str = "Invalid email or password";
+static DUMMY_HASH: OnceLock<String> = OnceLock::new();
+
+fn invalid_credentials_error() -> AppError {
+    AppError::InvalidCredentials(INVALID_CREDENTIALS_MSG.to_string())
+}
+
 pub struct UserServices;
 impl UserServices {
     pub async fn register_user(
@@ -55,9 +64,7 @@ impl UserServices {
                 ))?;
             if let Some(expires_at) = invite.invite_expires_at {
                 if expires_at < chrono::Utc::now() {
-                    return Err(AppError::BadRequest(
-                        "Invitation has expired".to_string(),
-                    ));
+                    return Err(AppError::BadRequest("Invitation has expired".to_string()));
                 }
             }
             Some(invite)
@@ -152,9 +159,18 @@ impl UserServices {
                     reason: "user_not_found".to_string(),
                 }
                 .log();
-                return Err(AppError::InvalidCredentials(
-                    "invalid creadentials".to_string(),
-                ));
+
+                // Fake verification to mitigate timing attacks
+                let dummy_hash = DUMMY_HASH.get_or_init(|| {
+                    hash_password("dummy_password_for_timing_mitigation").unwrap_or_else(|_| {
+                        "$argon2id$v=19$m=4096,t=3,p=1$c2FsdHNhbHQ$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                            .to_string()
+                    })
+                });
+                let _ = verify_password_user(&req.password, dummy_hash);
+
+                // Unified error message to prevent user enumeration
+                return Err(invalid_credentials_error());
             }
         };
         let hash = user
@@ -163,15 +179,15 @@ impl UserServices {
             .ok_or(AppError::Internal("password hash not found".to_string()))?;
 
         //verify password
-        let verifypassword = verify_password_user(&req.password, hash)
-            .map_err(|_| AppError::InvalidCredentials("error password".to_string()))?;
+        let verifypassword =
+            verify_password_user(&req.password, hash).map_err(|_| invalid_credentials_error())?;
         if !verifypassword {
             BusinessEvent::LoginFailed {
                 email_redacted: redact_email(&req.email),
                 reason: "invalid_password".to_string(),
             }
             .log();
-            return Err(AppError::InvalidCredentials("error pass".to_string()));
+            return Err(invalid_credentials_error());
         }
         if !user.is_active {
             BusinessEvent::LoginFailed {
@@ -179,9 +195,7 @@ impl UserServices {
                 reason: "inactive_account".to_string(),
             }
             .log();
-            return Err(AppError::InvalidCredentials(
-                "invalid creadential".to_string(),
-            ));
+            return Err(invalid_credentials_error());
         }
 
         user_repo::update_last_active(pool, user.id).await?;
