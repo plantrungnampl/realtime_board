@@ -8,6 +8,7 @@ import {
 } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
+import { Eye, EyeOff } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
@@ -51,6 +52,7 @@ function Register() {
   const [username, setUsername] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const rawInviteToken =
     typeof search.invite === 'string'
       ? search.invite
@@ -153,7 +155,10 @@ function Register() {
 
         <form onSubmit={onSubmit} className="space-y-6">
           {(localError || error) && (
-            <div className="p-3 text-sm text-red-500 bg-red-500/10 border border-red-500/20 rounded-md">
+            <div
+              role="alert"
+              className="p-3 text-sm text-red-500 bg-red-500/10 border border-red-500/20 rounded-md"
+            >
               {localError || error}
             </div>
           )}
@@ -249,18 +254,34 @@ function Register() {
           </div>
           <div className="space-y-2">
             <Label htmlFor="password">Password</Label>
-            <Input
-              id="password"
-              required
-              type="password"
-              autoComplete="new-password"
-              placeholder="••••••••"
-              value={password}
-              onChange={(event) => {
-                if (localError) setLocalError(null)
-                setPassword(event.target.value)
-              }}
-            />
+            <div className="relative">
+              <Input
+                id="password"
+                required
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="new-password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(event) => {
+                  if (localError) setLocalError(null)
+                  setPassword(event.target.value)
+                }}
+                className="pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 rounded-sm"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                aria-pressed={showPassword}
+              >
+                {showPassword ? (
+                  <EyeOff className="h-4 w-4" />
+                ) : (
+                  <Eye className="h-4 w-4" />
+                )}
+              </button>
+            </div>
           </div>
           <Button
             className="w-full"
