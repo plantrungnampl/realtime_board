@@ -4,30 +4,57 @@ use axum::{
     middleware,
     routing::{delete, get, patch, post, put},
 };
-use std::num::NonZeroU32;
-use tower_governor::{GovernorConfigBuilder, GovernorLayer};
+use governor::middleware::NoOpMiddleware;
+use std::{net::IpAddr, sync::Arc};
+use tower_governor::{
+    GovernorLayer,
+    errors::GovernorError,
+    governor::GovernorConfigBuilder,
+    key_extractor::{KeyExtractor, PeerIpKeyExtractor, SmartIpKeyExtractor},
+};
 use tower_http::cors::{AllowOrigin, CorsLayer};
+use uuid::Uuid;
 
 use crate::{
     api::{
         http::{
-            auth as auth_http,
-            boards as boards_http,
-            elements as elements_http,
-            organizations as organizations_http,
-            telemetry as telemetry_http,
+            auth as auth_http, boards as boards_http, elements as elements_http,
+            organizations as organizations_http, telemetry as telemetry_http,
         },
         ws::boards as boards_ws,
     },
     app::state::AppState,
-    auth::middleware::{auth_middleware, verified_middleware},
+    auth::middleware::{AuthUser, auth_middleware, verified_middleware},
     telemetry,
 };
+
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
+enum InviteRateLimitKey {
+    User(Uuid),
+    Ip(IpAddr),
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct InviteKeyExtractor;
+
+impl KeyExtractor for InviteKeyExtractor {
+    type Key = InviteRateLimitKey;
+
+    fn extract<T>(&self, req: &axum::http::Request<T>) -> Result<Self::Key, GovernorError> {
+        if let Some(auth_user) = req.extensions().get::<AuthUser>() {
+            return Ok(InviteRateLimitKey::User(auth_user.user_id));
+        }
+
+        let ip = SmartIpKeyExtractor.extract(req)?;
+        Ok(InviteRateLimitKey::Ip(ip))
+    }
+}
 
 pub fn build_router(state: AppState) -> Router {
     let cors = build_cors_layer();
     let auth_rate_limit = build_auth_rate_limiter();
     let onboarding_rate_limit = build_auth_rate_limiter();
+    let invite_rate_limit = build_invite_rate_limiter();
 
     let auth_routes = Router::new()
         .route("/auth/register", post(auth_http::register_handle))
@@ -39,8 +66,10 @@ pub fn build_router(state: AppState) -> Router {
         )
         .layer(auth_rate_limit);
 
-    let telemetry_routes = Router::new()
-        .route("/api/telemetry/client", post(telemetry_http::ingest_client_logs));
+    let telemetry_routes = Router::new().route(
+        "/api/telemetry/client",
+        post(telemetry_http::ingest_client_logs),
+    );
 
     let onboarding_routes = Router::new()
         .route(
@@ -60,6 +89,25 @@ pub fn build_router(state: AppState) -> Router {
             auth_middleware,
         ))
         .layer(onboarding_rate_limit);
+
+    let invite_routes = Router::new()
+        .route(
+            "/organizations/{organization_id}/members",
+            post(organizations_http::invite_members_handle),
+        )
+        .route(
+            "/organizations/{organization_id}/invites/{invite_id}/resend",
+            post(organizations_http::resend_email_invite_handle),
+        )
+        .route(
+            "/organizations/{organization_id}/members/{member_id}/resend",
+            post(organizations_http::resend_invite_handle),
+        )
+        .route(
+            "/api/boards/{board_id}/members",
+            post(boards_http::invite_board_members_handle),
+        )
+        .route_layer(invite_rate_limit);
 
     let verified_routes = Router::new()
         .route("/users/me", get(auth_http::get_me_handle))
@@ -89,8 +137,7 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route(
             "/organizations/{organization_id}/members",
-            get(organizations_http::list_members_handle)
-                .post(organizations_http::invite_members_handle),
+            get(organizations_http::list_members_handle),
         )
         .route(
             "/organizations/{organization_id}/usage",
@@ -109,10 +156,6 @@ pub fn build_router(state: AppState) -> Router {
             delete(organizations_http::cancel_email_invite_handle),
         )
         .route(
-            "/organizations/{organization_id}/invites/{invite_id}/resend",
-            post(organizations_http::resend_email_invite_handle),
-        )
-        .route(
             "/organizations/{organization_id}/members/{member_id}",
             patch(organizations_http::update_member_role_handle)
                 .delete(organizations_http::remove_member_handle),
@@ -124,10 +167,6 @@ pub fn build_router(state: AppState) -> Router {
         .route(
             "/organizations/{organization_id}/members/{member_id}/decline",
             delete(organizations_http::decline_invite_handle),
-        )
-        .route(
-            "/organizations/{organization_id}/members/{member_id}/resend",
-            post(organizations_http::resend_invite_handle),
         )
         .route("/api/boards/", post(boards_http::create_board_handle))
         .route("/api/boards/list", get(boards_http::get_board_handle))
@@ -159,8 +198,7 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route(
             "/api/boards/{board_id}/members",
-            get(boards_http::list_board_members_handle)
-                .post(boards_http::invite_board_members_handle),
+            get(boards_http::list_board_members_handle),
         )
         .route(
             "/api/boards/{board_id}/members/{member_id}",
@@ -180,6 +218,7 @@ pub fn build_router(state: AppState) -> Router {
             "/api/boards/{board_id}/elements/{element_id}/restore",
             post(elements_http::restore_board_element_handle),
         )
+        .merge(invite_routes)
         // Layer order matters: auth must run before verified.
         .layer(middleware::from_fn_with_state(
             state.clone(),
@@ -212,7 +251,7 @@ pub fn build_router(state: AppState) -> Router {
         .with_state(state)
 }
 
-fn build_auth_rate_limiter() -> GovernorLayer {
+fn build_auth_rate_limiter() -> GovernorLayer<PeerIpKeyExtractor, NoOpMiddleware> {
     let per_second = std::env::var("AUTH_RATE_LIMIT_PER_SECOND")
         .ok()
         .and_then(|value| value.parse::<u32>().ok())
@@ -223,12 +262,36 @@ fn build_auth_rate_limiter() -> GovernorLayer {
         .and_then(|value| value.parse::<u32>().ok())
         .filter(|value| *value > 0)
         .unwrap_or(10);
-    let config = GovernorConfigBuilder::default()
-        .per_second(NonZeroU32::new(per_second).expect("rate limit per_second must be non-zero"))
-        .burst_size(NonZeroU32::new(burst_size).expect("rate limit burst must be non-zero"))
-        .finish()
-        .expect("rate limiter config");
-    GovernorLayer::new(config)
+    let config = Arc::new(
+        GovernorConfigBuilder::default()
+            .per_second(u64::from(per_second))
+            .burst_size(burst_size)
+            .finish()
+            .expect("rate limiter config"),
+    );
+    GovernorLayer { config }
+}
+
+fn build_invite_rate_limiter() -> GovernorLayer<InviteKeyExtractor, NoOpMiddleware> {
+    let per_second = std::env::var("INVITE_RATE_LIMIT_PER_SECOND")
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(1);
+    let burst_size = std::env::var("INVITE_RATE_LIMIT_BURST")
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(5);
+    let config = Arc::new(
+        GovernorConfigBuilder::default()
+            .key_extractor(InviteKeyExtractor)
+            .per_second(u64::from(per_second))
+            .burst_size(burst_size)
+            .finish()
+            .expect("invite rate limiter config"),
+    );
+    GovernorLayer { config }
 }
 
 fn build_cors_layer() -> CorsLayer {
@@ -268,4 +331,44 @@ fn build_cors_layer() -> CorsLayer {
     }
 
     cors.allow_origin("http://localhost:5173".parse::<HeaderValue>().unwrap())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::Request;
+    use std::net::IpAddr;
+    use tower_governor::key_extractor::KeyExtractor;
+    use uuid::Uuid;
+
+    #[test]
+    fn invite_key_extractor_falls_back_to_ip() {
+        let request = Request::builder()
+            .uri("/")
+            .header("x-forwarded-for", "203.0.113.9")
+            .body(())
+            .expect("request");
+        let extractor = InviteKeyExtractor;
+        let key = extractor.extract(&request).expect("key");
+        let expected_ip: IpAddr = "203.0.113.9".parse().expect("ip");
+        assert!(matches!(key, InviteRateLimitKey::Ip(ip) if ip == expected_ip));
+    }
+
+    #[test]
+    fn invite_key_extractor_uses_auth_user() {
+        let user_id = Uuid::new_v4();
+        let auth_user = AuthUser {
+            user_id,
+            email: "owner@example.com".to_string(),
+        };
+        let mut request = Request::builder()
+            .uri("/")
+            .header("x-forwarded-for", "203.0.113.11")
+            .body(())
+            .expect("request");
+        request.extensions_mut().insert(auth_user);
+        let extractor = InviteKeyExtractor;
+        let key = extractor.extract(&request).expect("key");
+        assert!(matches!(key, InviteRateLimitKey::User(id) if id == user_id));
+    }
 }
