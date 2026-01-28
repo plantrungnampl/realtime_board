@@ -7,11 +7,17 @@ pub(crate) const DEFAULT_INVITE_EMAIL_LIMIT: usize = 25;
 pub(crate) fn collect_invite_emails(
     email: Option<String>,
     email_list: Option<Vec<String>>,
-    limit_override: Option<usize>,
+) -> Result<Vec<String>, AppError> {
+    collect_invite_emails_with_limit(email, email_list, DEFAULT_INVITE_EMAIL_LIMIT)
+}
+
+pub(crate) fn collect_invite_emails_with_limit(
+    email: Option<String>,
+    email_list: Option<Vec<String>>,
+    limit: usize,
 ) -> Result<Vec<String>, AppError> {
     let emails = merge_invite_emails(email, email_list);
-    let cleaned = normalize_invite_emails(emails)?;
-    enforce_invite_email_limit(cleaned.len(), limit_override)?;
+    let cleaned = normalize_invite_emails(emails, limit)?;
     validate_invite_emails(&cleaned)?;
     Ok(cleaned)
 }
@@ -27,7 +33,7 @@ fn merge_invite_emails(email: Option<String>, email_list: Option<Vec<String>>) -
     emails
 }
 
-fn normalize_invite_emails(emails: Vec<String>) -> Result<Vec<String>, AppError> {
+fn normalize_invite_emails(emails: Vec<String>, limit: usize) -> Result<Vec<String>, AppError> {
     let mut unique = HashSet::new();
     let mut cleaned = Vec::new();
     for email in emails {
@@ -43,6 +49,12 @@ fn normalize_invite_emails(emails: Vec<String>) -> Result<Vec<String>, AppError>
             )));
         }
         cleaned.push(normalized);
+        if cleaned.len() > limit {
+            return Err(AppError::ValidationError(format!(
+                "Invite email limit exceeded (max {})",
+                limit
+            )));
+        }
     }
 
     if cleaned.is_empty() {
@@ -52,20 +64,6 @@ fn normalize_invite_emails(emails: Vec<String>) -> Result<Vec<String>, AppError>
     }
 
     Ok(cleaned)
-}
-
-fn enforce_invite_email_limit(
-    count: usize,
-    limit_override: Option<usize>,
-) -> Result<(), AppError> {
-    let limit = limit_override.unwrap_or(DEFAULT_INVITE_EMAIL_LIMIT);
-    if count > limit {
-        return Err(AppError::ValidationError(format!(
-            "Invite email limit exceeded (max {})",
-            limit
-        )));
-    }
-    Ok(())
 }
 
 fn validate_invite_emails(emails: &[String]) -> Result<(), AppError> {
@@ -134,7 +132,6 @@ mod tests {
         let result = collect_invite_emails(
             Some("  Alice@Example.com  ".to_string()),
             Some(vec![" Bob@Example.com".to_string()]),
-            None,
         );
 
         assert_eq!(
@@ -148,7 +145,6 @@ mod tests {
         let result = collect_invite_emails(
             Some("Test@Example.com".to_string()),
             Some(vec![" test@example.com ".to_string()]),
-            None,
         );
 
         assert_validation_error_contains(result, "Duplicate email in invite list");
@@ -156,28 +152,43 @@ mod tests {
 
     #[test]
     fn rejects_invalid_emails() {
-        let result = collect_invite_emails(None, Some(vec!["invalid".to_string()]), None);
+        let result = collect_invite_emails(None, Some(vec!["invalid".to_string()]));
 
         assert_validation_error_contains(result, "Invalid email(s)");
     }
 
     #[test]
     fn rejects_empty_email_list() {
-        let result = collect_invite_emails(None, Some(vec!["   ".to_string()]), None);
+        let result = collect_invite_emails(None, Some(vec!["   ".to_string()]));
 
         assert_validation_error_contains(result, "At least one email is required");
     }
 
     #[test]
     fn rejects_when_invite_list_exceeds_limit() {
-        let result = collect_invite_emails(
+        let result = collect_invite_emails_with_limit(
             None,
             Some(vec![
                 "first@example.com".to_string(),
                 "second@example.com".to_string(),
                 "third@example.com".to_string(),
             ]),
-            Some(2),
+            2,
+        );
+
+        assert_validation_error_contains(result, "Invite email limit exceeded");
+    }
+
+    #[test]
+    fn rejects_limit_before_duplicate_after_exceeding() {
+        let result = collect_invite_emails_with_limit(
+            None,
+            Some(vec![
+                "first@example.com".to_string(),
+                "second@example.com".to_string(),
+                "second@example.com".to_string(),
+            ]),
+            1,
         );
 
         assert_validation_error_contains(result, "Invite email limit exceeded");

@@ -109,7 +109,7 @@ impl OrganizationService {
             role,
         } = req;
         let role = normalize_invite_role(role)?;
-        let emails = collect_invite_emails(email, emails, None)?;
+        let emails = collect_invite_emails(email, emails)?;
         let (users, pending_emails) = split_invite_targets(pool, &emails).await?;
         let current_members = org_repo::count_organization_members(pool, organization_id).await?;
         let current_invites =

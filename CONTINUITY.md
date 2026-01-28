@@ -1,42 +1,34 @@
 Goal (incl. success criteria):
-- Implement shared invite email validation helpers with batch size cap and unit tests; remove duplicate helpers from board/org invite flows; update call sites; tests cover normalization, duplicates, invalid email, empty list, and batch size exceeded.
+- Fix invite email validation: enforce limit during normalization (short-circuit), add `collect_invite_emails_with_limit` wrapper and default wrapper without Option, update call sites, adjust tests, run tests, and commit fix.
 
 Constraints/Assumptions:
-- Must read docs/README.md and all docs/*.md before analysis.
+- Must read docs/README.md and docs/*.md before analysis.
 - Follow AGENTS.md rules; use skills: context-compression, context-fundamentals, tool-design (always) + using-superpowers + rust-axum-backend + security-review + TDD skills.
 - No git push without explicit user confirmation.
 - Use AppError for validation errors.
-- Default invite email limit is 25 with per-call override for tests.
+- Invite limit error message: `Invite email limit exceeded (max {limit})`.
 
 Key decisions:
-- Invite limit error message must be: `Invite email limit exceeded (max {limit})`.
+- Enforce limit inside normalization loop; default wrapper without Option plus `collect_invite_emails_with_limit`.
 
 State:
   - Done:
-    - Loaded skill guides (using-superpowers, context-compression, context-fundamentals, tool-design, rust-axum-backend, security-review, TDD).
-    - Refreshed CONTINUITY.md for current task.
-    - Read docs/README.md and docs/*.md (top-level).
-    - Read doc/Rust_Style_Guide.md.
-    - Added `src/usecases/invites.rs` with tests and shared helper implementation.
-    - Added `pub(crate) mod invites;` in `src/usecases/mod.rs`.
-    - Ran `cargo test normalizes_and_lowercases_emails` (failed at stub before implementation).
-    - Wired board/org invite flows to shared helper; removed duplicate helper functions.
-    - Updated docs/CHANGELOG.md with invite validation consolidation entry.
+    - Loaded required skills for this turn.
+    - Read CONTINUITY.md at turn start.
+    - Updated invite tests for new wrapper API and added early-limit coverage.
+    - Implemented `collect_invite_emails_with_limit` wrapper and limit short-circuit during normalization.
+    - Updated board/org invite call sites to new wrapper signature.
     - Ran `cargo test usecases::invites` (passes; existing warnings remain).
   - Now:
-    - Self-review changes and prepare commit.
+    - Commit changes (new commit) after review.
   - Next:
-    - Commit changes (Conventional Commit) after review.
+    - Await user instructions (no git push without approval).
 
 Open questions (UNCONFIRMED if needed):
 - None.
 
 Working set (files/ids/commands):
 - CONTINUITY.md
-- docs/README.md
-- docs/*.md
+- src/usecases/invites.rs
 - src/usecases/boards.rs
-- src/usecases/organizations/helpers.rs
 - src/usecases/organizations/invites.rs
-- src/usecases/invites.rs (new)
-- src/usecases/mod.rs

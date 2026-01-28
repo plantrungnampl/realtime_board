@@ -477,7 +477,7 @@ impl BoardService {
             role,
         } = req;
         let role = normalize_board_role(role)?;
-        let emails = collect_invite_emails(email, emails, None)?;
+        let emails = collect_invite_emails(email, emails)?;
         let users = load_invite_users(pool, &emails).await?;
         let organization_id = board_repo::load_board_organization_id(pool, board_id).await?;
         if let Some(org_id) = organization_id {
