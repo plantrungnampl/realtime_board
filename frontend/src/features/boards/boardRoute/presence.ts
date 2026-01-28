@@ -229,6 +229,9 @@ export const areDragPresenceEqual = (a: DragPresence | null, b: DragPresence | n
   );
 };
 
+// IMPORTANT: This equality check must stay in sync with the CursorBroadcast type.
+// If new fields are added to CursorBroadcast, they must be added here to ensure
+// proper memoization of cursor updates.
 export const areCursorsEqual = (a: CursorBroadcast, b: CursorBroadcast) => {
   if (a === b) return true;
   return (
