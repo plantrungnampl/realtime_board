@@ -2,6 +2,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
+    auth::invite_tokens::{generate_invite_token, hash_invite_token},
     dto::organizations::{
         InviteMembersRequest, InviteMembersResponse, InviteValidationResponse,
         OrganizationActionMessage, OrganizationEmailInviteResponse,
@@ -17,11 +18,11 @@ use crate::{
 };
 
 use super::{
+    OrganizationService,
     helpers::{
         ensure_manager, ensure_member_capacity, normalize_invite_role, require_member_role,
         split_invite_targets,
     },
-    OrganizationService,
 };
 
 impl OrganizationService {
@@ -62,14 +63,13 @@ impl OrganizationService {
             ));
         }
 
-        let invite = org_repo::get_email_invite_by_token(pool, trimmed_token, trimmed_email)
+        let invite_token_hash = hash_invite_token(trimmed_token);
+        let invite = org_repo::get_email_invite_by_token(pool, &invite_token_hash, trimmed_email)
             .await?
             .ok_or(AppError::NotFound("Invitation not found".to_string()))?;
         if let Some(expires_at) = invite.invite_expires_at {
             if expires_at < chrono::Utc::now() {
-                return Err(AppError::BadRequest(
-                    "Invitation has expired".to_string(),
-                ));
+                return Err(AppError::BadRequest("Invitation has expired".to_string()));
             }
         }
 
@@ -142,14 +142,15 @@ impl OrganizationService {
                     email
                 )));
             }
-            let token = Uuid::new_v4().simple().to_string();
+            let token = generate_invite_token();
+            let invite_token_hash = hash_invite_token(&token);
             org_repo::create_email_invite(
                 &mut tx,
                 organization_id,
                 email,
                 role,
                 invited_by,
-                &token,
+                &invite_token_hash,
                 invite_expires_at,
             )
             .await?;
@@ -312,14 +313,15 @@ impl OrganizationService {
             .ok_or(AppError::NotFound("Email invite not found".to_string()))?;
 
         let invite_expires_at = chrono::Utc::now().checked_add_signed(chrono::Duration::days(7));
-        let token = Uuid::new_v4().simple().to_string();
+        let token = generate_invite_token();
+        let invite_token_hash = hash_invite_token(&token);
 
         let mut tx = pool.begin().await?;
         org_repo::resend_email_invite(
             &mut tx,
             organization_id,
             invite_id,
-            &token,
+            &invite_token_hash,
             invite_expires_at,
         )
         .await?;

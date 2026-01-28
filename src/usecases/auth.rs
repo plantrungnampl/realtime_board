@@ -1,6 +1,7 @@
 use uuid::Uuid;
 
 use crate::{
+    auth::invite_tokens::hash_invite_token,
     auth::jwt::{JwtConfig, hash_password, verify_password_user},
     dto::auth::{
         ChangePasswordRequest, DeleteAccountRequest, LoginRequest, LoginResponse, RegisterRequest,
@@ -57,7 +58,8 @@ impl UserServices {
             .map(str::trim)
             .filter(|value| !value.is_empty());
         let invite = if let Some(token) = invite_token {
-            let invite = org_repo::get_email_invite_by_token(pool, token, &email)
+            let invite_token_hash = hash_invite_token(token);
+            let invite = org_repo::get_email_invite_by_token(pool, &invite_token_hash, &email)
                 .await?
                 .ok_or(AppError::BadRequest(
                     "Invitation is invalid or expired".to_string(),

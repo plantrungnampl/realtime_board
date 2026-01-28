@@ -252,7 +252,7 @@ pub async fn get_email_invite_by_id(
 /// Returns a pre-signup invite by token + email.
 pub async fn get_email_invite_by_token(
     pool: &PgPool,
-    invite_token: &str,
+    invite_token_hash: &str,
     email: &str,
 ) -> Result<Option<OrganizationInviteRecord>, AppError> {
     let invite = crate::log_query_fetch_optional!(
@@ -268,11 +268,11 @@ pub async fn get_email_invite_by_token(
                     invited_at,
                     invite_expires_at
                 FROM core.organization_invite
-                WHERE invite_token = $1
+                WHERE invite_token_hash = $1
                 AND LOWER(email) = LOWER($2)
             "#,
         )
-        .bind(invite_token)
+        .bind(invite_token_hash)
         .bind(email)
         .fetch_optional(pool)
     )?;
@@ -344,7 +344,7 @@ pub async fn create_email_invite(
     email: &str,
     role: OrgRole,
     invited_by: Uuid,
-    invite_token: &str,
+    invite_token_hash: &str,
     invite_expires_at: Option<chrono::DateTime<chrono::Utc>>,
 ) -> Result<(), AppError> {
     crate::log_query_execute!(
@@ -357,17 +357,18 @@ pub async fn create_email_invite(
                     role,
                     invited_by,
                     invited_at,
+                    invite_token_hash,
                     invite_token,
                     invite_expires_at
                 )
-                VALUES ($1, $2, $3, $4, NOW(), $5, $6)
+                VALUES ($1, $2, $3, $4, NOW(), $5, NULL, $6)
             "#,
         )
         .bind(organization_id)
         .bind(email)
         .bind(role)
         .bind(invited_by)
-        .bind(invite_token)
+        .bind(invite_token_hash)
         .bind(invite_expires_at)
         .execute(&mut **tx)
     )
@@ -381,7 +382,7 @@ pub async fn resend_email_invite(
     tx: &mut Transaction<'_, Postgres>,
     organization_id: Uuid,
     invite_id: Uuid,
-    invite_token: &str,
+    invite_token_hash: &str,
     invite_expires_at: Option<chrono::DateTime<chrono::Utc>>,
 ) -> Result<(), AppError> {
     crate::log_query_execute!(
@@ -390,7 +391,8 @@ pub async fn resend_email_invite(
             r#"
                 UPDATE core.organization_invite
                 SET invited_at = NOW(),
-                    invite_token = $3,
+                    invite_token_hash = $3,
+                    invite_token = NULL,
                     invite_expires_at = $4
                 WHERE organization_id = $1
                 AND id = $2
@@ -398,7 +400,7 @@ pub async fn resend_email_invite(
         )
         .bind(organization_id)
         .bind(invite_id)
-        .bind(invite_token)
+        .bind(invite_token_hash)
         .bind(invite_expires_at)
         .execute(&mut **tx)
     )?;
