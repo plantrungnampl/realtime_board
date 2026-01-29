@@ -11,5 +11,5 @@
 **Action:** Use `exact=True` (e.g., `get_by_label("Password", exact=True)`) when a label might be a substring of another accessible element's name.
 
 ## 2024-10-24 - Visual Consistency & Focus States
-**Learning:** Inconsistent focus states between similar flows (e.g., Login vs Register) creates a disjointed experience for keyboard users.
+**Learning:** Inconsistent focus states between similar flows (e.g., Login vs Register) create a disjointed experience for keyboard users.
 **Action:** Audit and align `focus-visible` styles across all authentication forms to ensure a cohesive accessible experience.

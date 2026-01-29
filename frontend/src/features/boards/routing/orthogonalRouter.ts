@@ -421,8 +421,8 @@ export const routeOrthogonalPath = (
       if (!cached) {
         graphCache.set(cacheKey, graph);
         if (graphCache.size > GRAPH_CACHE_LIMIT) {
-          const oldest = graphCache.keys().next().value;
-          if (oldest !== undefined) {
+          const { value: oldest, done } = graphCache.keys().next();
+          if (!done) {
             graphCache.delete(oldest);
           }
         }
