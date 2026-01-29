@@ -36,29 +36,73 @@ type State = {
   dir: Direction;
 };
 
-const popLowestFScore = (
-  open: State[],
-  fScore: Map<StateKey, number>,
-): State | null => {
-  if (open.length === 0) return null;
-  let bestIndex = 0;
-  let bestScore = fScore.get(open[0].key) ?? Number.POSITIVE_INFINITY;
-  for (let i = 1; i < open.length; i += 1) {
-    const score = fScore.get(open[i].key) ?? Number.POSITIVE_INFINITY;
-    if (score < bestScore) {
-      bestScore = score;
-      bestIndex = i;
+class MinHeap<T> {
+  private content: { item: T; score: number }[] = [];
+
+  push(item: T, score: number) {
+    this.content.push({ item, score });
+    this.bubbleUp(this.content.length - 1);
+  }
+
+  pop(): T | undefined {
+    const result = this.content[0];
+    const end = this.content.pop();
+    if (this.content.length > 0 && end) {
+      this.content[0] = end;
+      this.bubbleDown(0);
+    }
+    return result?.item;
+  }
+
+  size(): number {
+    return this.content.length;
+  }
+
+  private bubbleUp(n: number) {
+    const element = this.content[n];
+    let index = n;
+    while (index > 0) {
+      const parentN = Math.floor((index + 1) / 2) - 1;
+      const parent = this.content[parentN];
+      if (element.score >= parent.score) break;
+      this.content[parentN] = element;
+      this.content[index] = parent;
+      index = parentN;
     }
   }
-  // Perf: avoid per-iteration sort by scanning for the best state in O(n).
-  const lastIndex = open.length - 1;
-  const best = open[bestIndex];
-  if (bestIndex !== lastIndex) {
-    open[bestIndex] = open[lastIndex];
+
+  private bubbleDown(n: number) {
+    const length = this.content.length;
+    const element = this.content[n];
+    let index = n;
+
+    while (true) {
+      const child2N = (index + 1) * 2;
+      const child1N = child2N - 1;
+      let swap: number | null = null;
+
+      if (child1N < length) {
+        const child1 = this.content[child1N];
+        if (child1.score < element.score) {
+          swap = child1N;
+        }
+      }
+
+      if (child2N < length) {
+        const child2 = this.content[child2N];
+        const child1 = this.content[child1N];
+        if (child2.score < (swap === null ? element.score : child1.score)) {
+          swap = child2N;
+        }
+      }
+
+      if (swap === null) break;
+      this.content[index] = this.content[swap];
+      this.content[swap] = element;
+      index = swap;
+    }
   }
-  open.pop();
-  return best;
-};
+}
 
 const DEFAULT_PADDING = 12;
 const DEFAULT_MARGIN = 320;
@@ -422,7 +466,9 @@ export const routeOrthogonalPath = (
         graphCache.set(cacheKey, graph);
         if (graphCache.size > GRAPH_CACHE_LIMIT) {
           const oldest = graphCache.keys().next().value;
-          graphCache.delete(oldest);
+          if (oldest !== undefined) {
+            graphCache.delete(oldest);
+          }
         }
       }
       const { nodes, edges, tooDense } = graph;
@@ -446,7 +492,7 @@ export const routeOrthogonalPath = (
         continue;
       }
 
-      const open: State[] = [];
+      const open = new MinHeap<State>();
       const gScore = new Map<StateKey, number>();
       const fScore = new Map<StateKey, number>();
       const cameFrom = new Map<StateKey, StateKey>();
@@ -454,8 +500,9 @@ export const routeOrthogonalPath = (
 
       const startStateKey = stateKey(startNode, null);
       gScore.set(startStateKey, 0);
-      fScore.set(startStateKey, heuristic(startNode, endNode));
-      open.push({ key: startStateKey, node: startNode, dir: null });
+      const startF = heuristic(startNode, endNode);
+      fScore.set(startStateKey, startF);
+      open.push({ key: startStateKey, node: startNode, dir: null }, startF);
       nodeMap.set(startStateKey, startNode);
 
       const visited = new Set<StateKey>();
@@ -463,7 +510,7 @@ export const routeOrthogonalPath = (
       let foundPath: Node[] | null = null;
       const startedAt = performance.now();
       let iterations = 0;
-      while (open.length > 0) {
+      while (open.size() > 0) {
         iterations += 1;
         if (iterations > maxIterations) {
           if (shouldDebugRouting()) {
@@ -491,7 +538,7 @@ export const routeOrthogonalPath = (
           }
           break;
         }
-        const current = popLowestFScore(open, fScore);
+        const current = open.pop();
         if (!current) break;
         if (current.node.x === endNode.x && current.node.y === endNode.y) {
           const path = reconstructPath(cameFrom, current.key, nodeMap);
@@ -514,9 +561,10 @@ export const routeOrthogonalPath = (
           if (bestKnown === undefined || tentativeG < bestKnown) {
             cameFrom.set(nextKey, current.key);
             gScore.set(nextKey, tentativeG);
-            fScore.set(nextKey, tentativeG + heuristic(neighbor, endNode));
+            const f = tentativeG + heuristic(neighbor, endNode);
+            fScore.set(nextKey, f);
             nodeMap.set(nextKey, neighbor);
-            open.push({ key: nextKey, node: neighbor, dir });
+            open.push({ key: nextKey, node: neighbor, dir }, f);
           }
         });
       }
