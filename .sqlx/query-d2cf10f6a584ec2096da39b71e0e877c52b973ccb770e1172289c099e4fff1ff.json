@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT update_bin, seq\n            FROM crdt.board_update\n            WHERE board_id = $1 AND seq > $2\n            ORDER BY seq ASC\n            LIMIT $3\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "update_bin",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "seq",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "d2cf10f6a584ec2096da39b71e0e877c52b973ccb770e1172289c099e4fff1ff"
+}
