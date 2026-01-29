@@ -16,31 +16,33 @@ pub struct AuthUser {
     pub email: String,
 }
 
-fn extract_token(req: &Request, allow_query_param: bool) -> Option<String> {
+fn extract_token_from_header(req: &Request) -> Option<String> {
     req.headers()
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
         .and_then(|val| val.strip_prefix("Bearer "))
         .map(str::to_string)
-        .or_else(|| {
-            if allow_query_param {
-                let query = req.uri().query().unwrap_or("");
-                let params: std::collections::HashMap<String, String> =
-                    serde_urlencoded::from_str(query).unwrap_or_default();
-                params.get("token").cloned()
-            } else {
-                None
-            }
-        })
 }
 
-async fn auth_middleware_inner(
+fn extract_token_from_header_or_query(req: &Request) -> Option<String> {
+    extract_token_from_header(req).or_else(|| {
+        let query = req.uri().query().unwrap_or("");
+        let params: std::collections::HashMap<String, String> =
+            serde_urlencoded::from_str(query).unwrap_or_default();
+        params.get("token").cloned()
+    })
+}
+
+async fn authenticate_with_extractor<F>(
     state: AppState,
     mut req: Request,
     next: Next,
-    allow_query_param: bool,
-) -> Result<Response, AppError> {
-    let token = extract_token(&req, allow_query_param).ok_or(AppError::Unauthorized(
+    extract: F,
+) -> Result<Response, AppError>
+where
+    F: Fn(&Request) -> Option<String>,
+{
+    let token = extract(&req).ok_or(AppError::Unauthorized(
         "Missing authorization token".to_string(),
     ))?;
 
@@ -68,7 +70,7 @@ pub async fn auth_middleware(
     req: Request,
     next: Next,
 ) -> Result<Response, AppError> {
-    auth_middleware_inner(state, req, next, false).await
+    authenticate_with_extractor(state, req, next, extract_token_from_header).await
 }
 
 pub async fn auth_middleware_flexible(
@@ -76,7 +78,7 @@ pub async fn auth_middleware_flexible(
     req: Request,
     next: Next,
 ) -> Result<Response, AppError> {
-    auth_middleware_inner(state, req, next, true).await
+    authenticate_with_extractor(state, req, next, extract_token_from_header_or_query).await
 }
 
 pub async fn verified_middleware(
@@ -109,7 +111,7 @@ mod tests {
             .unwrap();
         // Even with query param allowed, header should take precedence
         assert_eq!(
-            extract_token(&req, true),
+            extract_token_from_header_or_query(&req),
             Some("header_token".to_string())
         );
     }
@@ -120,7 +122,7 @@ mod tests {
             .uri("/?token=query_token")
             .body(Body::empty())
             .unwrap();
-        assert_eq!(extract_token(&req, false), None);
+        assert_eq!(extract_token_from_header(&req), None);
     }
 
     #[test]
@@ -130,7 +132,7 @@ mod tests {
             .body(Body::empty())
             .unwrap();
         assert_eq!(
-            extract_token(&req, true),
+            extract_token_from_header_or_query(&req),
             Some("query_token".to_string())
         );
     }
