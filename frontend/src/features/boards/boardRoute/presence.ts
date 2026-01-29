@@ -55,6 +55,26 @@ const CURSOR_COLORS = [
 ];
 const FALLBACK_CURSOR_COLOR = "#EAB308";
 
+const DRAG_PRESENCE_KEYS: (keyof DragPresence)[] = [
+  "element_id",
+  "position_x",
+  "position_y",
+  "width",
+  "height",
+  "rotation",
+];
+
+const CURSOR_BROADCAST_KEYS: (keyof CursorBroadcast)[] = [
+  "client_id",
+  "user_id",
+  "user_name",
+  "x",
+  "y",
+  "color",
+  "status",
+  "avatar_url",
+];
+
 const asRecord = (value: unknown): Record<string, unknown> | null => {
   if (!value || typeof value !== "object") return null;
   return value as Record<string, unknown>;
@@ -128,10 +148,9 @@ export const parseBoardJoinedPayload = (
   };
 };
 
-export const buildCursorMap = (
+export const buildRawCursorMap = (
   awareness: Awareness,
   cursorIdleMs: number,
-  previous?: Record<string, CursorBroadcast>,
 ): Record<string, CursorBroadcast> => {
   const selected: Record<string, CursorBroadcast & { last_seen: number }> = {};
   const now = Date.now();
@@ -173,12 +192,9 @@ export const buildCursorMap = (
       last_seen: lastSeen,
     };
   });
-
   const next: Record<string, CursorBroadcast> = {};
-  let allReused = true;
-
   Object.entries(selected).forEach(([key, value]) => {
-    const candidate: CursorBroadcast = {
+    next[key] = {
       client_id: value.client_id,
       user_id: value.user_id,
       user_name: value.user_name,
@@ -189,24 +205,46 @@ export const buildCursorMap = (
       status: value.status,
       dragging: value.dragging ?? null,
     };
+  });
+  return next;
+};
 
-    if (previous && previous[key] && areCursorsEqual(candidate, previous[key])) {
-      next[key] = previous[key];
+export const reuseCursorMapIfUnchanged = (
+  previous: Record<string, CursorBroadcast> | undefined,
+  next: Record<string, CursorBroadcast>,
+): Record<string, CursorBroadcast> => {
+  if (!previous) return next;
+
+  let allReused = true;
+  const reused: Record<string, CursorBroadcast> = {};
+
+  for (const [key, candidate] of Object.entries(next)) {
+    const prev = previous[key];
+    if (prev && areCursorsEqual(candidate, prev)) {
+      reused[key] = prev;
     } else {
-      next[key] = candidate;
+      reused[key] = candidate;
       allReused = false;
     }
-  });
+  }
 
   if (
     allReused
-    && previous
-    && Object.keys(next).length === Object.keys(previous).length
+    && Object.keys(previous).length === Object.keys(next).length
   ) {
     return previous;
   }
 
-  return next;
+  return reused;
+};
+
+export const buildCursorMap = (
+  awareness: Awareness,
+  cursorIdleMs: number,
+  previous?: Record<string, CursorBroadcast>,
+): Record<string, CursorBroadcast> => {
+  const next = buildRawCursorMap(awareness, cursorIdleMs);
+  return reuseCursorMapIfUnchanged(previous, next);
 };
 
 export const normalizeSelectionIds = (value: unknown): string[] => {
@@ -234,14 +272,10 @@ export const areDragPresencesEqual = (
 ) => {
   if (left === right) return true;
   if (!left || !right) return false;
-  return (
-    left.element_id === right.element_id
-    && left.position_x === right.position_x
-    && left.position_y === right.position_y
-    && left.width === right.width
-    && left.height === right.height
-    && left.rotation === right.rotation
-  );
+  for (const key of DRAG_PRESENCE_KEYS) {
+    if (left[key] !== right[key]) return false;
+  }
+  return true;
 };
 
 export const areCursorsEqual = (
@@ -249,17 +283,10 @@ export const areCursorsEqual = (
   right: CursorBroadcast,
 ) => {
   if (left === right) return true;
-  return (
-    left.client_id === right.client_id
-    && left.user_id === right.user_id
-    && left.user_name === right.user_name
-    && left.x === right.x
-    && left.y === right.y
-    && left.color === right.color
-    && left.status === right.status
-    && left.avatar_url === right.avatar_url
-    && areDragPresencesEqual(left.dragging ?? null, right.dragging ?? null)
-  );
+  for (const key of CURSOR_BROADCAST_KEYS) {
+    if (left[key] !== right[key]) return false;
+  }
+  return areDragPresencesEqual(left.dragging ?? null, right.dragging ?? null);
 };
 
 const normalizeEditingPresence = (value: unknown) => {
