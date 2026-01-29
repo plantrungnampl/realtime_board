@@ -25,7 +25,7 @@ use crate::{
         ws::boards as boards_ws,
     },
     app::state::AppState,
-    auth::middleware::{AuthUser, auth_middleware, verified_middleware},
+    auth::middleware::{AuthUser, auth_middleware, auth_middleware_flexible, verified_middleware},
     telemetry,
 };
 
@@ -243,7 +243,7 @@ pub fn build_router(state: AppState) -> Router {
         ))
         .layer(middleware::from_fn_with_state(
             state.clone(),
-            auth_middleware,
+            auth_middleware_flexible,
         ));
 
     Router::new()

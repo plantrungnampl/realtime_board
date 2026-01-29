@@ -16,26 +16,33 @@ pub struct AuthUser {
     pub email: String,
 }
 
-pub async fn auth_middleware(
-    State(state): State<AppState>,
-    mut req: Request,
-    next: Next,
-) -> Result<Response, AppError> {
-    let token = req
-        .headers()
+fn extract_token(req: &Request, allow_query_param: bool) -> Option<String> {
+    req.headers()
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
         .and_then(|val| val.strip_prefix("Bearer "))
         .map(str::to_string)
         .or_else(|| {
-            let query = req.uri().query().unwrap_or("");
-            let params: std::collections::HashMap<String, String> =
-                serde_urlencoded::from_str(query).unwrap_or_default();
-            params.get("token").cloned()
+            if allow_query_param {
+                let query = req.uri().query().unwrap_or("");
+                let params: std::collections::HashMap<String, String> =
+                    serde_urlencoded::from_str(query).unwrap_or_default();
+                params.get("token").cloned()
+            } else {
+                None
+            }
         })
-        .ok_or(AppError::Unauthorized(
-            "Missing authorization token".to_string(),
-        ))?;
+}
+
+async fn auth_middleware_inner(
+    state: AppState,
+    mut req: Request,
+    next: Next,
+    allow_query_param: bool,
+) -> Result<Response, AppError> {
+    let token = extract_token(&req, allow_query_param).ok_or(AppError::Unauthorized(
+        "Missing authorization token".to_string(),
+    ))?;
 
     let jwt_config = state.jwt_config.clone();
 
@@ -56,6 +63,22 @@ pub async fn auth_middleware(
     Ok(next.run(req).await)
 }
 
+pub async fn auth_middleware(
+    State(state): State<AppState>,
+    req: Request,
+    next: Next,
+) -> Result<Response, AppError> {
+    auth_middleware_inner(state, req, next, false).await
+}
+
+pub async fn auth_middleware_flexible(
+    State(state): State<AppState>,
+    req: Request,
+    next: Next,
+) -> Result<Response, AppError> {
+    auth_middleware_inner(state, req, next, true).await
+}
+
 pub async fn verified_middleware(
     State(state): State<AppState>,
     Extension(auth_user): Extension<AuthUser>,
@@ -70,4 +93,45 @@ pub async fn verified_middleware(
     }
 
     Ok(next.run(req).await)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{body::Body, http::Request};
+
+    #[test]
+    fn extract_token_header_priority() {
+        let req = Request::builder()
+            .header("Authorization", "Bearer header_token")
+            .uri("/?token=query_token")
+            .body(Body::empty())
+            .unwrap();
+        // Even with query param allowed, header should take precedence
+        assert_eq!(
+            extract_token(&req, true),
+            Some("header_token".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_token_strict_ignores_query() {
+        let req = Request::builder()
+            .uri("/?token=query_token")
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(extract_token(&req, false), None);
+    }
+
+    #[test]
+    fn extract_token_flexible_allows_query() {
+        let req = Request::builder()
+            .uri("/?token=query_token")
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(
+            extract_token(&req, true),
+            Some("query_token".to_string())
+        );
+    }
 }
