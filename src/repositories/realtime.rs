@@ -76,7 +76,7 @@ pub async fn updates_after_seq_chunked(
     start_seq: i64,
     limit: i64,
 ) -> Result<Vec<(i64, Vec<u8>)>, AppError> {
-    let records = crate::log_query_fetch_all!(
+    let records: Vec<_> = crate::log_query_fetch_all!(
         "realtime.updates_after_seq_chunked",
         sqlx::query!(
             r#"
