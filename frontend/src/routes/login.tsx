@@ -70,7 +70,10 @@ function Login() {
 
         <form onSubmit={onSubmit} className="space-y-6">
           {error && (
-            <div className="p-3 text-sm text-red-500 bg-red-500/10 border border-red-500/20 rounded-md">
+            <div
+              role="alert"
+              className="p-3 text-sm text-red-500 bg-red-500/10 border border-red-500/20 rounded-md"
+            >
               {error}
             </div>
           )}
@@ -104,7 +107,7 @@ function Login() {
               <button
                 type="button"
                 onClick={() => setShowPassword((prev) => !prev)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted transition-colors hover:text-text-primary"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 rounded-sm"
                 aria-label={showPassword ? "Hide password" : "Show password"}
                 aria-pressed={showPassword}
               >
