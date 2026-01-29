@@ -1,4 +1,5 @@
 import type { Point } from "@/features/boards/boardRoute.utils";
+import { MinHeap } from "@/lib/MinHeap";
 
 type Rect = {
   left: number;
@@ -34,30 +35,6 @@ type State = {
   key: StateKey;
   node: Node;
   dir: Direction;
-};
-
-const popLowestFScore = (
-  open: State[],
-  fScore: Map<StateKey, number>,
-): State | null => {
-  if (open.length === 0) return null;
-  let bestIndex = 0;
-  let bestScore = fScore.get(open[0].key) ?? Number.POSITIVE_INFINITY;
-  for (let i = 1; i < open.length; i += 1) {
-    const score = fScore.get(open[i].key) ?? Number.POSITIVE_INFINITY;
-    if (score < bestScore) {
-      bestScore = score;
-      bestIndex = i;
-    }
-  }
-  // Perf: avoid per-iteration sort by scanning for the best state in O(n).
-  const lastIndex = open.length - 1;
-  const best = open[bestIndex];
-  if (bestIndex !== lastIndex) {
-    open[bestIndex] = open[lastIndex];
-  }
-  open.pop();
-  return best;
 };
 
 const DEFAULT_PADDING = 12;
@@ -421,8 +398,8 @@ export const routeOrthogonalPath = (
       if (!cached) {
         graphCache.set(cacheKey, graph);
         if (graphCache.size > GRAPH_CACHE_LIMIT) {
-          const { value: oldest, done } = graphCache.keys().next();
-          if (!done) {
+          const oldest = graphCache.keys().next().value;
+          if (oldest !== undefined) {
             graphCache.delete(oldest);
           }
         }
@@ -448,16 +425,15 @@ export const routeOrthogonalPath = (
         continue;
       }
 
-      const open: State[] = [];
+      const open = new MinHeap<State>();
       const gScore = new Map<StateKey, number>();
-      const fScore = new Map<StateKey, number>();
       const cameFrom = new Map<StateKey, StateKey>();
       const nodeMap = new Map<StateKey, Node>();
 
       const startStateKey = stateKey(startNode, null);
       gScore.set(startStateKey, 0);
-      fScore.set(startStateKey, heuristic(startNode, endNode));
-      open.push({ key: startStateKey, node: startNode, dir: null });
+      const startF = heuristic(startNode, endNode);
+      open.push({ key: startStateKey, node: startNode, dir: null }, startF);
       nodeMap.set(startStateKey, startNode);
 
       const visited = new Set<StateKey>();
@@ -465,7 +441,7 @@ export const routeOrthogonalPath = (
       let foundPath: Node[] | null = null;
       const startedAt = performance.now();
       let iterations = 0;
-      while (open.length > 0) {
+      while (open.size() > 0) {
         iterations += 1;
         if (iterations > maxIterations) {
           if (shouldDebugRouting()) {
@@ -493,7 +469,7 @@ export const routeOrthogonalPath = (
           }
           break;
         }
-        const current = popLowestFScore(open, fScore);
+        const current = open.pop();
         if (!current) break;
         if (current.node.x === endNode.x && current.node.y === endNode.y) {
           const path = reconstructPath(cameFrom, current.key, nodeMap);
@@ -516,9 +492,9 @@ export const routeOrthogonalPath = (
           if (bestKnown === undefined || tentativeG < bestKnown) {
             cameFrom.set(nextKey, current.key);
             gScore.set(nextKey, tentativeG);
-            fScore.set(nextKey, tentativeG + heuristic(neighbor, endNode));
+            const f = tentativeG + heuristic(neighbor, endNode);
             nodeMap.set(nextKey, neighbor);
-            open.push({ key: nextKey, node: neighbor, dir });
+            open.push({ key: nextKey, node: neighbor, dir }, f);
           }
         });
       }
