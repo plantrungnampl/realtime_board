@@ -3,6 +3,12 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 
+#[derive(sqlx::FromRow)]
+struct BoardUpdateRow {
+    update_bin: Vec<u8>,
+    seq: i64,
+}
+
 pub async fn insert_update_log(
     pool: &PgPool,
     board_id: Uuid,
@@ -54,16 +60,16 @@ pub async fn updates_after_seq(
 ) -> Result<Vec<(i64, Vec<u8>)>, AppError> {
     let records = crate::log_query_fetch_all!(
         "realtime.updates_after_seq",
-        sqlx::query!(
+        sqlx::query_as::<_, BoardUpdateRow>(
             r#"
             SELECT update_bin, seq
             FROM crdt.board_update
             WHERE board_id = $1 AND seq > $2
             ORDER BY seq ASC
-            "#,
-            board_id,
-            start_seq
+            "#
         )
+        .bind(board_id)
+        .bind(start_seq)
         .fetch_all(pool)
     )?;
 
@@ -78,18 +84,18 @@ pub async fn updates_after_seq_chunked(
 ) -> Result<Vec<(i64, Vec<u8>)>, AppError> {
     let records = crate::log_query_fetch_all!(
         "realtime.updates_after_seq_chunked",
-        sqlx::query!(
+        sqlx::query_as::<_, BoardUpdateRow>(
             r#"
             SELECT update_bin, seq
             FROM crdt.board_update
             WHERE board_id = $1 AND seq > $2
             ORDER BY seq ASC
             LIMIT $3
-            "#,
-            board_id,
-            start_seq,
-            limit
+            "#
         )
+        .bind(board_id)
+        .bind(start_seq)
+        .bind(limit)
         .fetch_all(pool)
     )?;
 
