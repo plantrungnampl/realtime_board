@@ -55,6 +55,26 @@ const CURSOR_COLORS = [
 ];
 const FALLBACK_CURSOR_COLOR = "#EAB308";
 
+const DRAG_PRESENCE_KEYS: (keyof DragPresence)[] = [
+  "element_id",
+  "position_x",
+  "position_y",
+  "width",
+  "height",
+  "rotation",
+];
+
+const CURSOR_BROADCAST_KEYS: (keyof CursorBroadcast)[] = [
+  "client_id",
+  "user_id",
+  "user_name",
+  "x",
+  "y",
+  "color",
+  "status",
+  "avatar_url",
+];
+
 const asRecord = (value: unknown): Record<string, unknown> | null => {
   if (!value || typeof value !== "object") return null;
   return value as Record<string, unknown>;
@@ -128,7 +148,7 @@ export const parseBoardJoinedPayload = (
   };
 };
 
-export const buildCursorMap = (
+export const buildRawCursorMap = (
   awareness: Awareness,
   cursorIdleMs: number,
 ): Record<string, CursorBroadcast> => {
@@ -189,6 +209,44 @@ export const buildCursorMap = (
   return next;
 };
 
+export const reuseCursorMapIfUnchanged = (
+  previous: Record<string, CursorBroadcast> | undefined,
+  next: Record<string, CursorBroadcast>,
+): Record<string, CursorBroadcast> => {
+  if (!previous) return next;
+
+  let allReused = true;
+  const reused: Record<string, CursorBroadcast> = {};
+
+  for (const [key, candidate] of Object.entries(next)) {
+    const prev = previous[key];
+    if (prev && areCursorsEqual(candidate, prev)) {
+      reused[key] = prev;
+    } else {
+      reused[key] = candidate;
+      allReused = false;
+    }
+  }
+
+  if (
+    allReused
+    && Object.keys(previous).length === Object.keys(next).length
+  ) {
+    return previous;
+  }
+
+  return reused;
+};
+
+export const buildCursorMap = (
+  awareness: Awareness,
+  cursorIdleMs: number,
+  previous?: Record<string, CursorBroadcast>,
+): Record<string, CursorBroadcast> => {
+  const next = buildRawCursorMap(awareness, cursorIdleMs);
+  return reuseCursorMapIfUnchanged(previous, next);
+};
+
 export const normalizeSelectionIds = (value: unknown): string[] => {
   if (!Array.isArray(value)) return [];
   const unique = new Set<string>();
@@ -206,6 +264,29 @@ export const areSelectionsEqual = (left: string[], right: string[]) => {
     if (left[i] !== right[i]) return false;
   }
   return true;
+};
+
+export const areDragPresencesEqual = (
+  left: DragPresence | null,
+  right: DragPresence | null,
+) => {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  for (const key of DRAG_PRESENCE_KEYS) {
+    if (left[key] !== right[key]) return false;
+  }
+  return true;
+};
+
+export const areCursorsEqual = (
+  left: CursorBroadcast,
+  right: CursorBroadcast,
+) => {
+  if (left === right) return true;
+  for (const key of CURSOR_BROADCAST_KEYS) {
+    if (left[key] !== right[key]) return false;
+  }
+  return areDragPresencesEqual(left.dragging ?? null, right.dragging ?? null);
 };
 
 const normalizeEditingPresence = (value: unknown) => {
