@@ -5,6 +5,7 @@ import { TOOLS, type ToolType } from "@/features/boards/boardRoute/tools";
 type BoardToolbarProps = {
   activeTool: ToolType;
   canEdit: boolean;
+  canComment: boolean;
   canUndo: boolean;
   canRedo: boolean;
   onToolChange: (tool: ToolType) => void;
@@ -29,6 +30,7 @@ const TooltipLabel = ({ label }: TooltipLabelProps) => (
 export function BoardToolbar({
   activeTool,
   canEdit,
+  canComment,
   canUndo,
   canRedo,
   onToolChange,
@@ -42,7 +44,10 @@ export function BoardToolbar({
   return (
     <div className="absolute left-4 top-1/2 z-30 flex -translate-y-1/2 flex-col gap-1 rounded-2xl border border-neutral-800 bg-neutral-900/80 p-2 shadow-lg backdrop-blur">
       {TOOLS.map((tool) => {
-        const isDisabled = !canEdit && tool.id !== "select";
+        const isCommentTool = tool.id === "comment";
+        const isDisabled = isCommentTool
+          ? !canComment
+          : !canEdit && tool.id !== "select";
         return (
           <button
             key={tool.id}

@@ -21,7 +21,7 @@ type UseBoardAccessOptions = {
   userId: string;
   userEmail: string;
   navigate: NavigateFn;
-  onEditRestriction: () => void;
+  onEditRestriction: (nextPermissions: BoardPermissions) => void;
 };
 
 export const useBoardAccess = ({
@@ -66,7 +66,7 @@ export const useBoardAccess = ({
         permissions: nextPermissions,
       });
       if (!EDIT_ROLES.has(nextRole)) {
-        onEditRestriction();
+        onEditRestriction(nextPermissions);
       }
     },
     [navigate, onEditRestriction, roleKey, userId],
@@ -80,7 +80,7 @@ export const useBoardAccess = ({
         permissions: resolveRolePermissions(role),
       });
       if (!EDIT_ROLES.has(role)) {
-        onEditRestriction();
+        onEditRestriction(resolveRolePermissions(role));
       }
     },
     [onEditRestriction, roleKey],

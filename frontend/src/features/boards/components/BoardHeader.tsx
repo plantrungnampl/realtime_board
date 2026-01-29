@@ -1,4 +1,4 @@
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, MessageCircle } from "lucide-react";
 import { BoardShareDialog } from "@/features/boards/components/BoardShareDialog";
 import { BoardSettingsDialog } from "@/features/boards/components/BoardSettingsDialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -12,6 +12,7 @@ type BoardHeaderProps = {
   isPublic: boolean;
   isArchived: boolean;
   canEdit: boolean;
+  canComment: boolean;
   isRoleLoading: boolean;
   boardRole: BoardRole | null;
   visiblePresence: PresenceUser[];
@@ -21,6 +22,8 @@ type BoardHeaderProps = {
   readOnlyLabel: string;
   syncLabel: string;
   syncTone?: "neutral" | "ok" | "warn";
+  isCommentsOpen: boolean;
+  onToggleComments: () => void;
   onBack: () => void;
   onBoardUpdated: (board: Board) => void;
   onRefresh: () => Promise<void>;
@@ -34,6 +37,7 @@ export function BoardHeader({
   isPublic,
   isArchived,
   canEdit,
+  canComment,
   isRoleLoading,
   boardRole,
   visiblePresence,
@@ -43,6 +47,8 @@ export function BoardHeader({
   readOnlyLabel,
   syncLabel,
   syncTone = "neutral",
+  isCommentsOpen,
+  onToggleComments,
   onBack,
   onBoardUpdated,
   onRefresh,
@@ -119,6 +125,22 @@ export function BoardHeader({
       </div>
 
       <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={onToggleComments}
+          aria-pressed={isCommentsOpen}
+          aria-label="Toggle comments"
+          className={`rounded-lg border px-3 py-2 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400/60 ${
+            isCommentsOpen
+              ? "border-yellow-400/60 bg-yellow-500/15 text-yellow-300"
+              : "border-neutral-800 text-neutral-300 hover:border-neutral-700 hover:text-neutral-100"
+          } ${!canComment ? "opacity-60" : ""}`}
+        >
+          <span className="inline-flex items-center gap-2">
+            <MessageCircle className="h-4 w-4" />
+            Comments
+          </span>
+        </button>
         <div className="flex -space-x-2">
           {visiblePresence.map((user) => (
             <div

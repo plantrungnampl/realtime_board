@@ -1,5 +1,22 @@
 # Documentation Changelog
 
+## Version 3.47 - 2026-01-29
+
+### 💬 Comments
+
+#### ✅ Add Comment (FR-CMT-01) - Completion
+
+- Added cursor pagination for comment list responses (limit + next_cursor).
+- Persist mention notifications in `collab.notification` with comment_mention type.
+- Added frontend comment tool + comments panel for board/element comments.
+- Adjusted comments panel padding for balanced alignment.
+- Derive realtime WebSocket URL from env/base API URL instead of hardcoded localhost.
+- Serve Axum with `ConnectInfo` so rate limiting can extract client IP (fixes 500 on auth/login).
+
+### 🧹 Tooling
+
+- Ignore generated Python __pycache__ artifacts from internal scripts.
+
 ## Version 3.46 - 2026-01-28
 
 ### 💬 Comments

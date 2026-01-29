@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -34,6 +35,7 @@ import { useBoardMetadata } from "@/features/boards/boardRoute/hooks/useBoardMet
 import { useBoardRealtime } from "@/features/boards/boardRoute/hooks/useBoardRealtime";
 import { useCanvasDimensions } from "@/features/boards/boardRoute/hooks/useCanvasDimensions";
 import { useTextEditor } from "@/features/boards/boardRoute/hooks/useTextEditor";
+import { BoardCommentsPanel, type CommentTarget } from "@/features/boards/comments/components/BoardCommentsPanel";
 
 export const Route = createFileRoute("/board/$boardId")({
   component: BoardComponent,
@@ -51,6 +53,8 @@ function BoardComponent() {
   const userId = user?.id ?? "";
   const userEmail = user?.email ?? "";
   const [tool, setTool] = useState<ToolType>("select");
+  const [isCommentsOpen, setIsCommentsOpen] = useState(false);
+  const [commentTarget, setCommentTarget] = useState<CommentTarget | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const {
@@ -64,7 +68,17 @@ function BoardComponent() {
     userId,
     userEmail,
     navigate,
-    onEditRestriction: () => setTool("select"),
+    onEditRestriction: (nextPermissions) => {
+      setTool((prev) => {
+        if (prev === "comment" && nextPermissions.canComment) {
+          return prev;
+        }
+        if (!nextPermissions.canEdit) {
+          return nextPermissions.canComment ? "comment" : "select";
+        }
+        return prev;
+      });
+    },
   });
 
   const {
@@ -85,7 +99,19 @@ function BoardComponent() {
   const pageBackgroundColor = usePageBackgroundColor(containerRef);
   const canEdit = boardPermissions?.canEdit
     ?? (boardRole ? resolveRolePermissions(boardRole).canEdit : false);
-  const activeTool = canEdit ? tool : "select";
+  const canComment = boardPermissions?.canComment
+    ?? (boardRole ? resolveRolePermissions(boardRole).canComment : false);
+  const activeTool = canEdit
+    ? tool
+    : tool === "comment" && canComment
+      ? "comment"
+      : "select";
+
+  useEffect(() => {
+    if (!canComment && tool === "comment") {
+      setTool("select");
+    }
+  }, [canComment, tool]);
   const {
     showPublicWorkspaceMessage,
     publicToastVisible,
@@ -263,6 +289,7 @@ function BoardComponent() {
     boardId,
     activeTool,
     canEdit,
+    canComment,
     elements,
     gridEnabled,
     gridSize,
@@ -285,6 +312,14 @@ function BoardComponent() {
     persistElement,
     getElementById,
     startHistoryEntry: guardedStartHistoryEntry,
+    onCommentPin: (payload) => {
+      if (!canComment) return;
+      setCommentTarget({
+        elementId: payload.elementId,
+        position: payload.position,
+      });
+      setIsCommentsOpen(true);
+    },
   });
   useEffect(() => {
     selectionReplaceRef.current = (oldId: string, newId: string) => {
@@ -301,6 +336,15 @@ function BoardComponent() {
     gridEnabled,
     gridSize,
   });
+  const defaultCommentPosition = useMemo(() => {
+    if (!Number.isFinite(worldRect.width) || !Number.isFinite(worldRect.height)) {
+      return null;
+    }
+    return {
+      x: worldRect.x + worldRect.width / 2,
+      y: worldRect.y + worldRect.height / 2,
+    };
+  }, [worldRect.height, worldRect.width, worldRect.x, worldRect.y]);
   const {
     editableSelectedElements,
     primarySelectedElement,
@@ -492,6 +536,7 @@ function BoardComponent() {
         isPublic={isPublic}
         isArchived={isArchived}
         canEdit={canEdit}
+        canComment={canComment}
         isRoleLoading={isRoleLoading}
         boardRole={boardRole}
         visiblePresence={visiblePresence}
@@ -501,6 +546,8 @@ function BoardComponent() {
         readOnlyLabel={t("board.readOnly")}
         syncLabel={syncLabel}
         syncTone={syncTone}
+        isCommentsOpen={isCommentsOpen}
+        onToggleComments={() => setIsCommentsOpen((prev) => !prev)}
         onBack={() => navigate({ to: "/" })}
         onBoardUpdated={applyBoardMetadata}
         onRefresh={refreshBoardMetadata}
@@ -512,6 +559,7 @@ function BoardComponent() {
         toolbarProps={{
           activeTool,
           canEdit,
+          canComment,
           canUndo,
           canRedo,
           onToolChange: setTool,
@@ -596,6 +644,19 @@ function BoardComponent() {
           onElementTransformEnd: handleElementTransformEnd,
           onDrawingDragEnd: handleDrawingDragEnd,
           onOpenTextEditor: openTextEditor,
+        }}
+      />
+
+      <BoardCommentsPanel
+        boardId={boardId}
+        isOpen={isCommentsOpen}
+        canComment={canComment}
+        defaultBoardPosition={defaultCommentPosition}
+        target={commentTarget}
+        onTargetChange={setCommentTarget}
+        onClose={() => {
+          setIsCommentsOpen(false);
+          setCommentTarget(null);
         }}
       />
     </div>

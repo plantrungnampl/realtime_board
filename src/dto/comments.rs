@@ -19,6 +19,8 @@ pub struct ListCommentsQuery {
     pub element_id: Option<Uuid>,
     pub parent_id: Option<Uuid>,
     pub status: Option<CommentStatus>,
+    pub limit: Option<u32>,
+    pub cursor: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -55,4 +57,11 @@ pub struct CommentResponse {
 #[derive(Debug, Serialize)]
 pub struct CommentListResponse {
     pub data: Vec<CommentResponse>,
+    pub pagination: CommentPagination,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CommentPagination {
+    pub next_cursor: Option<String>,
+    pub has_more: bool,
 }

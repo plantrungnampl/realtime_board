@@ -58,6 +58,20 @@ pub enum BusinessEvent {
         removed_by: Uuid,
         removed_user: Uuid,
     },
+    #[serde(rename = "COLLAB_COMMENT_CREATE")]
+    CommentCreated {
+        comment_id: Uuid,
+        board_id: Uuid,
+        element_id: Option<Uuid>,
+        actor_id: Uuid,
+    },
+    #[serde(rename = "COLLAB_MENTION")]
+    CommentMentioned {
+        comment_id: Uuid,
+        board_id: Uuid,
+        actor_id: Uuid,
+        mentioned_user_ids: Vec<Uuid>,
+    },
     CrdtSnapshotSaved {
         board_id: Uuid,
         snapshot_size: usize,

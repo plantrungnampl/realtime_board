@@ -34,7 +34,7 @@ pub async fn run() -> Result<(), AppError> {
     let listener = TcpListener::bind(addr)
         .await
         .map_err(|err| AppError::Internal(format!("bind failed: {}", err)))?;
-    let result = axum::serve(listener, app)
+    let result = axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
         .await
         .map_err(|err| AppError::Internal(format!("server error: {}", err)));
     telemetry::shutdown_tracing();

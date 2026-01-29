@@ -17,6 +17,12 @@ pub(crate) struct CreateCommentParams {
     pub mentions: Vec<Uuid>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct CommentCursor {
+    pub created_at: DateTime<Utc>,
+    pub id: Uuid,
+}
+
 #[derive(Debug, sqlx::FromRow)]
 pub(crate) struct CommentRow {
     pub id: Uuid,
@@ -112,7 +118,11 @@ pub async fn list_comments(
     element_id: Option<Uuid>,
     parent_id: Option<Uuid>,
     status: Option<CommentStatus>,
+    cursor: Option<CommentCursor>,
+    limit: i64,
 ) -> Result<Vec<CommentRow>, AppError> {
+    let cursor_created_at = cursor.map(|value| value.created_at);
+    let cursor_id = cursor.map(|value| value.id);
     let rows = crate::log_query_fetch_all!(
         "comments.list_comments",
         sqlx::query_as::<_, CommentRow>(
@@ -146,13 +156,21 @@ pub async fn list_comments(
             AND ($2::uuid IS NULL OR c.element_id = $2)
             AND ($3::uuid IS NULL OR c.parent_id = $3)
             AND ($4::collab.comment_status IS NULL OR c.status = $4)
-            ORDER BY c.created_at ASC
+            AND (
+                $5::timestamptz IS NULL
+                OR (c.created_at, c.id) < ($5::timestamptz, $6::uuid)
+            )
+            ORDER BY c.created_at DESC, c.id DESC
+            LIMIT $7
             "#,
         )
         .bind(board_id)
         .bind(element_id)
         .bind(parent_id)
         .bind(status)
+        .bind(cursor_created_at)
+        .bind(cursor_id)
+        .bind(limit)
         .fetch_all(pool)
     )?;
 

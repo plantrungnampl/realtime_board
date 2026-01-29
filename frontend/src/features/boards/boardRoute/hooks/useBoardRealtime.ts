@@ -67,6 +67,20 @@ const MAX_RECONNECT_ATTEMPTS = 8;
 const MIN_CONNECT_INTERVAL_MS = 400;
 const DEBUG_REALTIME_SAMPLE_MS = 5000;
 
+const resolveWsBaseUrl = () => {
+  const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
+  const envBase = import.meta.env.VITE_WS_URL ?? apiBase;
+  const url = new URL(envBase, window.location.origin);
+  if (url.pathname.endsWith("/api")) {
+    url.pathname = url.pathname.replace(/\/api\/?$/, "");
+  }
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  return url.toString().replace(/\/$/, "");
+};
+
+const buildBoardWsUrl = (boardId: string, token: string) =>
+  `${resolveWsBaseUrl()}/ws/boards/${boardId}?token=${encodeURIComponent(token)}`;
+
 const shouldDebugRealtime = () =>
   typeof window !== "undefined"
   && window.localStorage?.getItem("RTC_DEBUG_REALTIME") === "1";
@@ -867,7 +881,7 @@ export function useBoardRealtime({
       };
       yElements.observeDeep(observer);
 
-      const wsUrl = `ws://localhost:3000/ws/boards/${boardId}?token=${encodeURIComponent(token)}`;
+      const wsUrl = buildBoardWsUrl(boardId, token);
 
       const bumpMetric = (key: keyof WsMetrics) => {
         wsMetricsRef.current[key] += 1;

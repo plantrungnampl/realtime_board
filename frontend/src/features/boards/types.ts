@@ -59,6 +59,64 @@ export interface BoardPermissions {
   canManageBoard: boolean;
 }
 
+export type CommentStatus = "open" | "resolved" | "archived";
+
+export interface CommentUser {
+  id: string;
+  username: string;
+  display_name: string;
+  avatar_url?: string | null;
+}
+
+export interface BoardComment {
+  id: string;
+  board_id: string;
+  element_id?: string | null;
+  parent_id?: string | null;
+  created_by: string;
+  author: CommentUser;
+  position_x?: number | null;
+  position_y?: number | null;
+  content: string;
+  content_html?: string | null;
+  mentions: string[];
+  status: CommentStatus;
+  resolved_by?: string | null;
+  resolved_at?: string | null;
+  is_edited: boolean;
+  edited_at?: string | null;
+  reply_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CommentPagination {
+  next_cursor?: string | null;
+  has_more: boolean;
+}
+
+export interface CommentListResponse {
+  data: BoardComment[];
+  pagination: CommentPagination;
+}
+
+export interface CreateBoardCommentRequest {
+  content: string;
+  content_html?: string | null;
+  element_id?: string | null;
+  position_x?: number | null;
+  position_y?: number | null;
+  mentions?: string[];
+}
+
+export interface ListBoardCommentsQuery {
+  element_id?: string;
+  parent_id?: string;
+  status?: CommentStatus;
+  limit?: number;
+  cursor?: string;
+}
+
 export interface BoardPermissionOverrides {
   canView?: boolean;
   canEdit?: boolean;

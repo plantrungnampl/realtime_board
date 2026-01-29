@@ -48,6 +48,7 @@ type UseBoardCanvasInteractionsOptions = {
   boardId: string;
   activeTool: ToolType;
   canEdit: boolean;
+  canComment: boolean;
   elements: BoardElement[];
   gridEnabled: boolean;
   gridSize: number;
@@ -77,6 +78,7 @@ type UseBoardCanvasInteractionsOptions = {
   persistElement: (element: BoardElement) => void;
   getElementById: (id: string) => BoardElement | null;
   startHistoryEntry: () => void;
+  onCommentPin?: (payload: { position: Point; elementId: string | null }) => void;
 };
 
 export type CanvasPointerEvent = {
@@ -165,6 +167,7 @@ export function useBoardCanvasInteractions({
   boardId,
   activeTool,
   canEdit,
+  canComment,
   elements,
   gridEnabled,
   gridSize,
@@ -187,6 +190,7 @@ export function useBoardCanvasInteractions({
   persistElement,
   getElementById,
   startHistoryEntry,
+  onCommentPin,
 }: UseBoardCanvasInteractionsOptions) {
   const [action, setAction] = useState<"none" | "drawing" | "moving">("none");
   const currentShapeId = useRef<string | null>(null);
@@ -716,6 +720,19 @@ export function useBoardCanvasInteractions({
         return;
       }
 
+      if (activeTool === "comment") {
+        if (!canComment) return;
+        if (event.button !== 0) return;
+        if (!withinCanvas) return;
+        const hit = findElementAtPoint(position);
+        onCommentPin?.({
+          position,
+          elementId: hit?.id ?? null,
+        });
+        setAction("none");
+        return;
+      }
+
       if (!canEdit) return;
       if (!withinCanvas) return;
       const id = crypto.randomUUID();
@@ -727,9 +744,11 @@ export function useBoardCanvasInteractions({
       action,
       activeTool,
       canEdit,
+      canComment,
       findElementAtPoint,
       isWithinCanvas,
       openTextEditor,
+      onCommentPin,
       stagePositionRef,
       stageRef,
       suppressNextPointerRef,
