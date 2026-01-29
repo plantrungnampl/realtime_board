@@ -19,3 +19,14 @@
 1. Always use a generic error message (e.g., "Invalid email or password") for all authentication failures.
 2. Log the specific failure reason internally (as was done here correctly) but do not expose it to the client.
 3. Be aware of timing attacks; although fixing the error message is the first step, ensuring constant-time execution is the complete fix.
+
+## 2026-02-18 - Token Leakage via URL Query Parameters
+
+**Vulnerability:** The default `auth_middleware` accepted authentication tokens via the `token` URL query parameter for all endpoints. This created a risk of token leakage in server logs, proxy logs, and browser history for standard REST API requests.
+
+**Learning:** "Convenience" features like query parameter authentication (often needed for WebSockets) should not be enabled globally. Authentication middleware should be "secure by default" (strict, header-only) and only opt-in to flexible modes where strictly necessary.
+
+**Prevention:**
+1. Default to strict `Authorization` header checks for all REST endpoints.
+2. Create separate middleware (e.g., `auth_middleware_flexible`) for specific routes like WebSockets that require query parameter support.
+3. Apply the flexible middleware *only* to the specific routes that need it.
