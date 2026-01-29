@@ -131,6 +131,7 @@ export const parseBoardJoinedPayload = (
 export const buildCursorMap = (
   awareness: Awareness,
   cursorIdleMs: number,
+  previous?: Record<string, CursorBroadcast>,
 ): Record<string, CursorBroadcast> => {
   const selected: Record<string, CursorBroadcast & { last_seen: number }> = {};
   const now = Date.now();
@@ -172,9 +173,12 @@ export const buildCursorMap = (
       last_seen: lastSeen,
     };
   });
+
   const next: Record<string, CursorBroadcast> = {};
+  let allReused = true;
+
   Object.entries(selected).forEach(([key, value]) => {
-    next[key] = {
+    const candidate: CursorBroadcast = {
       client_id: value.client_id,
       user_id: value.user_id,
       user_name: value.user_name,
@@ -185,7 +189,23 @@ export const buildCursorMap = (
       status: value.status,
       dragging: value.dragging ?? null,
     };
+
+    if (previous && previous[key] && areCursorsEqual(candidate, previous[key])) {
+      next[key] = previous[key];
+    } else {
+      next[key] = candidate;
+      allReused = false;
+    }
   });
+
+  if (
+    allReused
+    && previous
+    && Object.keys(next).length === Object.keys(previous).length
+  ) {
+    return previous;
+  }
+
   return next;
 };
 
@@ -206,6 +226,40 @@ export const areSelectionsEqual = (left: string[], right: string[]) => {
     if (left[i] !== right[i]) return false;
   }
   return true;
+};
+
+export const areDragPresencesEqual = (
+  left: DragPresence | null,
+  right: DragPresence | null,
+) => {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  return (
+    left.element_id === right.element_id
+    && left.position_x === right.position_x
+    && left.position_y === right.position_y
+    && left.width === right.width
+    && left.height === right.height
+    && left.rotation === right.rotation
+  );
+};
+
+export const areCursorsEqual = (
+  left: CursorBroadcast,
+  right: CursorBroadcast,
+) => {
+  if (left === right) return true;
+  return (
+    left.client_id === right.client_id
+    && left.user_id === right.user_id
+    && left.user_name === right.user_name
+    && left.x === right.x
+    && left.y === right.y
+    && left.color === right.color
+    && left.status === right.status
+    && left.avatar_url === right.avatar_url
+    && areDragPresencesEqual(left.dragging ?? null, right.dragging ?? null)
+  );
 };
 
 const normalizeEditingPresence = (value: unknown) => {
