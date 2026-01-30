@@ -30,3 +30,14 @@
 1. Default to strict `Authorization` header checks for all REST endpoints.
 2. Create separate middleware (e.g., `auth_middleware_flexible`) for specific routes like WebSockets that require query parameter support.
 3. Apply the flexible middleware *only* to the specific routes that need it.
+
+## 2025-02-18 - Hardcoded Database Credentials
+
+**Vulnerability:** The `docker-compose.yml` file contained hardcoded passwords for the PostgreSQL database (`Annam123@123`) and pgAdmin interface (`admin`). This exposes the database to unauthorized access if the file is committed to version control or leaks.
+
+**Learning:** Configuration files like `docker-compose.yml` are often treated as "infrastructure as code" but can easily become sources of secret leakage if not carefully parameterized.
+
+**Prevention:**
+1. Always use environment variables for secrets in `docker-compose.yml` (`${VAR}`).
+2. Provide a `.env.example` file with placeholders for these variables.
+3. Use pre-commit hooks or CI scanners (like `git-secrets` or `trufflehog`) to detect secrets in configuration files.
