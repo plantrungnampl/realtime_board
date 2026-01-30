@@ -123,11 +123,14 @@ const buildDragPresenceList = (cursorList: CursorBroadcast[]) => {
 const CursorMarker = memo(function CursorMarker({ cursor }: { cursor: CursorBroadcast }) {
   const groupRef = useRef<PixiContainer | null>(null);
   const targetRef = useRef({ x: cursor.x ?? 0, y: cursor.y ?? 0 });
-  // Store initial position to avoid React updates conflicting with useTick interpolation
+  // Store initial position using useState to avoid React updates conflicting with useTick interpolation.
+  // We use useState instead of useRef because accessing ref.current during render is disallowed.
   const [initialPos] = useState({ x: cursor.x ?? 0, y: cursor.y ?? 0 });
 
   useEffect(() => {
-    targetRef.current = { x: cursor.x ?? 0, y: cursor.y ?? 0 };
+    // Mutate in place to avoid object allocation on every frame
+    targetRef.current.x = cursor.x ?? 0;
+    targetRef.current.y = cursor.y ?? 0;
   }, [cursor.x, cursor.y]);
   useTick(() => {
     const node = groupRef.current;
