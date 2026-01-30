@@ -13,3 +13,7 @@
 ## 2024-10-24 - Visual Consistency & Focus States
 **Learning:** Inconsistent focus states between similar flows (e.g., Login vs Register) create a disjointed experience for keyboard users.
 **Action:** Audit and align `focus-visible` styles across all authentication forms to ensure a cohesive accessible experience.
+
+## 2024-10-25 - List Management Accessibility
+**Learning:** In dynamic lists (like invitees), removing items via generic "x" buttons is a common accessibility trap. Screen readers lose context without specific labels.
+**Action:** Use specific aria-labels (e.g., "Remove [item name]") for removal actions in lists, and prefer icon components over text characters for better visual scaling.
