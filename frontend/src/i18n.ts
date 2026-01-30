@@ -170,6 +170,7 @@ const resources = {
       "board.inviteSendError": "Failed to send invites.",
       "board.inviteErrorInvalid": "Invalid email(s): {{emails}}",
       "board.inviteErrorDuplicate": "Already added: {{emails}}",
+      "board.inviteRemoveEmail": "Remove {{email}}",
       "board.inviteNoteExisting": "Only existing accounts can be invited to boards.",
       "board.inviteNoteWorkspace":
         "If they are not in the workspace yet, they must accept the workspace invite first.",
@@ -510,6 +511,7 @@ const resources = {
       "board.inviteSendError": "Không thể gửi lời mời.",
       "board.inviteErrorInvalid": "Email không hợp lệ: {{emails}}",
       "board.inviteErrorDuplicate": "Đã thêm: {{emails}}",
+      "board.inviteRemoveEmail": "Xoá {{email}}",
       "board.inviteNoteExisting": "Chỉ mời được tài khoản đã đăng ký.",
       "board.membersTitle": "Thành viên board",
       "board.membersSubtitle": "Những người có quyền truy cập board.",
