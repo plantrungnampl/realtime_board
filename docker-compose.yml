@@ -1,4 +1,3 @@
-
 services:
   # Dịch vụ Database
   db:
@@ -9,9 +8,9 @@ services:
     container_name: realtime_board_container
     restart: always          
     environment:
-      POSTGRES_USER: admin     
-      POSTGRES_PASSWORD: Annam123@123 
-      POSTGRES_DB: realtime_board  
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
       - "5434:5432"           
     volumes:
@@ -22,8 +21,8 @@ services:
     image: dpage/pgadmin4
     container_name: realtime_board_pgadmin
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@admin.com
-      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
     ports:
       - "5050:80"              
     depends_on:
