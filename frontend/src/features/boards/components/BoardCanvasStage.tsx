@@ -1130,7 +1130,31 @@ function PixiScene({
   );
 }
 
-const MemoizedPixiScene = memo(PixiScene);
+const MemoizedPixiScene = memo(PixiScene, (prev, next) => {
+  if (prev === next) return true;
+
+  const prevKeys = Object.keys(prev) as (keyof typeof prev)[];
+  const nextKeys = Object.keys(next) as (keyof typeof next)[];
+
+  if (prevKeys.length !== nextKeys.length) return false;
+
+  for (const key of prevKeys) {
+    if (key === "dragPresence") {
+      const pDrag = prev.dragPresence;
+      const nDrag = next.dragPresence;
+      if (pDrag === nDrag) continue;
+      if (pDrag.length !== nDrag.length) return false;
+      for (let i = 0; i < pDrag.length; i++) {
+        if (pDrag[i] !== nDrag[i]) return false;
+      }
+      continue;
+    }
+
+    if (prev[key] !== next[key]) return false;
+  }
+
+  return true;
+});
 
 export function BoardCanvasStage({
   stageRef,
