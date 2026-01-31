@@ -48,13 +48,16 @@ export function BoardToolbar({
         const isDisabled = isCommentTool
           ? !canComment
           : !canEdit && tool.id !== "select";
+        const shortcut = "shortcut" in tool ? tool.shortcut : undefined;
+        const label = shortcut ? `${tool.label} (${shortcut})` : tool.label;
+
         return (
           <button
             key={tool.id}
             type="button"
             onClick={() => onToolChange(tool.id)}
             disabled={isDisabled}
-            aria-label={tool.label}
+            aria-label={label}
             className={cn(
               "group relative flex h-11 w-11 items-center justify-center rounded-xl transition-all",
               activeTool === tool.id && !isDisabled
@@ -63,10 +66,10 @@ export function BoardToolbar({
               isDisabled && "cursor-not-allowed opacity-40 hover:bg-transparent",
               focusRing,
             )}
-            title={tool.label}
+            title={label}
           >
             <tool.icon className="h-5 w-5" />
-            <TooltipLabel label={tool.label} />
+            <TooltipLabel label={label} />
           </button>
         );
       })}
@@ -75,7 +78,7 @@ export function BoardToolbar({
         type="button"
         onClick={onUndo}
         disabled={!canEdit || !canUndo}
-        aria-label="Undo"
+        aria-label="Undo (Ctrl+Z)"
         className={cn(
           "group relative flex h-11 w-11 items-center justify-center rounded-xl transition-colors",
           canEdit && canUndo
@@ -83,16 +86,16 @@ export function BoardToolbar({
             : "text-neutral-700 cursor-not-allowed",
           focusRing,
         )}
-        title="Undo"
+        title="Undo (Ctrl+Z)"
       >
         <Undo2 className="h-5 w-5" />
-        <TooltipLabel label="Undo" />
+        <TooltipLabel label="Undo (Ctrl+Z)" />
       </button>
       <button
         type="button"
         onClick={onRedo}
         disabled={!canEdit || !canRedo}
-        aria-label="Redo"
+        aria-label="Redo (Ctrl+Y)"
         className={cn(
           "group relative flex h-11 w-11 items-center justify-center rounded-xl transition-colors",
           canEdit && canRedo
@@ -100,10 +103,10 @@ export function BoardToolbar({
             : "text-neutral-700 cursor-not-allowed",
           focusRing,
         )}
-        title="Redo"
+        title="Redo (Ctrl+Y)"
       >
         <Redo2 className="h-5 w-5" />
-        <TooltipLabel label="Redo" />
+        <TooltipLabel label="Redo (Ctrl+Y)" />
       </button>
       <button
         type="button"

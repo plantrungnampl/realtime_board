@@ -997,9 +997,9 @@ export function useBoardRealtime({
 
       const syncAwarenessState = () => {
         if (disposed || !awareness) return;
-        setCursors((prev) => buildCursorMap(awareness, CURSOR_IDLE_MS, prev));
+        setCursors((prev) => buildCursorMap(awareness!, CURSOR_IDLE_MS, prev));
         setSelectionPresence(
-          buildSelectionPresence(awareness, userIdRef.current, SELECTION_STALE_MS),
+          buildSelectionPresence(awareness!, userIdRef.current, SELECTION_STALE_MS),
         );
       };
 
@@ -1215,7 +1215,7 @@ export function useBoardRealtime({
           if (bytes[0] === WS_MESSAGE.Update) bumpMetric("inboundUpdate");
           if (bytes[0] === WS_MESSAGE.Awareness) bumpMetric("inboundAwareness");
           logWsMessage(boardId, "binary", bytes.length);
-          const roleUpdate = handleWsMessage(bytes, doc, awareness);
+          const roleUpdate = handleWsMessage(bytes, doc, awareness!);
           if (roleUpdate) {
             onRoleUpdateRef.current?.(roleUpdate);
           }

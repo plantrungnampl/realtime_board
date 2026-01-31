@@ -494,6 +494,7 @@ function BoardComponent() {
     scheduleNudgePersist,
     onUndo: guardedUndo,
     onRedo: guardedRedo,
+    onToolChange: setTool,
   });
 
   const canDragElements = canEdit && activeTool === "select" && !textEditor.isOpen;
