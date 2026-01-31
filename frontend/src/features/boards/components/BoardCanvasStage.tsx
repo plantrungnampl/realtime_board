@@ -1,4 +1,4 @@
-import { Fragment, memo, useCallback, useEffect, useMemo, useRef } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { Application, extend, useApplication, useTick } from "@pixi/react";
 import {
@@ -123,8 +123,14 @@ const buildDragPresenceList = (cursorList: CursorBroadcast[]) => {
 const CursorMarker = memo(function CursorMarker({ cursor }: { cursor: CursorBroadcast }) {
   const groupRef = useRef<PixiContainer | null>(null);
   const targetRef = useRef({ x: cursor.x ?? 0, y: cursor.y ?? 0 });
+  // Store initial position using useState to avoid React updates conflicting with useTick interpolation.
+  // We use useState instead of useRef because accessing ref.current during render is disallowed.
+  const [initialPos] = useState({ x: cursor.x ?? 0, y: cursor.y ?? 0 });
+
   useEffect(() => {
-    targetRef.current = { x: cursor.x ?? 0, y: cursor.y ?? 0 };
+    // Mutate in place to avoid object allocation on every frame
+    targetRef.current.x = cursor.x ?? 0;
+    targetRef.current.y = cursor.y ?? 0;
   }, [cursor.x, cursor.y]);
   useTick(() => {
     const node = groupRef.current;
@@ -135,7 +141,7 @@ const CursorMarker = memo(function CursorMarker({ cursor }: { cursor: CursorBroa
     );
   });
   return (
-    <pixiContainer ref={groupRef} x={cursor.x ?? 0} y={cursor.y ?? 0} eventMode="passive">
+    <pixiContainer ref={groupRef} x={initialPos.x} y={initialPos.y} eventMode="passive">
       <pixiGraphics
         draw={(graphics) => {
           graphics.clear();
