@@ -1,24 +1,46 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use uuid::Uuid;
 
 use crate::models::users::{
     DefaultBoardSettings, NotificationSettings, SubscriptionTier, User, UserPreferences,
 };
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Deserialize, Clone)]
 pub struct LoginRequest {
     pub email: String,
     pub password: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+impl fmt::Debug for LoginRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LoginRequest")
+            .field("email", &self.email)
+            .field("password", &"***")
+            .finish()
+    }
+}
+
+#[derive(Clone, Deserialize)]
 pub struct RegisterRequest {
     pub email: String,
     pub password_hash: String,
     pub display_name: String,
     pub username: String,
     pub invite_token: Option<String>,
+}
+
+impl fmt::Debug for RegisterRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RegisterRequest")
+            .field("email", &self.email)
+            .field("password_hash", &"***")
+            .field("display_name", &self.display_name)
+            .field("username", &self.username)
+            .field("invite_token", &"***")
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -28,27 +50,62 @@ pub struct UpdateUserRequest {
     pub bio: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct ChangePasswordRequest {
     pub current_password: String,
     pub new_password: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+impl fmt::Debug for ChangePasswordRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ChangePasswordRequest")
+            .field("current_password", &"***")
+            .field("new_password", &"***")
+            .finish()
+    }
+}
+
+#[derive(Clone, Deserialize)]
 pub struct DeleteAccountRequest {
     pub password: String,
     pub confirmation: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+impl fmt::Debug for DeleteAccountRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DeleteAccountRequest")
+            .field("password", &"***")
+            .field("confirmation", &self.confirmation)
+            .finish()
+    }
+}
+
+#[derive(Clone, Deserialize)]
 pub struct VerifyEmailRequest {
     pub token: String,
 }
 
-#[derive(Debug, Serialize)]
+impl fmt::Debug for VerifyEmailRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("VerifyEmailRequest")
+            .field("token", &"***")
+            .finish()
+    }
+}
+
+#[derive(Serialize)]
 pub struct LoginResponse {
     pub token: String,
     pub user: UserResponse,
+}
+
+impl fmt::Debug for LoginResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LoginResponse")
+            .field("token", &"***")
+            .field("user", &self.user)
+            .finish()
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -229,5 +286,107 @@ mod tests {
     fn profile_setup_completed_true_when_set() {
         let metadata = json!({ "profile_setup_completed": true });
         assert!(profile_setup_completed(&metadata));
+    }
+
+    #[test]
+    fn debug_redacts_login_request() {
+        use super::LoginRequest;
+        let req = LoginRequest {
+            email: "test@example.com".to_string(),
+            password: "super_secret_password".to_string(),
+        };
+        let debug_output = format!("{:?}", req);
+        assert!(debug_output.contains("email"));
+        assert!(debug_output.contains("test@example.com"));
+        assert!(debug_output.contains("password"));
+        assert!(debug_output.contains("***"));
+        assert!(!debug_output.contains("super_secret_password"));
+    }
+
+    #[test]
+    fn debug_redacts_register_request() {
+        use super::RegisterRequest;
+        let req = RegisterRequest {
+            email: "test@example.com".to_string(),
+            password_hash: "plaintext_password_actually".to_string(),
+            display_name: "Test User".to_string(),
+            username: "testuser".to_string(),
+            invite_token: Some("secret_invite_token".to_string()),
+        };
+        let debug_output = format!("{:?}", req);
+        assert!(debug_output.contains("email"));
+        assert!(debug_output.contains("test@example.com"));
+        assert!(debug_output.contains("password_hash"));
+        assert!(debug_output.contains("***"));
+        assert!(!debug_output.contains("plaintext_password_actually"));
+        assert!(debug_output.contains("invite_token"));
+        assert!(debug_output.contains("***"));
+        assert!(!debug_output.contains("secret_invite_token"));
+    }
+
+    #[test]
+    fn debug_redacts_change_password_request() {
+        use super::ChangePasswordRequest;
+        let req = ChangePasswordRequest {
+            current_password: "old_password".to_string(),
+            new_password: "new_password".to_string(),
+        };
+        let debug_output = format!("{:?}", req);
+        assert!(debug_output.contains("current_password"));
+        assert!(debug_output.contains("***"));
+        assert!(!debug_output.contains("old_password"));
+        assert!(debug_output.contains("new_password"));
+        assert!(debug_output.contains("***"));
+    }
+
+    #[test]
+    fn debug_redacts_delete_account_request() {
+        use super::DeleteAccountRequest;
+        let req = DeleteAccountRequest {
+            password: "my_password".to_string(),
+            confirmation: "DELETE MY ACCOUNT".to_string(),
+        };
+        let debug_output = format!("{:?}", req);
+        assert!(debug_output.contains("password"));
+        assert!(debug_output.contains("***"));
+        assert!(!debug_output.contains("my_password"));
+        assert!(debug_output.contains("confirmation"));
+        assert!(debug_output.contains("DELETE MY ACCOUNT"));
+    }
+
+    #[test]
+    fn debug_redacts_verify_email_request() {
+        use super::VerifyEmailRequest;
+        let req = VerifyEmailRequest {
+            token: "secret_token".to_string(),
+        };
+        let debug_output = format!("{:?}", req);
+        assert!(debug_output.contains("token"));
+        assert!(debug_output.contains("***"));
+        assert!(!debug_output.contains("secret_token"));
+    }
+
+    #[test]
+    fn debug_redacts_login_response() {
+        use super::{LoginResponse, UserResponse};
+        use uuid::Uuid;
+        let req = LoginResponse {
+            token: "jwt_token_secret".to_string(),
+            user: UserResponse {
+                id: Uuid::new_v4(),
+                email: "user@example.com".to_string(),
+                email_verified_at: None,
+                username: "user".to_string(),
+                display_name: "User".to_string(),
+                avatar_url: None,
+                profile_setup_completed: false,
+            },
+        };
+        let debug_output = format!("{:?}", req);
+        assert!(debug_output.contains("token"));
+        assert!(debug_output.contains("***"));
+        assert!(!debug_output.contains("jwt_token_secret"));
+        assert!(debug_output.contains("user"));
+        assert!(debug_output.contains("user@example.com"));
     }
 }

@@ -30,3 +30,15 @@
 1. Default to strict `Authorization` header checks for all REST endpoints.
 2. Create separate middleware (e.g., `auth_middleware_flexible`) for specific routes like WebSockets that require query parameter support.
 3. Apply the flexible middleware *only* to the specific routes that need it.
+
+## 2026-02-19 - Secrets Exposure via Debug Trait
+
+**Vulnerability:** Authentication DTOs (e.g., `LoginRequest`, `RegisterRequest`) derived the `Debug` trait, which would expose plaintext passwords and tokens if these objects were logged (e.g., in error traces or debug logs).
+
+**Learning:** The convenience of `#[derive(Debug)]` often overrides security considerations. Developers might assume that "Debug" is safe or only for internal use, forgetting that logs can be persisted and viewed by others.
+
+**Prevention:**
+1. Identify structs containing sensitive data (passwords, tokens, keys).
+2. Manually implement `std::fmt::Debug` for these structs.
+3. Explicitly redact sensitive fields (e.g., print `***` instead of the value).
+4. Add unit tests to verify that sensitive fields are redacted in debug output.
