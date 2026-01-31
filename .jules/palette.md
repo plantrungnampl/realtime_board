@@ -17,3 +17,7 @@
 ## 2024-10-25 - List Management Accessibility
 **Learning:** In dynamic lists (like invitees), removing items via generic "x" buttons is a common accessibility trap. Screen readers lose context without specific labels.
 **Action:** Use specific aria-labels (e.g., "Remove [item name]") for removal actions in lists, and prefer icon components over text characters for better visual scaling.
+
+## 2024-10-27 - Keyboard Shortcuts Discovery
+**Learning:** Keyboard shortcuts are powerful but useless if users don't know them. Displaying shortcuts in tooltips (e.g., "Rectangle (R)") bridges the gap between novice and power users without cluttering the UI.
+**Action:** When implementing keyboard shortcuts for actions that have UI buttons, always update the button's tooltip or label to include the shortcut key.

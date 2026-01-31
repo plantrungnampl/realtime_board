@@ -6,6 +6,7 @@ import {
   getAnchorPosition,
   resolveSnapPosition,
 } from "@/features/boards/elementMove.utils";
+import { TOOLS, type ToolType } from "../tools";
 
 type BoardHotkeysOptions = {
   enabled: boolean;
@@ -25,6 +26,7 @@ type BoardHotkeysOptions = {
   scheduleNudgePersist: (element: BoardElement) => void;
   onUndo: () => void;
   onRedo: () => void;
+  onToolChange: (tool: ToolType) => void;
 };
 
 export const useBoardHotkeys = ({
@@ -42,6 +44,7 @@ export const useBoardHotkeys = ({
   scheduleNudgePersist,
   onUndo,
   onRedo,
+  onToolChange,
 }: BoardHotkeysOptions) => {
   const handleGlobalKeyDown = useCallback(
     (event: KeyboardEvent) => {
@@ -132,6 +135,21 @@ export const useBoardHotkeys = ({
       }
 
       const isModifier = event.metaKey || event.ctrlKey;
+
+      if (!isModifier && !event.shiftKey && !event.altKey) {
+        for (const tool of TOOLS) {
+          if (
+            "shortcut" in tool &&
+            tool.shortcut &&
+            tool.shortcut.toLowerCase() === key
+          ) {
+            event.preventDefault();
+            onToolChange(tool.id);
+            return;
+          }
+        }
+      }
+
       if (!isModifier) return;
 
       if (key === "z") {
@@ -164,6 +182,7 @@ export const useBoardHotkeys = ({
       startHistoryEntry,
       textEditorOpen,
       updateElement,
+      onToolChange,
     ],
   );
 
