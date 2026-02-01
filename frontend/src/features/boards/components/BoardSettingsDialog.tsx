@@ -376,10 +376,12 @@ export function BoardSettingsDialog({
                 <p className="text-xs text-text-muted">{visibilityLabel}</p>
               </div>
               <div className="flex justify-end">
-                <Button type="submit" disabled={!canEditBoard || isSaving}>
-                  {isSaving
-                    ? t("board.settingsSaving")
-                    : t("board.settingsSave")}
+                <Button
+                  type="submit"
+                  disabled={!canEditBoard}
+                  isLoading={isSaving}
+                >
+                  {t("board.settingsSave")}
                 </Button>
               </div>
             </form>
@@ -445,15 +447,11 @@ export function BoardSettingsDialog({
                   variant="secondary"
                   onClick={handleTransferOwnership}
                   disabled={
-                    !canTransferOwnership ||
-                    isArchived ||
-                    isTransferring ||
-                    isMembersLoading
+                    !canTransferOwnership || isArchived || isMembersLoading
                   }
+                  isLoading={isTransferring}
                 >
-                  {isTransferring
-                    ? t("board.settingsTransferring")
-                    : t("board.settingsTransferAction")}
+                  {t("board.settingsTransferAction")}
                 </Button>
               </div>
 
@@ -481,11 +479,10 @@ export function BoardSettingsDialog({
                   type="button"
                   variant="secondary"
                   onClick={handleUnarchive}
-                  disabled={!canManageBoard || isArchiving}
+                  disabled={!canManageBoard}
+                  isLoading={isArchiving}
                 >
-                  {isArchiving
-                    ? t("board.settingsUnarchiving")
-                    : t("board.settingsUnarchiveAction")}
+                  {t("board.settingsUnarchiveAction")}
                 </Button>
               ) : (
                 <Button
@@ -493,11 +490,10 @@ export function BoardSettingsDialog({
                   variant="ghost"
                   className="text-red-400 hover:text-red-300"
                   onClick={handleArchive}
-                  disabled={!canManageBoard || isArchiving}
+                  disabled={!canManageBoard}
+                  isLoading={isArchiving}
                 >
-                  {isArchiving
-                    ? t("board.settingsArchiving")
-                    : t("board.settingsArchiveAction")}
+                  {t("board.settingsArchiveAction")}
                 </Button>
               )}
               {!canManageBoard && (
@@ -524,11 +520,10 @@ export function BoardSettingsDialog({
                 variant="ghost"
                 className="text-red-400 hover:text-red-300"
                 onClick={handleDeleteBoard}
-                disabled={!canDeleteBoard || isDeleting}
+                disabled={!canDeleteBoard}
+                isLoading={isDeleting}
               >
-                {isDeleting
-                  ? t("board.settingsDeleting")
-                  : t("board.settingsDeleteAction")}
+                {t("board.settingsDeleteAction")}
               </Button>
               {!canDeleteBoard && (
                 <span className="text-xs text-text-muted">

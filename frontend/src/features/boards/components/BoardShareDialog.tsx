@@ -496,9 +496,10 @@ export function BoardShareDialog({ boardId }: BoardShareDialogProps) {
               <Button
                 type="submit"
                 className="min-w-[180px]"
-                disabled={!canManageMembers || isInviting}
+                disabled={!canManageMembers}
+                isLoading={isInviting}
               >
-                {isInviting ? t("board.inviteSending") : t("board.inviteSend")}
+                {t("board.inviteSend")}
               </Button>
             </div>
           </form>
@@ -627,7 +628,7 @@ export function BoardShareDialog({ boardId }: BoardShareDialogProps) {
                             variant="ghost"
                             className="text-red-400 hover:text-red-300"
                             onClick={() => handleRemove(member)}
-                            disabled={isBusy && actionType === "remove"}
+                            isLoading={isBusy && actionType === "remove"}
                           >
                             {t("board.memberRemove")}
                           </Button>
