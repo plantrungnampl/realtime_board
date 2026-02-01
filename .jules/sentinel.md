@@ -42,3 +42,14 @@
 2. Manually implement `std::fmt::Debug` for these structs.
 3. Explicitly redact sensitive fields (e.g., print `***` instead of the value).
 4. Add unit tests to verify that sensitive fields are redacted in debug output.
+
+## 2026-02-19 - Missing Default Security Headers
+
+**Vulnerability:** The application was missing standard HTTP security headers (e.g., `X-Frame-Options`, `X-Content-Type-Options`), which could leave users vulnerable to clickjacking and MIME-sniffing attacks.
+
+**Learning:** Web frameworks like Axum do not inject security headers by default. Developers must explicitly add a middleware layer to enforce these protections globally.
+
+**Prevention:**
+1. Implement a `security_headers` middleware using `axum::middleware::from_fn`.
+2. Apply `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, and `X-XSS-Protection: 1; mode=block`.
+3. Register this middleware globally in the main router.
