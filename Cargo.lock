@@ -27,6 +27,7 @@ dependencies = [
  "sqlx",
  "tokio",
  "tokio-stream",
+ "tower",
  "tower-http",
  "tower_governor",
  "tracing",
