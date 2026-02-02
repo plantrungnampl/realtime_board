@@ -31,6 +31,9 @@ impl UserServices {
         req: RegisterRequest,
     ) -> Result<LoginResponse, AppError> {
         let email = req.email.trim().to_string();
+
+        validate_registration_fields(&email, &req.username, &req.display_name)?;
+
         if !is_valid_email(&email) {
             return Err(AppError::ValidationError(
                 "Email format is invalid".to_string(),
@@ -235,13 +238,7 @@ impl UserServices {
         avatar_url: Option<String>,
         bio: Option<String>,
     ) -> Result<UserProfileResponse, AppError> {
-        if let Some(value) = display_name.as_ref()
-            && value.trim().is_empty()
-        {
-            return Err(AppError::ValidationError(
-                "Display name cannot be empty".to_string(),
-            ));
-        }
+        validate_profile_fields(display_name.as_deref(), avatar_url.as_deref(), bio.as_deref())?;
 
         let user = user_repo::update_user_profile(
             pool,
@@ -261,13 +258,7 @@ impl UserServices {
         user_id: Uuid,
         req: UpdateUserRequest,
     ) -> Result<UserResponse, AppError> {
-        if let Some(value) = req.display_name.as_ref()
-            && value.trim().is_empty()
-        {
-            return Err(AppError::ValidationError(
-                "Display name cannot be empty".to_string(),
-            ));
-        }
+        validate_profile_fields(req.display_name.as_deref(), req.avatar_url.as_deref(), req.bio.as_deref())?;
 
         let user = user_repo::complete_profile_setup(
             pool,
@@ -395,7 +386,7 @@ impl UserServices {
         email_service
             .send_verification_email(&user.email, &token)
             .await?;
-        user_repo::set_verification_sent_at(pool, user.id, chrono::Utc::now()).await?;
+            user_repo::set_verification_sent_at(pool, user.id, chrono::Utc::now()).await?;
 
         Ok(())
     }
@@ -431,6 +422,75 @@ impl UserServices {
         BusinessEvent::EmailVerified { user_id }.log();
         Ok(())
     }
+}
+
+fn validate_profile_fields(
+    display_name: Option<&str>,
+    avatar_url: Option<&str>,
+    bio: Option<&str>,
+) -> Result<(), AppError> {
+    if let Some(name) = display_name {
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            return Err(AppError::ValidationError(
+                "Display name cannot be empty".to_string(),
+            ));
+        }
+        if trimmed.chars().count() > 100 {
+            return Err(AppError::ValidationError(
+                "Display name cannot exceed 100 characters".to_string(),
+            ));
+        }
+    }
+
+    if let Some(url) = avatar_url {
+        if url.len() > 2048 {
+            return Err(AppError::ValidationError(
+                "Avatar URL cannot exceed 2048 characters".to_string(),
+            ));
+        }
+    }
+
+    if let Some(bio) = bio {
+        if bio.chars().count() > 1000 {
+            return Err(AppError::ValidationError(
+                "Bio cannot exceed 1000 characters".to_string(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_registration_fields(
+    email: &str,
+    username: &str,
+    display_name: &str,
+) -> Result<(), AppError> {
+     if email.len() > 255 {
+        return Err(AppError::ValidationError(
+            "Email cannot exceed 255 characters".to_string(),
+        ));
+    }
+
+    if username.chars().count() > 50 {
+        return Err(AppError::ValidationError(
+            "Username cannot exceed 50 characters".to_string(),
+        ));
+    }
+
+    if display_name.trim().is_empty() {
+        return Err(AppError::ValidationError(
+             "Display name cannot be empty".to_string(),
+        ));
+    }
+
+    if display_name.chars().count() > 100 {
+        return Err(AppError::ValidationError(
+            "Display name cannot exceed 100 characters".to_string(),
+        ));
+    }
+
+    Ok(())
 }
 
 fn is_valid_email(email: &str) -> bool {
@@ -474,4 +534,69 @@ fn is_strong_password(password: &str) -> bool {
         }
     }
     has_upper && has_digit
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_profile_fields_valid() {
+        let res = validate_profile_fields(Some("Valid Name"), Some("http://example.com/avatar.png"), Some("Valid bio"));
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn validate_profile_fields_empty_name() {
+        let res = validate_profile_fields(Some("   "), None, None);
+        assert!(matches!(res, Err(AppError::ValidationError(msg)) if msg == "Display name cannot be empty"));
+    }
+
+    #[test]
+    fn validate_profile_fields_long_name() {
+        let long_name = "a".repeat(101);
+        let res = validate_profile_fields(Some(&long_name), None, None);
+        assert!(matches!(res, Err(AppError::ValidationError(msg)) if msg.contains("Display name cannot exceed")));
+    }
+
+    #[test]
+    fn validate_profile_fields_long_bio() {
+        let long_bio = "a".repeat(1001);
+        let res = validate_profile_fields(None, None, Some(&long_bio));
+        assert!(matches!(res, Err(AppError::ValidationError(msg)) if msg.contains("Bio cannot exceed")));
+    }
+
+    #[test]
+    fn validate_profile_fields_long_avatar() {
+        let long_url = "a".repeat(2049);
+        let res = validate_profile_fields(None, Some(&long_url), None);
+        assert!(matches!(res, Err(AppError::ValidationError(msg)) if msg.contains("Avatar URL cannot exceed")));
+    }
+
+    #[test]
+    fn validate_registration_fields_valid() {
+        let res = validate_registration_fields("test@example.com", "testuser", "Test User");
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn validate_registration_fields_long_email() {
+        let long_email = "a".repeat(256);
+        let res = validate_registration_fields(&long_email, "testuser", "Test User");
+        assert!(matches!(res, Err(AppError::ValidationError(msg)) if msg.contains("Email cannot exceed")));
+    }
+
+    #[test]
+    fn validate_registration_fields_long_username() {
+        let long_username = "a".repeat(51);
+        let res = validate_registration_fields("test@example.com", &long_username, "Test User");
+        assert!(matches!(res, Err(AppError::ValidationError(msg)) if msg.contains("Username cannot exceed")));
+    }
+
+    #[test]
+    fn validate_registration_fields_long_display_name() {
+        let long_name = "a".repeat(101);
+        let res = validate_registration_fields("test@example.com", "testuser", &long_name);
+        assert!(matches!(res, Err(AppError::ValidationError(msg)) if msg.contains("Display name cannot exceed")));
+    }
 }

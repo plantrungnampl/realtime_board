@@ -53,3 +53,14 @@
 1. Implement a `security_headers` middleware using `axum::middleware::from_fn`.
 2. Apply `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, and `X-XSS-Protection: 1; mode=block`.
 3. Register this middleware globally in the main router.
+
+## 2026-02-19 - Missing Input Length Validation
+
+**Vulnerability:** User input fields (`display_name`, `bio`, `avatar_url`) lacked length validation in the application layer, relying solely on database constraints or implicit text limits. This could allow attackers to send massive payloads, potentially causing Denial of Service (DoS) or memory exhaustion.
+
+**Learning:** Database constraints (e.g., `VARCHAR(100)`) are a final defense but do not prevent the application from processing oversized data before hitting the DB. Input validation must occur at the application boundary (Use Case / Service layer).
+
+**Prevention:**
+1. Implement strict length limits for all user inputs in the Service/UseCase layer.
+2. Use helper functions to centralize validation logic.
+3. Do not rely solely on database errors to reject invalid input.
