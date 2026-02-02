@@ -289,6 +289,42 @@ export const areCursorsEqual = (
   return areDragPresencesEqual(left.dragging ?? null, right.dragging ?? null);
 };
 
+const areEditingPresencesEqual = (
+  left: { element_id: string; mode: SelectionEditMode } | null | undefined,
+  right: { element_id: string; mode: SelectionEditMode } | null | undefined,
+) => {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  return left.element_id === right.element_id && left.mode === right.mode;
+};
+
+const areSelectionEntryEqual = (
+  left: SelectionPresence,
+  right: SelectionPresence,
+) => {
+  if (left === right) return true;
+  return (
+    left.user_id === right.user_id
+    && left.user_name === right.user_name
+    && left.avatar_url === right.avatar_url
+    && left.color === right.color
+    && areSelectionsEqual(left.element_ids, right.element_ids)
+    && areEditingPresencesEqual(left.editing, right.editing)
+  );
+};
+
+export const areSelectionPresencesEqual = (
+  left: SelectionPresence[],
+  right: SelectionPresence[],
+) => {
+  if (left === right) return true;
+  if (left.length !== right.length) return false;
+  for (let i = 0; i < left.length; i += 1) {
+    if (!areSelectionEntryEqual(left[i], right[i])) return false;
+  }
+  return true;
+};
+
 const normalizeEditingPresence = (value: unknown) => {
   const record = asRecord(value);
   if (!record) return null;
@@ -306,6 +342,7 @@ export const buildSelectionPresence = (
   awareness: Awareness,
   localUserId: string,
   selectionStaleMs: number,
+  previous?: SelectionPresence[],
 ): SelectionPresence[] => {
   const entries: Array<SelectionPresence & { last_seen: number }> = [];
   const now = Date.now();
@@ -339,11 +376,17 @@ export const buildSelectionPresence = (
     });
   });
   entries.sort((a, b) => b.last_seen - a.last_seen);
-  return entries.map((entry) => {
+  const next = entries.map((entry) => {
     const sanitized = { ...entry };
     delete (sanitized as { last_seen?: number }).last_seen;
     return sanitized;
   });
+
+  if (previous && areSelectionPresencesEqual(previous, next)) {
+    return previous;
+  }
+
+  return next;
 };
 
 const normalizeDragPresence = (value: unknown): DragPresence | null => {
