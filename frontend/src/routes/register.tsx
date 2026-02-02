@@ -289,11 +289,7 @@ function Register() {
             isLoading={isLoading || isInviteLoading}
             disabled={isInviteFlow && !isInviteValid}
           >
-            {isInviteLoading
-              ? 'Validating invite...'
-              : isLoading
-                ? 'Creating account...'
-                : 'Sign Up'}
+            Sign Up
           </Button>
         </form>
 

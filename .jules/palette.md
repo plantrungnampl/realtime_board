@@ -21,3 +21,7 @@
 ## 2024-10-27 - Keyboard Shortcuts Discovery
 **Learning:** Keyboard shortcuts are powerful but useless if users don't know them. Displaying shortcuts in tooltips (e.g., "Rectangle (R)") bridges the gap between novice and power users without cluttering the UI.
 **Action:** When implementing keyboard shortcuts for actions that have UI buttons, always update the button's tooltip or label to include the shortcut key.
+
+## 2025-02-18 - Button Loading State Stability
+**Learning:** Changing button text during loading (e.g. "Sign In" -> "Signing in...") causes layout shifts and redundancy when a spinner is also used.
+**Action:** Keep button text static during loading (e.g. always "Sign In") and rely on the `isLoading` prop (spinner) for feedback, ensuring a stable and professional UI.

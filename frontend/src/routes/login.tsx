@@ -120,7 +120,7 @@ function Login() {
             </div>
           </div>
           <Button className="w-full" type="submit" isLoading={isLoading}>
-            {isLoading ? "Signing in..." : "Sign In"}
+            Sign In
           </Button>
         </form>
 
