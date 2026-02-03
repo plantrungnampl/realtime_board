@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use uuid::Uuid;
 
 use crate::models::organizations::{OrgRole, Organization};
@@ -110,10 +111,19 @@ pub struct OrganizationInvitationsResponse {
 }
 
 /// Query parameters for validating pre-signup invites.
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct InviteValidationQuery {
     pub token: String,
     pub email: String,
+}
+
+impl fmt::Debug for InviteValidationQuery {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("InviteValidationQuery")
+            .field("token", &"***")
+            .field("email", &self.email)
+            .finish()
+    }
 }
 
 /// Response payload for invite validation.
@@ -203,5 +213,24 @@ impl From<Organization> for OrganizationResponse {
             storage_limit_mb: organization.storage_limit_mb,
             created_at: organization.created_at,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn debug_redacts_invite_validation_query() {
+        let req = InviteValidationQuery {
+            token: "secret_invite_token".to_string(),
+            email: "test@example.com".to_string(),
+        };
+        let debug_output = format!("{:?}", req);
+        assert!(debug_output.contains("token"));
+        assert!(debug_output.contains("***"));
+        assert!(!debug_output.contains("secret_invite_token"));
+        assert!(debug_output.contains("email"));
+        assert!(debug_output.contains("test@example.com"));
     }
 }
