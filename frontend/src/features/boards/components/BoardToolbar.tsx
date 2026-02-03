@@ -111,15 +111,15 @@ export function BoardToolbar({
       <button
         type="button"
         onClick={onResetZoom}
-        aria-label="Reset zoom"
+        aria-label="Reset zoom (Ctrl+0)"
         className={cn(
           "group relative flex h-11 w-11 items-center justify-center rounded-xl text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-200",
           focusRing,
         )}
-        title="Reset zoom"
+        title="Reset zoom (Ctrl+0)"
       >
         <RotateCcw className="h-5 w-5" />
-        <TooltipLabel label="Reset zoom" />
+        <TooltipLabel label="Reset zoom (Ctrl+0)" />
       </button>
     </div>
   );
