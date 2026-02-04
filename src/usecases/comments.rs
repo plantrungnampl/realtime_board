@@ -35,7 +35,7 @@ impl CommentService {
         BoardService::ensure_can_comment(pool, board_id, user_id).await?;
 
         let content = normalize_comment_content(&req.content)?;
-        let mentions = normalize_mentions(req.mentions)?;
+        let mentions = normalize_mentions(req.mentions.clone())?;
         let mentions = comment_repo::filter_mentions(pool, board_id, &mentions).await?;
         let notify_mentions = mentions
             .iter()
@@ -52,22 +52,18 @@ impl CommentService {
         let (position_x, position_y) =
             validate_position(req.element_id, req.position_x, req.position_y)?;
 
+        let params = build_create_params(
+            board_id,
+            user_id,
+            &req,
+            content,
+            position_x,
+            position_y,
+            mentions,
+        );
+
         let mut tx = pool.begin().await?;
-        let row = comment_repo::create_comment(
-            &mut tx,
-            CreateCommentParams {
-                board_id,
-                element_id: req.element_id,
-                parent_id: None,
-                created_by: user_id,
-                position_x,
-                position_y,
-                content,
-                content_html: req.content_html,
-                mentions,
-            },
-        )
-        .await?;
+        let row = comment_repo::create_comment(&mut tx, params).await?;
         let notify_mentions_for_event = notify_mentions.clone();
         if !notify_mentions.is_empty() {
             let notification_body = build_notification_body(&row.content);
@@ -136,6 +132,32 @@ impl CommentService {
         let (data, pagination) = build_comment_page(rows, limit);
 
         Ok(CommentListResponse { data, pagination })
+    }
+}
+
+fn build_create_params(
+    board_id: Uuid,
+    user_id: Uuid,
+    req: &CreateCommentRequest,
+    content: String,
+    position_x: Option<f64>,
+    position_y: Option<f64>,
+    mentions: Vec<Uuid>,
+) -> CreateCommentParams {
+    CreateCommentParams {
+        board_id,
+        element_id: req.element_id,
+        parent_id: None,
+        created_by: user_id,
+        position_x,
+        position_y,
+        content,
+        // Security: Ignore client-provided HTML to prevent Stored XSS.
+        // The frontend currently only uses plaintext 'content'.
+        // If rich text support is added later, HTML generation/sanitization
+        // must happen server-side.
+        content_html: None,
+        mentions,
     }
 }
 
@@ -403,5 +425,33 @@ mod tests {
     fn rejects_limit_over_max() {
         let result = normalize_comment_limit(Some(MAX_COMMENT_PAGE_SIZE + 1));
         assert!(matches!(result, Err(AppError::ValidationError(_))));
+    }
+
+    #[test]
+    fn build_create_params_ignores_content_html() {
+        let board_id = Uuid::new_v4();
+        let user_id = Uuid::new_v4();
+        let req = CreateCommentRequest {
+            content: "Hello".to_string(),
+            content_html: Some("<script>alert(1)</script>".to_string()),
+            element_id: None,
+            position_x: Some(100.0),
+            position_y: Some(100.0),
+            mentions: None,
+        };
+        let content = req.content.clone();
+
+        let params = build_create_params(
+            board_id,
+            user_id,
+            &req,
+            content,
+            req.position_x,
+            req.position_y,
+            Vec::new(),
+        );
+
+        assert_eq!(params.content_html, None);
+        assert_eq!(params.content, "Hello");
     }
 }
