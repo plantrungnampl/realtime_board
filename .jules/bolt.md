@@ -19,3 +19,8 @@
 **Learning:** In `@pixi/react`, passing a new function to the `draw` prop of `<Graphics>` on every render forces the underlying Pixi object to clear and redraw, even if the visual output hasn't changed. By memoizing the `draw` callback with granular dependencies (e.g., style, width, height) instead of the volatile `element` object (which changes on every drag frame due to position updates), we prevent expensive redraws during dragging.
 
 **Action:** When using `<Graphics>` in `@pixi/react`, always wrap the `draw` function in `useCallback` and ensure its dependencies are visually relevant properties, not the entire state object. Suppress `react-hooks/preserve-manual-memoization` if necessary.
+
+## 2025-05-21 - [Optimization] Cursor and Selection Rendering
+**Learning:** Inline `draw` functions in `@pixi/react` cause frequent unnecessary redraws for high-frequency components like cursors (60fps) and selection highlights. Even if the component is memoized, if the `draw` function is recreated (e.g. inside a map loop or due to other prop changes), Pixi will clear and redraw the graphics.
+
+**Action:** Extract rendering logic for high-frequency items (like cursors and selections) into memoized components with stable `draw` callbacks (via `useCallback`). This ensures that graphics are only redrawn when visual properties (color, shape) actually change, not when position changes.
