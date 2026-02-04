@@ -181,19 +181,17 @@ export function OrganizationInvitations({
                 <Button
                   variant="secondary"
                   onClick={() => handleDecline(invitation)}
-                  disabled={isBusy && actionType === "decline"}
+                  disabled={isBusy}
+                  isLoading={isBusy && actionType === "decline"}
                 >
-                  {isBusy && actionType === "decline"
-                    ? t("org.invitationDeclining")
-                    : t("org.invitationDecline")}
+                  {t("org.invitationDecline")}
                 </Button>
                 <Button
                   onClick={() => handleAccept(invitation)}
-                  disabled={isBusy && actionType === "accept"}
+                  disabled={isBusy}
+                  isLoading={isBusy && actionType === "accept"}
                 >
-                  {isBusy && actionType === "accept"
-                    ? t("org.invitationAccepting")
-                    : t("org.invitationAccept")}
+                  {t("org.invitationAccept")}
                 </Button>
               </div>
             </div>

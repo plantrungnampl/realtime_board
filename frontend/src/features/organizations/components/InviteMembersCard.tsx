@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { X } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -131,9 +132,10 @@ export function InviteMembersCard({
                   <button
                     type="button"
                     onClick={() => onInviteRemove(email)}
-                    className="text-text-muted hover:text-text-primary"
+                    className="ml-1 text-text-muted hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 rounded-sm"
+                    aria-label={t("org.inviteRemoveEmail", { email })}
                   >
-                    ×
+                    <X className="h-3 w-3" />
                   </button>
                 </span>
               ))}
@@ -146,8 +148,9 @@ export function InviteMembersCard({
             type="submit"
             className="min-w-[180px]"
             disabled={!canInvite || isInviting}
+            isLoading={isInviting}
           >
-            {isInviting ? t("org.inviteSending") : t("org.inviteSend")}
+            {t("org.inviteSend")}
           </Button>
         </div>
       </form>

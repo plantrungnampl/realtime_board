@@ -99,6 +99,7 @@ const resources = {
       "org.emailInviteCancelError": "Failed to cancel email invite.",
       "org.inviteErrorInvalid": "Invalid email(s): {{emails}}",
       "org.inviteErrorDuplicate": "Already added: {{emails}}",
+      "org.inviteRemoveEmail": "Remove {{email}}",
       "org.inviteError": "Failed to finish workspace setup.",
       "org.finishCreatingBoard": "Creating board...",
       "org.membersTitle": "Members",
