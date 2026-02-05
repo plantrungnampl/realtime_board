@@ -53,3 +53,14 @@
 1. Implement a `security_headers` middleware using `axum::middleware::from_fn`.
 2. Apply `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, and `X-XSS-Protection: 1; mode=block`.
 3. Register this middleware globally in the main router.
+
+## 2026-02-21 - Unverified Subscription Upgrade
+
+**Vulnerability:** The endpoint `PATCH /organizations/{id}/subscription` allowed any organization owner to set their subscription tier to `Enterprise` (or any other tier) via a simple JSON request, with no payment verification or signature check.
+
+**Learning:** "Coming Soon" or "Admin" features exposed in the main API router are dangerous if not properly gated. Trusting the client to declare their subscription status is a critical business logic flaw.
+
+**Prevention:**
+1. Do not expose administrative or payment-related endpoints until the full verification loop (e.g., Stripe webhooks) is implemented.
+2. Verify payment status on the backend before applying tier changes; never trust the client request payload for entitlement upgrades.
+3. Use feature flags to completely disable unfinished routes in production.
