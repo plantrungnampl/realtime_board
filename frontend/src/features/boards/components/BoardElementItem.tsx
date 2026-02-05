@@ -1,6 +1,13 @@
 import { memo, useCallback, useMemo, useRef } from "react";
 import type { Container as PixiContainer, FederatedPointerEvent, Graphics } from "pixi.js";
-import type { BoardElement } from "@/types/board";
+import type {
+  BoardElement,
+  ShapeElement,
+  DrawingElement,
+  TextElement,
+  StickyNoteElement,
+  ConnectorElement,
+} from "@/types/board";
 import { DEFAULT_TEXT_STYLE } from "@/features/boards/boardRoute/elements";
 import {
   coerceNumber,
@@ -125,7 +132,8 @@ function useDoubleTap() {
   }, []);
 }
 
-const BoardRectangleItem = ({ element, isInteractive, onPointerDown, registerRef }: BoardElementItemProps) => {
+const BoardRectangleItem = ({ element: genericElement, isInteractive, onPointerDown, registerRef }: BoardElementItemProps) => {
+  const element = genericElement as ShapeElement;
   const rect = getRectBounds(element);
   const draw = useCallback(
     (g: Graphics) => drawRectShape(g, element, rect),
@@ -146,7 +154,8 @@ const BoardRectangleItem = ({ element, isInteractive, onPointerDown, registerRef
   );
 };
 
-const BoardCircleItem = ({ element, isInteractive, onPointerDown, registerRef }: BoardElementItemProps) => {
+const BoardCircleItem = ({ element: genericElement, isInteractive, onPointerDown, registerRef }: BoardElementItemProps) => {
+  const element = genericElement as ShapeElement;
   const radius = Math.hypot(element.width || 0, element.height || 0);
   const positionX = coerceNumber(element.position_x, 0);
   const positionY = coerceNumber(element.position_y, 0);
@@ -169,7 +178,8 @@ const BoardCircleItem = ({ element, isInteractive, onPointerDown, registerRef }:
   );
 };
 
-const BoardDrawingItem = ({ element, isInteractive, onPointerDown, registerRef }: BoardElementItemProps) => {
+const BoardDrawingItem = ({ element: genericElement, isInteractive, onPointerDown, registerRef }: BoardElementItemProps) => {
+  const element = genericElement as DrawingElement;
   const points = element.properties.points;
   const isValid = Array.isArray(points) && isValidDrawingPoints(points);
   const positionX = coerceNumber(element.position_x, 0);
@@ -206,7 +216,8 @@ const BoardDrawingItem = ({ element, isInteractive, onPointerDown, registerRef }
   );
 };
 
-const BoardTextItem = ({ element, isInteractive, onPointerDown, onOpenTextEditor, registerRef }: BoardElementItemProps) => {
+const BoardTextItem = ({ element: genericElement, isInteractive, onPointerDown, onOpenTextEditor, registerRef }: BoardElementItemProps) => {
+  const element = genericElement as TextElement;
   const positionX = coerceNumber(element.position_x, 0);
   const positionY = coerceNumber(element.position_y, 0);
   const fontSize = element.style.fontSize ?? DEFAULT_TEXT_STYLE.fontSize ?? 16;
@@ -255,7 +266,8 @@ const BoardTextItem = ({ element, isInteractive, onPointerDown, onOpenTextEditor
   );
 };
 
-const BoardStickyNoteItem = ({ element, isInteractive, onPointerDown, onOpenTextEditor, registerRef }: BoardElementItemProps) => {
+const BoardStickyNoteItem = ({ element: genericElement, isInteractive, onPointerDown, onOpenTextEditor, registerRef }: BoardElementItemProps) => {
+  const element = genericElement as StickyNoteElement;
   const rect = getRectBounds(element);
   const fontSize = element.style.fontSize ?? 16;
   const content = element.properties?.content ?? "";
@@ -315,7 +327,8 @@ const BoardStickyNoteItem = ({ element, isInteractive, onPointerDown, onOpenText
   );
 };
 
-const BoardConnectorItem = ({ element, isInteractive, onPointerDown, registerRef }: BoardElementItemProps) => {
+const BoardConnectorItem = ({ element: genericElement, isInteractive, onPointerDown, registerRef }: BoardElementItemProps) => {
+  const element = genericElement as ConnectorElement;
   const points = resolveConnectorPoints(element);
   const isValid = points && points.length >= 4;
 
