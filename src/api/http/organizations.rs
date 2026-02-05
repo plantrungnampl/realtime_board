@@ -65,23 +65,24 @@ pub async fn get_usage_handle(
     Ok(Json(response))
 }
 
-/// Updates organization subscription tier.
-pub async fn update_subscription_tier_handle(
-    State(state): State<AppState>,
-    Extension(auth_user): Extension<AuthUser>,
-    Path(organization_id): Path<Uuid>,
-    Json(req): Json<UpdateOrganizationSubscriptionRequest>,
-) -> Result<Json<OrganizationResponse>, AppError> {
-    let response = OrganizationService::update_subscription_tier(
-        &state.db,
-        organization_id,
-        auth_user.user_id,
-        req,
-    )
-    .await?;
-
-    Ok(Json(response))
-}
+// Security: This endpoint was removed because it allowed free upgrades.
+// Re-enable only after implementing payment verification.
+// pub async fn update_subscription_tier_handle(
+//     State(state): State<AppState>,
+//     Extension(auth_user): Extension<AuthUser>,
+//     Path(organization_id): Path<Uuid>,
+//     Json(req): Json<UpdateOrganizationSubscriptionRequest>,
+// ) -> Result<Json<OrganizationResponse>, AppError> {
+//     let response = OrganizationService::update_subscription_tier(
+//         &state.db,
+//         organization_id,
+//         auth_user.user_id,
+//         req,
+//     )
+//     .await?;
+//
+//     Ok(Json(response))
+// }
 
 /// Lists pre-signup invites for an organization.
 pub async fn list_email_invites_handle(

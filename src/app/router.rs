@@ -145,10 +145,6 @@ pub fn build_router(state: AppState) -> Router {
             get(organizations_http::get_usage_handle),
         )
         .route(
-            "/organizations/{organization_id}/subscription",
-            patch(organizations_http::update_subscription_tier_handle),
-        )
-        .route(
             "/organizations/{organization_id}/invites",
             get(organizations_http::list_email_invites_handle),
         )
