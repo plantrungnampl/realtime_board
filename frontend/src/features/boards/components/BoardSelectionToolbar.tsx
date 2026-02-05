@@ -88,7 +88,7 @@ export function BoardSelectionToolbar({
                   key={`fill-${color}`}
                   type="button"
                   className={cn(
-                    "h-5 w-5 rounded-full border border-border/70 transition-transform hover:scale-105",
+                    "h-5 w-5 rounded-full border border-border/70 transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 focus-visible:ring-offset-2",
                     isActive && "ring-2 ring-offset-2 ring-blue-500/70 ring-offset-bg-surface",
                     color === "transparent" && "bg-[linear-gradient(135deg,#374151_25%,transparent_25%,transparent_50%,#374151_50%,#374151_75%,transparent_75%,transparent)] bg-[length:8px_8px]",
                   )}
@@ -113,7 +113,7 @@ export function BoardSelectionToolbar({
                   key={`stroke-${color}`}
                   type="button"
                   className={cn(
-                    "h-5 w-5 rounded-full border border-border/70 transition-transform hover:scale-105",
+                    "h-5 w-5 rounded-full border border-border/70 transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 focus-visible:ring-offset-2",
                     isActive && "ring-2 ring-offset-2 ring-blue-500/70 ring-offset-bg-surface",
                   )}
                   style={{ backgroundColor: color }}
