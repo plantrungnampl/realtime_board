@@ -21,3 +21,7 @@
 ## 2024-10-27 - Keyboard Shortcuts Discovery
 **Learning:** Keyboard shortcuts are powerful but useless if users don't know them. Displaying shortcuts in tooltips (e.g., "Rectangle (R)") bridges the gap between novice and power users without cluttering the UI.
 **Action:** When implementing keyboard shortcuts for actions that have UI buttons, always update the button's tooltip or label to include the shortcut key.
+
+## 2026-02-06 - Accessible Tooltips & Toggle State
+**Learning:** Tooltips that only appear on hover exclude keyboard users. Toggle buttons (like tools) need programmatic state indication.
+**Action:** Use `group-focus-visible` to show tooltips on keyboard focus, and `aria-pressed` for toggle/radio buttons in toolbars.
