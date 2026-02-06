@@ -53,3 +53,14 @@
 1. Implement a `security_headers` middleware using `axum::middleware::from_fn`.
 2. Apply `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, and `X-XSS-Protection: 1; mode=block`.
 3. Register this middleware globally in the main router.
+
+## 2026-02-20 - Hardcoded Database Credentials in Docker Compose
+
+**Vulnerability:** The `docker-compose.yml` file contained hardcoded passwords for the PostgreSQL database (`POSTGRES_PASSWORD`) and pgAdmin (`PGADMIN_DEFAULT_PASSWORD`). This exposes critical infrastructure credentials to anyone with access to the repository.
+
+**Learning:** Developers often hardcode credentials in orchestration files for "quick start" ease, treating them as non-production config. However, these files often end up being used as a base for production or exposed in public repositories.
+
+**Prevention:**
+1. Use environment variable interpolation (`${VAR}`) in `docker-compose.yml`.
+2. Document required variables in `.env.example`.
+3. Never commit secrets to version control, even for "development" environments if possible (use `.env` ignored by git).
