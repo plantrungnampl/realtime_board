@@ -59,9 +59,16 @@ function ElementContainer({
   onPointerTap,
   children,
 }: ElementContainerProps) {
+  // Memoize the ref callback to prevent ref churn (detach/attach) on every render.
+  // This is critical during drag operations where the component re-renders every frame.
+  const handleRef = useCallback(
+    (node: PixiContainer | null) => registerRef(element.id, node),
+    [element.id, registerRef],
+  );
+
   return (
     <pixiContainer
-      ref={(node: PixiContainer | null) => registerRef(element.id, node)}
+      ref={handleRef}
       x={x}
       y={y}
       rotation={(element.rotation ?? 0) * DEG_TO_RAD}
