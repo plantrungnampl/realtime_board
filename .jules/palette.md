@@ -21,3 +21,7 @@
 ## 2024-10-27 - Keyboard Shortcuts Discovery
 **Learning:** Keyboard shortcuts are powerful but useless if users don't know them. Displaying shortcuts in tooltips (e.g., "Rectangle (R)") bridges the gap between novice and power users without cluttering the UI.
 **Action:** When implementing keyboard shortcuts for actions that have UI buttons, always update the button's tooltip or label to include the shortcut key.
+
+## 2024-10-28 - Interactive Element Consistency
+**Learning:** Custom interactive elements (like color swatches using raw `button` tags) often lack the standard focus ring provided by the design system's `Button` component, making them invisible to keyboard users. Also, combining native `title` tooltips with custom tooltip components causes cluttered double-tooltip UI.
+**Action:** Manually apply `focus-visible` utility classes to all raw interactive elements and remove `title` attributes when using custom tooltip components.
