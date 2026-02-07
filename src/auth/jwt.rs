@@ -14,6 +14,8 @@ pub struct Claims {
     pub email: String,
     pub iat: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub typ: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub iss: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub aud: Option<String>,
@@ -73,6 +75,7 @@ impl JwtConfig {
             email,
             exp: exp.timestamp(),
             iat: now.timestamp(),
+            typ: Some("access".to_string()),
             iss: self.issuer.clone(),
             aud: self.audience.clone(),
         };
@@ -95,6 +98,15 @@ impl JwtConfig {
             &DecodingKey::from_secret(self.secret.as_bytes()),
             &validation,
         )?;
+
+        if let Some(ref typ) = token_data.claims.typ {
+            if typ != "access" {
+                return Err(jsonwebtoken::errors::Error::from(
+                    jsonwebtoken::errors::ErrorKind::InvalidToken,
+                ));
+            }
+        }
+
         Ok(token_data.claims)
     }
 
@@ -157,4 +169,85 @@ pub fn verify_password_user(
         .verify_password(passoword.as_bytes(), &parsed_hash)
         .is_ok();
     Ok(is_valid)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_access_token_creation_and_verification() {
+        let config = JwtConfig {
+            secret: "secret".to_string(),
+            expiration_hours: 1,
+            issuer: None,
+            audience: None,
+        };
+        let user_id = Uuid::new_v4();
+        let email = "test@example.com".to_string();
+
+        let token = config.create_token(user_id, email.clone()).unwrap();
+        let claims = config.verify_token(&token).unwrap();
+
+        assert_eq!(claims.sub, user_id.to_string());
+        assert_eq!(claims.email, email);
+        assert_eq!(claims.typ, Some("access".to_string()));
+    }
+
+    #[test]
+    fn test_email_verification_token_cannot_be_used_as_access_token() {
+        let config = JwtConfig {
+            secret: "secret".to_string(),
+            expiration_hours: 1,
+            issuer: None,
+            audience: None,
+        };
+        let user_id = Uuid::new_v4();
+        let email = "test@example.com".to_string();
+
+        let token = config
+            .create_email_verification_token(user_id, email)
+            .unwrap();
+
+        // Should fail when verified as access token
+        let result = config.verify_token(&token);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_legacy_token_without_typ_succeeds() {
+        let config = JwtConfig {
+            secret: "secret".to_string(),
+            expiration_hours: 1,
+            issuer: None,
+            audience: None,
+        };
+
+        #[derive(Serialize)]
+        struct LegacyClaims {
+            sub: String,
+            exp: i64,
+            email: String,
+            iat: i64,
+        }
+
+        let claims = LegacyClaims {
+            sub: Uuid::new_v4().to_string(),
+            exp: (Utc::now() + Duration::hours(1)).timestamp(),
+            email: "test@example.com".to_string(),
+            iat: Utc::now().timestamp(),
+        };
+
+        let token = encode(
+            &Header::new(Algorithm::HS256),
+            &claims,
+            &EncodingKey::from_secret(config.secret.as_bytes()),
+        )
+        .unwrap();
+
+        // Should succeed for backward compatibility
+        let result = config.verify_token(&token);
+        assert!(result.is_ok());
+        assert!(result.unwrap().typ.is_none());
+    }
 }

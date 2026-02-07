@@ -53,3 +53,14 @@
 1. Implement a `security_headers` middleware using `axum::middleware::from_fn`.
 2. Apply `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, and `X-XSS-Protection: 1; mode=block`.
 3. Register this middleware globally in the main router.
+
+## 2026-02-20 - JWT Token Confusion Vulnerability
+
+**Vulnerability:** The application used a generic `Claims` structure for access tokens without a `typ` (type) field, while email verification tokens had a `typ` field. This allowed valid email verification tokens to be potentially accepted as access tokens because the `Claims` deserialization ignored the `typ` field and the verification logic didn't check it.
+
+**Learning:** When using JWTs for multiple purposes (access, invite, verification), always include an explicit `typ` claim in *all* tokens and verify it. Relying on different structs or implicit assumptions is dangerous because `serde` can successfully deserialize a superset payload into a subset struct (ignoring extra fields).
+
+**Prevention:**
+1. Add `typ` field to all JWT payloads.
+2. Enforce `typ` check in verification logic.
+3. Use distinct signing keys for different token types if possible, or strictly enforce `typ`.
