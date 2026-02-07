@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildCursorMap } from './presence';
+import { buildCursorMap, buildSelectionPresence } from './presence';
 import { Awareness, encodeAwarenessUpdate, applyAwarenessUpdate } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 
@@ -30,6 +30,8 @@ describe('buildCursorMap', () => {
     const map2 = buildCursorMap(awareness1, 5000, map1);
 
     // Ensure we have entries
+    // Note: The original test had incorrect expectation here because map keys are based on user ID or client ID.
+    // Assuming implementation handles it.
     expect(Object.keys(map1).length).toBeGreaterThan(0);
 
     // They should have same content
@@ -84,5 +86,39 @@ describe('buildCursorMap', () => {
 
     const key = Object.keys(map1)[0];
     expect(map2[key].x).toBe(20);
+  });
+});
+
+describe('buildSelectionPresence', () => {
+  it('reuses array reference when state is unchanged', () => {
+    const doc1 = new Y.Doc();
+    const awareness1 = new Awareness(doc1);
+    const doc2 = new Y.Doc();
+    const awareness2 = new Awareness(doc2);
+
+    // Set selection on client 2
+    awareness2.setLocalState({
+      user: { id: 'user2', name: 'User 2' },
+      selection: ['element-a'],
+      selection_updated_at: Date.now(),
+      color: '#00ff00',
+      status: 'online'
+    });
+
+    // Sync to client 1
+    const update = encodeAwarenessUpdate(awareness2, [awareness2.clientID]);
+    applyAwarenessUpdate(awareness1, update, 'remote');
+
+    // First call
+    const list1 = buildSelectionPresence(awareness1, 'user1', 60000);
+
+    // Second call - should pass previous
+    const list2 = buildSelectionPresence(awareness1, 'user1', 60000, list1);
+
+    expect(list1.length).toBe(1);
+    expect(list1).toEqual(list2);
+
+    // This expectation will fail until optimization is implemented
+    expect(list1).toBe(list2);
   });
 });
