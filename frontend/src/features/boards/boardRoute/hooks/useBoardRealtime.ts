@@ -998,8 +998,13 @@ export function useBoardRealtime({
       const syncAwarenessState = () => {
         if (disposed || !awareness) return;
         setCursors((prev) => buildCursorMap(awareness!, CURSOR_IDLE_MS, prev));
-        setSelectionPresence(
-          buildSelectionPresence(awareness!, userIdRef.current, SELECTION_STALE_MS),
+        setSelectionPresence((prev) =>
+          buildSelectionPresence(
+            awareness!,
+            userIdRef.current,
+            SELECTION_STALE_MS,
+            prev,
+          ),
         );
       };
 

@@ -302,10 +302,26 @@ const normalizeEditingPresence = (value: unknown) => {
   } as { element_id: string; mode: SelectionEditMode };
 };
 
+const areSelectionItemsEqual = (a: SelectionPresence, b: SelectionPresence) => {
+  if (a.user_id !== b.user_id) return false;
+  if (a.user_name !== b.user_name) return false;
+  if (a.avatar_url !== b.avatar_url) return false;
+  if (a.color !== b.color) return false;
+  if (!areSelectionsEqual(a.element_ids, b.element_ids)) return false;
+
+  if (a.editing === b.editing) return true;
+  if (!a.editing || !b.editing) return false;
+  return (
+    a.editing.element_id === b.editing.element_id
+    && a.editing.mode === b.editing.mode
+  );
+};
+
 export const buildSelectionPresence = (
   awareness: Awareness,
   localUserId: string,
   selectionStaleMs: number,
+  previous?: SelectionPresence[],
 ): SelectionPresence[] => {
   const entries: Array<SelectionPresence & { last_seen: number }> = [];
   const now = Date.now();
@@ -339,11 +355,32 @@ export const buildSelectionPresence = (
     });
   });
   entries.sort((a, b) => b.last_seen - a.last_seen);
-  return entries.map((entry) => {
+  const next = entries.map((entry) => {
     const sanitized = { ...entry };
     delete (sanitized as { last_seen?: number }).last_seen;
     return sanitized;
   });
+
+  if (!previous) return next;
+  if (previous.length !== next.length) return next;
+
+  let allReused = true;
+  const reusedList: SelectionPresence[] = [];
+
+  for (let i = 0; i < next.length; i += 1) {
+    const n = next[i];
+    const p = previous[i];
+
+    if (areSelectionItemsEqual(p, n)) {
+      reusedList.push(p);
+    } else {
+      reusedList.push(n);
+      allReused = false;
+    }
+  }
+
+  if (allReused) return previous;
+  return reusedList;
 };
 
 const normalizeDragPresence = (value: unknown): DragPresence | null => {
