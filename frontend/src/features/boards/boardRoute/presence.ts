@@ -289,6 +289,29 @@ export const areCursorsEqual = (
   return areDragPresencesEqual(left.dragging ?? null, right.dragging ?? null);
 };
 
+export const areSelectionPresencesEqual = (
+  left: SelectionPresence,
+  right: SelectionPresence,
+) => {
+  if (left === right) return true;
+  if (
+    left.user_id !== right.user_id
+    || left.user_name !== right.user_name
+    || left.avatar_url !== right.avatar_url
+    || left.color !== right.color
+  ) {
+    return false;
+  }
+  if (!areSelectionsEqual(left.element_ids, right.element_ids)) return false;
+
+  if (left.editing === right.editing) return true;
+  if (!left.editing || !right.editing) return false;
+  return (
+    left.editing.element_id === right.editing.element_id
+    && left.editing.mode === right.editing.mode
+  );
+};
+
 const normalizeEditingPresence = (value: unknown) => {
   const record = asRecord(value);
   if (!record) return null;
@@ -302,10 +325,49 @@ const normalizeEditingPresence = (value: unknown) => {
   } as { element_id: string; mode: SelectionEditMode };
 };
 
+export const reuseSelectionPresenceIfUnchanged = (
+  previous: SelectionPresence[] | undefined,
+  next: SelectionPresence[],
+): SelectionPresence[] => {
+  if (!previous) return next;
+
+  const prevMap = new Map<string, SelectionPresence>();
+  for (const p of previous) {
+    prevMap.set(p.user_id, p);
+  }
+
+  const reused: SelectionPresence[] = [];
+  let changed = false;
+
+  for (const candidate of next) {
+    const prev = prevMap.get(candidate.user_id);
+    if (prev && areSelectionPresencesEqual(candidate, prev)) {
+      reused.push(prev);
+    } else {
+      reused.push(candidate);
+      changed = true;
+    }
+  }
+
+  if (!changed && previous.length === next.length) {
+    let sameOrder = true;
+    for (let i = 0; i < next.length; i += 1) {
+      if (previous[i] !== reused[i]) {
+        sameOrder = false;
+        break;
+      }
+    }
+    if (sameOrder) return previous;
+  }
+
+  return reused;
+};
+
 export const buildSelectionPresence = (
   awareness: Awareness,
   localUserId: string,
   selectionStaleMs: number,
+  previous?: SelectionPresence[],
 ): SelectionPresence[] => {
   const entries: Array<SelectionPresence & { last_seen: number }> = [];
   const now = Date.now();
@@ -339,11 +401,12 @@ export const buildSelectionPresence = (
     });
   });
   entries.sort((a, b) => b.last_seen - a.last_seen);
-  return entries.map((entry) => {
+  const next = entries.map((entry) => {
     const sanitized = { ...entry };
     delete (sanitized as { last_seen?: number }).last_seen;
     return sanitized;
   });
+  return reuseSelectionPresenceIfUnchanged(previous, next);
 };
 
 const normalizeDragPresence = (value: unknown): DragPresence | null => {
