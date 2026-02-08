@@ -23,6 +23,20 @@ const STROKE_COLORS = [
   "#EF4444",
 ];
 
+const COLOR_NAMES: Record<string, string> = {
+  "#FFFFFF": "White",
+  "#FDE68A": "Light Yellow",
+  "#A7F3D0": "Light Green",
+  "#BFDBFE": "Light Blue",
+  "#FCA5A5": "Light Red",
+  transparent: "Transparent",
+  "#111827": "Black",
+  "#F59E0B": "Orange",
+  "#22C55E": "Green",
+  "#3B82F6": "Blue",
+  "#EF4444": "Red",
+};
+
 const STROKE_WIDTHS = [1, 2, 4];
 
 type ToolbarPosition = {
@@ -70,6 +84,9 @@ export function BoardSelectionToolbar({
     return null;
   }
 
+  const focusRing =
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/70 focus-visible:ring-offset-2 focus-visible:ring-offset-bg-surface";
+
   return (
     <div
       className="absolute z-30 flex items-center gap-3 rounded-full border border-border bg-bg-surface/95 px-3 py-2 shadow-lg backdrop-blur"
@@ -79,21 +96,32 @@ export function BoardSelectionToolbar({
     >
       {supportsFill && (
         <div className="flex items-center gap-2">
-          <span className="text-xs text-text-muted">{t("board.toolbar.fill")}</span>
+          <span className="text-xs text-text-muted">
+            {t("board.toolbar.fill")}
+          </span>
           <div className="flex items-center gap-1">
             {FILL_COLORS.map((color) => {
               const isActive = (fill ?? "transparent") === color;
+              const colorName = COLOR_NAMES[color] || color;
               return (
                 <button
                   key={`fill-${color}`}
                   type="button"
                   className={cn(
                     "h-5 w-5 rounded-full border border-border/70 transition-transform hover:scale-105",
-                    isActive && "ring-2 ring-offset-2 ring-blue-500/70 ring-offset-bg-surface",
-                    color === "transparent" && "bg-[linear-gradient(135deg,#374151_25%,transparent_25%,transparent_50%,#374151_50%,#374151_75%,transparent_75%,transparent)] bg-[length:8px_8px]",
+                    isActive &&
+                      "ring-2 ring-offset-2 ring-blue-500/70 ring-offset-bg-surface",
+                    color === "transparent" &&
+                      "bg-[linear-gradient(135deg,#374151_25%,transparent_25%,transparent_50%,#374151_50%,#374151_75%,transparent_75%,transparent)] bg-[length:8px_8px]",
+                    focusRing,
                   )}
-                  style={color === "transparent" ? undefined : { backgroundColor: color }}
-                  aria-label={`${t("board.toolbar.fill")} ${color}`}
+                  style={
+                    color === "transparent"
+                      ? undefined
+                      : { backgroundColor: color }
+                  }
+                  aria-label={`${t("board.toolbar.fill")} ${colorName}`}
+                  aria-pressed={isActive}
                   onClick={() => onFillChange(color)}
                 />
               );
@@ -104,20 +132,26 @@ export function BoardSelectionToolbar({
 
       {supportsStroke && (
         <div className="flex items-center gap-2">
-          <span className="text-xs text-text-muted">{t("board.toolbar.stroke")}</span>
+          <span className="text-xs text-text-muted">
+            {t("board.toolbar.stroke")}
+          </span>
           <div className="flex items-center gap-1">
             {STROKE_COLORS.map((color) => {
               const isActive = (stroke ?? "") === color;
+              const colorName = COLOR_NAMES[color] || color;
               return (
                 <button
                   key={`stroke-${color}`}
                   type="button"
                   className={cn(
                     "h-5 w-5 rounded-full border border-border/70 transition-transform hover:scale-105",
-                    isActive && "ring-2 ring-offset-2 ring-blue-500/70 ring-offset-bg-surface",
+                    isActive &&
+                      "ring-2 ring-offset-2 ring-blue-500/70 ring-offset-bg-surface",
+                    focusRing,
                   )}
                   style={{ backgroundColor: color }}
-                  aria-label={`${t("board.toolbar.stroke")} ${color}`}
+                  aria-label={`${t("board.toolbar.stroke")} ${colorName}`}
+                  aria-pressed={isActive}
                   onClick={() => onStrokeChange(color)}
                 />
               );
@@ -143,6 +177,7 @@ export function BoardSelectionToolbar({
                   strokeWidth === width && "bg-bg-elevated text-text-primary",
                 )}
                 aria-label={`${t("board.toolbar.strokeWidth")} ${width}`}
+                aria-pressed={strokeWidth === width}
                 onClick={() => onStrokeWidthChange(width)}
               >
                 <span
@@ -154,7 +189,6 @@ export function BoardSelectionToolbar({
           </div>
         </div>
       )}
-
     </div>
   );
 }
