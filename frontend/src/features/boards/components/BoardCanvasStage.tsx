@@ -1,4 +1,4 @@
-import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { Application, extend, useApplication, useTick } from "@pixi/react";
 import {
@@ -10,34 +10,24 @@ import {
 } from "pixi.js";
 import type { BoardElement } from "@/types/board";
 import type { CursorBroadcast, DragPresence, SelectionPresence } from "@/features/boards/types";
-import { DEFAULT_TEXT_STYLE } from "@/features/boards/boardRoute/elements";
-import { getTextMetrics } from "@/features/boards/boardRoute.utils";
 import type { SnapGuide } from "@/features/boards/elementMove.utils";
 import { getElementBounds, getAnchorPosition } from "@/features/boards/elementMove.utils";
 import type { CanvasPointerEvent, CanvasWheelEvent } from "@/features/boards/boardCanvas.hooks";
 import {
-  coerceNumber,
   parseColor,
   resolveFillStyle,
   getRectBounds,
-  toRectBounds,
   setStrokeStyle,
   setFillStyle,
 } from "@/features/boards/boardCanvas/renderUtils";
 import { BoardElementItem, type TextEditorPayload } from "@/features/boards/components/BoardElementItem";
+import { PresenceOutline, SelectionOutline } from "@/features/boards/components/BoardSelectionItems";
 
 extend({
   Container: PixiContainer,
   Graphics: PixiGraphics,
   Text: PixiText,
 });
-
-type SelectionOverlay = {
-  key: string;
-  element: BoardElement;
-  color: string;
-  label?: string;
-};
 
 type BoardCanvasStageProps = {
   stageRef: RefObject<HTMLDivElement | null>;
@@ -243,155 +233,24 @@ const SelectionLayer = memo(function SelectionLayer({
 }) {
   return (
     <pixiContainer eventMode="passive">
-      {localSelections.map((element) => {
-        if (element.element_type === "Shape") {
-          if (element.properties.shapeType === "rectangle") {
-            const rect = getRectBounds(element);
-            return (
-              <pixiContainer
-                key={`local-${element.id}`}
-                x={rect.x}
-                y={rect.y}
-                rotation={(element.rotation ?? 0) * DEG_TO_RAD}
-                eventMode="passive"
-              >
-                <pixiGraphics
-                  draw={(graphics) => {
-                    graphics.clear();
-                    setStrokeStyle(graphics, selectionStrokeWidth, parseColor(SELECTION_STROKE));
-                    graphics.rect(
-                      -selectionPadding,
-                      -selectionPadding,
-                      rect.width + selectionPadding * 2,
-                      rect.height + selectionPadding * 2,
-                    );
-                    graphics.stroke();
-                  }}
-                />
-              </pixiContainer>
-            );
-          }
-          if (element.properties.shapeType === "circle") {
-            const radius = Math.hypot(element.width || 0, element.height || 0);
-            const positionX = coerceNumber(element.position_x, 0);
-            const positionY = coerceNumber(element.position_y, 0);
-            return (
-              <pixiContainer
-                key={`local-${element.id}`}
-                x={positionX}
-                y={positionY}
-                rotation={(element.rotation ?? 0) * DEG_TO_RAD}
-                eventMode="passive"
-              >
-                <pixiGraphics
-                  draw={(graphics) => {
-                    graphics.clear();
-                    setStrokeStyle(graphics, selectionStrokeWidth, parseColor(SELECTION_STROKE));
-                    graphics.circle(0, 0, radius + selectionPadding);
-                    graphics.stroke();
-                  }}
-                />
-              </pixiContainer>
-            );
-          }
-        }
+      {localSelections.map((element) => (
+        <SelectionOutline
+          key={`local-${element.id}`}
+          element={element}
+          selectionStrokeWidth={selectionStrokeWidth}
+          selectionPadding={selectionPadding}
+        />
+      ))}
 
-        if (element.element_type === "Text") {
-          const positionX = coerceNumber(element.position_x, 0);
-          const positionY = coerceNumber(element.position_y, 0);
-          const fontSize = element.style.fontSize ?? DEFAULT_TEXT_STYLE.fontSize ?? 16;
-          const content = element.properties?.content ?? "";
-          const metrics = getTextMetrics(content, fontSize);
-          return (
-            <pixiContainer
-              key={`local-${element.id}`}
-              x={positionX}
-              y={positionY}
-              rotation={(element.rotation ?? 0) * DEG_TO_RAD}
-              eventMode="passive"
-            >
-              <pixiGraphics
-                draw={(graphics) => {
-                  graphics.clear();
-                  setStrokeStyle(graphics, selectionStrokeWidth, parseColor(SELECTION_STROKE));
-                  graphics.rect(
-                    -selectionPadding,
-                    -selectionPadding,
-                    metrics.width + selectionPadding * 2,
-                    metrics.height + selectionPadding * 2,
-                  );
-                  graphics.stroke();
-                }}
-              />
-            </pixiContainer>
-          );
-        }
-
-        if (element.element_type === "StickyNote") {
-          const rect = getRectBounds(element);
-          return (
-            <pixiContainer
-              key={`local-${element.id}`}
-              x={rect.x}
-              y={rect.y}
-              rotation={(element.rotation ?? 0) * DEG_TO_RAD}
-              eventMode="passive"
-            >
-              <pixiGraphics
-                draw={(graphics) => {
-                  graphics.clear();
-                  setStrokeStyle(graphics, selectionStrokeWidth, parseColor(SELECTION_STROKE));
-                  graphics.rect(
-                    -selectionPadding,
-                    -selectionPadding,
-                    rect.width + selectionPadding * 2,
-                    rect.height + selectionPadding * 2,
-                  );
-                  graphics.stroke();
-                }}
-              />
-            </pixiContainer>
-          );
-        }
-
-        return null;
-      })}
-
-      {presenceOverlays.map((overlay) => {
-        const rawBounds = getElementBounds(overlay.element);
-        if (!rawBounds) return null;
-        const bounds = toRectBounds(rawBounds);
-        const labelFontSize = 11 / stageScale;
-        const labelOffset = 6 / stageScale;
-        return (
-          <Fragment key={overlay.key}>
-            <pixiGraphics
-              draw={(graphics) => {
-                graphics.clear();
-                setStrokeStyle(graphics, selectionStrokeWidth, parseColor(overlay.color));
-                graphics.rect(
-                  bounds.x - selectionPadding,
-                  bounds.y - selectionPadding,
-                  bounds.width + selectionPadding * 2,
-                  bounds.height + selectionPadding * 2,
-                );
-                graphics.stroke();
-              }}
-            />
-            {overlay.label && (
-              <pixiText
-                text={overlay.label}
-                x={bounds.x}
-                y={bounds.y - labelFontSize - labelOffset}
-                style={{
-                  fontSize: labelFontSize,
-                  fill: overlay.color,
-                }}
-              />
-            )}
-          </Fragment>
-        );
-      })}
+      {presenceOverlays.map((overlay) => (
+        <PresenceOutline
+          key={overlay.key}
+          overlay={overlay}
+          selectionStrokeWidth={selectionStrokeWidth}
+          selectionPadding={selectionPadding}
+          stageScale={stageScale}
+        />
+      ))}
 
       {transformHandles && (
         <pixiContainer eventMode="static">

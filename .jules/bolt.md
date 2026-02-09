@@ -19,3 +19,8 @@
 **Learning:** In `@pixi/react`, passing a new function to the `draw` prop of `<Graphics>` on every render forces the underlying Pixi object to clear and redraw, even if the visual output hasn't changed. By memoizing the `draw` callback with granular dependencies (e.g., style, width, height) instead of the volatile `element` object (which changes on every drag frame due to position updates), we prevent expensive redraws during dragging.
 
 **Action:** When using `<Graphics>` in `@pixi/react`, always wrap the `draw` function in `useCallback` and ensure its dependencies are visually relevant properties, not the entire state object. Suppress `react-hooks/preserve-manual-memoization` if necessary.
+
+## 2026-02-09 - [Optimization] Stable Draw Functions in Lists
+**Learning:** In `@pixi/react`, rendering a list of items (like selection overlays) where each item has an inline `draw` function causes massive performance degradation. When the parent component re-renders (e.g., due to local drag), *all* items in the list get a new `draw` function, triggering a full clear and redraw for every item, even if their data hasn't changed.
+
+**Action:** Extract list items into memoized components (e.g., `PresenceOutline`). Inside the component, memoize the `draw` function with `useCallback`, ensuring dependencies are minimal and stable (e.g., using specific dimensions rather than the whole element object). This allows React's reconciliation to skip updates for unchanged items and prevents PixiJS from clearing graphics unnecessarily.
