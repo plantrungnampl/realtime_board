@@ -157,6 +157,7 @@ export function Sidebar({ activeView, onViewChange }: SidebarProps) {
           <Input 
             placeholder="Search..." 
             className="pl-9 bg-bg-surface border-border text-sm h-9"
+            aria-label={t("nav.search")}
           />
         </div>
       </div>
@@ -191,7 +192,12 @@ export function Sidebar({ activeView, onViewChange }: SidebarProps) {
       <div className="mt-8 px-4">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">Spaces</span>
-          <Button variant="ghost" size="sm" className="h-6 w-6 p-0 hover:bg-bg-surface">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-6 p-0 hover:bg-bg-surface"
+            aria-label={t("nav.createSpace")}
+          >
             <Plus className="w-4 h-4 text-text-muted" />
           </Button>
         </div>
