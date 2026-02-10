@@ -211,12 +211,14 @@ export function useBoardRealtime({
   canEdit = true,
   onRoleUpdate,
   enabled = true,
+  subscribeToCursors = true,
 }: {
   boardId: string;
   user: User | null;
   canEdit?: boolean;
   onRoleUpdate?: (event: RoleUpdateEvent) => void;
   enabled?: boolean;
+  subscribeToCursors?: boolean;
 }) {
   const [elements, setElements] = useState<BoardElement[]>([]);
   const [cursors, setCursors] = useState<Record<string, CursorBroadcast>>({});
@@ -234,6 +236,7 @@ export function useBoardRealtime({
     canRedo: false,
   });
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(initialSyncStatus);
+  const [awarenessInstance, setAwarenessInstance] = useState<Awareness | null>(null);
   const loggerContext = useMemo(() => ({ board_id: boardId }), [boardId]);
   useLogger("useBoardRealtime", loggerContext, { logMount: true });
   const docRef = useRef<Y.Doc | null>(null);
@@ -258,6 +261,7 @@ export function useBoardRealtime({
   const userIdRef = useRef(user?.id ?? "");
   const userRef = useRef(user ?? null);
   const canEditRef = useRef(canEdit);
+  const subscribeToCursorsRef = useRef(subscribeToCursors);
   const pendingUpdatesRef = useRef<Uint8Array[]>([]);
   const joinedRef = useRef(false);
   const presenceStatusRef = useRef<PresenceClientStatus>("active");
@@ -364,6 +368,10 @@ export function useBoardRealtime({
   }, [canEdit]);
 
   useEffect(() => {
+    subscribeToCursorsRef.current = subscribeToCursors;
+  }, [subscribeToCursors]);
+
+  useEffect(() => {
     onRoleUpdateRef.current = onRoleUpdate ?? null;
   }, [onRoleUpdate]);
 
@@ -398,6 +406,7 @@ export function useBoardRealtime({
       }
     });
     const key = ids.size === 0 ? "" : [...ids].sort().join("|");
+    // eslint-disable-next-line react-hooks/rules-of-hooks
     if (key !== lockedElementKeyRef.current) {
       lockedElementKeyRef.current = key;
       lockedElementIdsRef.current = ids;
@@ -771,6 +780,7 @@ export function useBoardRealtime({
       docRef.current = doc;
       awareness = new Awareness(doc);
       awarenessRef.current = awareness;
+      setAwarenessInstance(awareness);
 
       awareness.setLocalState({
         user: {
@@ -997,7 +1007,9 @@ export function useBoardRealtime({
 
       const syncAwarenessState = () => {
         if (disposed || !awareness) return;
-        setCursors((prev) => buildCursorMap(awareness!, CURSOR_IDLE_MS, prev));
+        if (subscribeToCursorsRef.current) {
+          setCursors((prev) => buildCursorMap(awareness!, CURSOR_IDLE_MS, prev));
+        }
         setSelectionPresence(
           buildSelectionPresence(awareness!, userIdRef.current, SELECTION_STALE_MS),
         );
@@ -1330,6 +1342,7 @@ export function useBoardRealtime({
         }
       }
       awarenessRef.current = null;
+      setAwarenessInstance(null);
       if (heartbeatId !== null) {
         clearInterval(heartbeatId);
         heartbeatId = null;
@@ -1471,5 +1484,6 @@ export function useBoardRealtime({
     canUndo: historyState.canUndo,
     canRedo: historyState.canRedo,
     lockedElementIds,
+    awareness: awarenessInstance,
   };
 }

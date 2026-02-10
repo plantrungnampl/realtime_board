@@ -8,10 +8,12 @@ import {
   Rectangle,
   Text as PixiText,
 } from "pixi.js";
+import type { Awareness } from "y-protocols/awareness";
 import type { BoardElement } from "@/types/board";
 import type { CursorBroadcast, DragPresence, SelectionPresence } from "@/features/boards/types";
 import { DEFAULT_TEXT_STYLE } from "@/features/boards/boardRoute/elements";
 import { getTextMetrics } from "@/features/boards/boardRoute.utils";
+import { useBoardCursors } from "@/features/boards/boardRoute/hooks/useBoardCursors";
 import type { SnapGuide } from "@/features/boards/elementMove.utils";
 import { getElementBounds, getAnchorPosition } from "@/features/boards/elementMove.utils";
 import type { CanvasPointerEvent, CanvasWheelEvent } from "@/features/boards/boardCanvas.hooks";
@@ -59,6 +61,7 @@ type BoardCanvasStageProps = {
   selectedElementIds: string[];
   selectionPresence: SelectionPresence[];
   cursorList: CursorBroadcast[];
+  awareness?: Awareness | null;
   localOverrideIds: Set<string>;
   lockedElementIds: Set<string>;
   isDragEnabled: boolean;
@@ -1182,6 +1185,7 @@ export function BoardCanvasStage({
   selectedElementIds,
   selectionPresence,
   cursorList,
+  awareness,
   localOverrideIds,
   lockedElementIds,
   isDragEnabled,
@@ -1192,9 +1196,17 @@ export function BoardCanvasStage({
   onDrawingDragEnd,
   onOpenTextEditor,
 }: BoardCanvasStageProps) {
+  const cursorsFromHook = useBoardCursors(awareness ?? null);
+  const activeCursorList = useMemo(() => {
+    if (awareness) {
+      return Object.values(cursorsFromHook);
+    }
+    return cursorList;
+  }, [awareness, cursorsFromHook, cursorList]);
+
   const dragPresence = useMemo(
-    () => buildDragPresenceList(cursorList),
-    [cursorList],
+    () => buildDragPresenceList(activeCursorList),
+    [activeCursorList],
   );
 
   useEffect(() => {
@@ -1256,7 +1268,7 @@ export function BoardCanvasStage({
           onDrawingDragEnd={onDrawingDragEnd}
           onOpenTextEditor={onOpenTextEditor}
         />
-        <CursorLayer cursorList={cursorList} />
+        <CursorLayer cursorList={activeCursorList} />
       </Application>
     </div>
   );
