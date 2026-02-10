@@ -7,12 +7,18 @@ use chrono::{Duration, Utc};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+pub const TOKEN_TYPE_ACCESS: &str = "access";
+pub const TOKEN_TYPE_EMAIL_VERIFICATION: &str = "email_verification";
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
     pub(crate) sub: String,
     pub exp: i64,
     pub email: String,
     pub iat: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub typ: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub iss: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -73,6 +79,7 @@ impl JwtConfig {
             email,
             exp: exp.timestamp(),
             iat: now.timestamp(),
+            typ: Some(TOKEN_TYPE_ACCESS.to_string()),
             iss: self.issuer.clone(),
             aud: self.audience.clone(),
         };
@@ -95,6 +102,15 @@ impl JwtConfig {
             &DecodingKey::from_secret(self.secret.as_bytes()),
             &validation,
         )?;
+
+        // Validate token type if present
+        if let Some(ref typ) = token_data.claims.typ {
+            if typ != TOKEN_TYPE_ACCESS {
+                return Err(jsonwebtoken::errors::ErrorKind::InvalidToken.into());
+            }
+        }
+        // If typ is None, we assume it is a legacy access token and allow it.
+
         Ok(token_data.claims)
     }
 
@@ -110,7 +126,7 @@ impl JwtConfig {
             email,
             exp: exp.timestamp(),
             iat: now.timestamp(),
-            typ: "email_verification".to_string(),
+            typ: TOKEN_TYPE_EMAIL_VERIFICATION.to_string(),
             iss: self.issuer.clone(),
             aud: self.audience.clone(),
         };
@@ -137,6 +153,12 @@ impl JwtConfig {
             &DecodingKey::from_secret(self.secret.as_bytes()),
             &validation,
         )?;
+
+        // Explicitly check for email verification type
+        if token_data.claims.typ != TOKEN_TYPE_EMAIL_VERIFICATION {
+            return Err(jsonwebtoken::errors::ErrorKind::InvalidToken.into());
+        }
+
         Ok(token_data.claims)
     }
 }
@@ -157,4 +179,81 @@ pub fn verify_password_user(
         .verify_password(passoword.as_bytes(), &parsed_hash)
         .is_ok();
     Ok(is_valid)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_email_verification_token_is_rejected_as_access_token() {
+        let config = JwtConfig::from_env("test_secret".to_string());
+        let user_id = Uuid::new_v4();
+        let email = "test@example.com".to_string();
+
+        let token = config
+            .create_email_verification_token(user_id, email.clone())
+            .unwrap();
+
+        // This should now FAIL
+        let result = config.verify_token(&token);
+        assert!(
+            result.is_err(),
+            "Email verification token should be rejected by verify_token"
+        );
+    }
+
+    #[test]
+    fn test_valid_access_token_works() {
+        let config = JwtConfig::from_env("test_secret".to_string());
+        let user_id = Uuid::new_v4();
+        let email = "test@example.com".to_string();
+
+        let token = config.create_token(user_id, email.clone()).unwrap();
+
+        let result = config.verify_token(&token);
+        assert!(result.is_ok());
+        let claims = result.unwrap();
+        assert_eq!(claims.typ, Some(TOKEN_TYPE_ACCESS.to_string()));
+    }
+
+    #[test]
+    fn test_legacy_access_token_works() {
+        let config = JwtConfig::from_env("test_secret".to_string());
+        let user_id = Uuid::new_v4();
+        let email = "test@example.com".to_string();
+
+        // Manually create a token without `typ`
+        #[derive(Serialize)]
+        struct LegacyClaims {
+            sub: String,
+            exp: i64,
+            email: String,
+            iat: i64,
+        }
+
+        let now = Utc::now();
+        let exp = now + Duration::hours(1);
+        let legacy_claims = LegacyClaims {
+            sub: user_id.to_string(),
+            email: email.clone(),
+            exp: exp.timestamp(),
+            iat: now.timestamp(),
+        };
+
+        let token = encode(
+            &Header::new(Algorithm::HS256),
+            &legacy_claims,
+            &EncodingKey::from_secret(config.secret.as_bytes()),
+        )
+        .unwrap();
+
+        let result = config.verify_token(&token);
+        assert!(
+            result.is_ok(),
+            "Legacy token without typ should be accepted"
+        );
+        let claims = result.unwrap();
+        assert_eq!(claims.typ, None);
+    }
 }
