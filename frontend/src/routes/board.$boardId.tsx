@@ -160,12 +160,14 @@ function BoardComponent() {
     canRedo,
     lockedElementIds,
     syncStatus,
+    awareness,
   } = useBoardRealtime({
     boardId,
     user,
     canEdit,
     onRoleUpdate: handleRoleUpdate,
     enabled: !isArchived && !isDeleted,
+    subscribeToCursors: false,
   });
 
   const {
@@ -636,6 +638,7 @@ function BoardComponent() {
           selectedElementIds,
           selectionPresence,
           cursorList,
+          awareness,
           isDragEnabled: canDragElements,
           localOverrideIds,
           lockedElementIds,
