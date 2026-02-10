@@ -27,6 +27,7 @@ type BoardHotkeysOptions = {
   onUndo: () => void;
   onRedo: () => void;
   onToolChange: (tool: ToolType) => void;
+  onResetZoom: () => void;
 };
 
 export const useBoardHotkeys = ({
@@ -45,6 +46,7 @@ export const useBoardHotkeys = ({
   onUndo,
   onRedo,
   onToolChange,
+  onResetZoom,
 }: BoardHotkeysOptions) => {
   const handleGlobalKeyDown = useCallback(
     (event: KeyboardEvent) => {
@@ -136,6 +138,12 @@ export const useBoardHotkeys = ({
 
       const isModifier = event.metaKey || event.ctrlKey;
 
+      if (event.shiftKey && event.code === "Digit0" && !isModifier) {
+        event.preventDefault();
+        onResetZoom();
+        return;
+      }
+
       if (!isModifier && !event.shiftKey && !event.altKey) {
         for (const tool of TOOLS) {
           if (
@@ -183,6 +191,7 @@ export const useBoardHotkeys = ({
       textEditorOpen,
       updateElement,
       onToolChange,
+      onResetZoom,
     ],
   );
 
