@@ -495,6 +495,7 @@ function BoardComponent() {
     onUndo: guardedUndo,
     onRedo: guardedRedo,
     onToolChange: setTool,
+    onResetZoom: resetZoom,
   });
 
   const canDragElements = canEdit && activeTool === "select" && !textEditor.isOpen;

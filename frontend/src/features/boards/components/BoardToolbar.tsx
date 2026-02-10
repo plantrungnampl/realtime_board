@@ -66,7 +66,6 @@ export function BoardToolbar({
               isDisabled && "cursor-not-allowed opacity-40 hover:bg-transparent",
               focusRing,
             )}
-            title={label}
           >
             <tool.icon className="h-5 w-5" />
             <TooltipLabel label={label} />
@@ -86,7 +85,6 @@ export function BoardToolbar({
             : "text-neutral-700 cursor-not-allowed",
           focusRing,
         )}
-        title="Undo (Ctrl+Z)"
       >
         <Undo2 className="h-5 w-5" />
         <TooltipLabel label="Undo (Ctrl+Z)" />
@@ -103,7 +101,6 @@ export function BoardToolbar({
             : "text-neutral-700 cursor-not-allowed",
           focusRing,
         )}
-        title="Redo (Ctrl+Y)"
       >
         <Redo2 className="h-5 w-5" />
         <TooltipLabel label="Redo (Ctrl+Y)" />
@@ -111,15 +108,14 @@ export function BoardToolbar({
       <button
         type="button"
         onClick={onResetZoom}
-        aria-label="Reset zoom"
+        aria-label="Reset zoom (Shift+0)"
         className={cn(
           "group relative flex h-11 w-11 items-center justify-center rounded-xl text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-200",
           focusRing,
         )}
-        title="Reset zoom"
       >
         <RotateCcw className="h-5 w-5" />
-        <TooltipLabel label="Reset zoom" />
+        <TooltipLabel label="Reset zoom (Shift+0)" />
       </button>
     </div>
   );
