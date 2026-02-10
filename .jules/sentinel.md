@@ -53,3 +53,15 @@
 1. Implement a `security_headers` middleware using `axum::middleware::from_fn`.
 2. Apply `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, and `X-XSS-Protection: 1; mode=block`.
 3. Register this middleware globally in the main router.
+
+## 2026-02-19 - JWT Type Confusion (Email Verification as Access Token)
+
+**Vulnerability:** The `verify_token` function in `src/auth/jwt.rs` accepted any valid JWT signed by the application secret, regardless of its intended purpose. This allowed an attacker to use an email verification token (which is easier to obtain during registration) as a full access token, effectively bypassing authentication.
+
+**Learning:** JWTs are versatile but dangerous if their scope is not explicitly validated. The library `jsonwebtoken` validates the signature and expiration but does not enforce application-specific logic like "token type" unless explicitly instructed. Relying solely on the presence of fields (like `typ`) in the struct without validating their value is insufficient if extra fields are ignored during deserialization.
+
+**Prevention:**
+1. Explicitly include a `typ` (type) claim in all JWTs (e.g., `access`, `email_verification`).
+2. Validate the `typ` claim in the verification logic.
+3. Reject tokens that do not match the expected type for the specific operation.
+4. Use distinct verification functions for different token types (e.g., `verify_access_token` vs `verify_email_verification_token`).
