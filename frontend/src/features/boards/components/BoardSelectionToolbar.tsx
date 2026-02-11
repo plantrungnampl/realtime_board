@@ -25,6 +25,20 @@ const STROKE_COLORS = [
 
 const STROKE_WIDTHS = [1, 2, 4];
 
+const COLOR_KEYS: Record<string, string> = {
+  "#FFFFFF": "colors.white",
+  "#FDE68A": "colors.yellowLight",
+  "#A7F3D0": "colors.greenLight",
+  "#BFDBFE": "colors.blueLight",
+  "#FCA5A5": "colors.redLight",
+  transparent: "colors.transparent",
+  "#111827": "colors.black",
+  "#F59E0B": "colors.orange",
+  "#22C55E": "colors.green",
+  "#3B82F6": "colors.blue",
+  "#EF4444": "colors.red",
+};
+
 type ToolbarPosition = {
   x: number;
   y: number;
@@ -83,17 +97,18 @@ export function BoardSelectionToolbar({
           <div className="flex items-center gap-1">
             {FILL_COLORS.map((color) => {
               const isActive = (fill ?? "transparent") === color;
+              const label = COLOR_KEYS[color] ? t(COLOR_KEYS[color]) : color;
               return (
                 <button
                   key={`fill-${color}`}
                   type="button"
                   className={cn(
-                    "h-5 w-5 rounded-full border border-border/70 transition-transform hover:scale-105",
+                    "h-5 w-5 rounded-full border border-border/70 transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 focus-visible:ring-offset-2",
                     isActive && "ring-2 ring-offset-2 ring-blue-500/70 ring-offset-bg-surface",
                     color === "transparent" && "bg-[linear-gradient(135deg,#374151_25%,transparent_25%,transparent_50%,#374151_50%,#374151_75%,transparent_75%,transparent)] bg-[length:8px_8px]",
                   )}
                   style={color === "transparent" ? undefined : { backgroundColor: color }}
-                  aria-label={`${t("board.toolbar.fill")} ${color}`}
+                  aria-label={`${t("board.toolbar.fill")} ${label}`}
                   onClick={() => onFillChange(color)}
                 />
               );
@@ -108,16 +123,17 @@ export function BoardSelectionToolbar({
           <div className="flex items-center gap-1">
             {STROKE_COLORS.map((color) => {
               const isActive = (stroke ?? "") === color;
+              const label = COLOR_KEYS[color] ? t(COLOR_KEYS[color]) : color;
               return (
                 <button
                   key={`stroke-${color}`}
                   type="button"
                   className={cn(
-                    "h-5 w-5 rounded-full border border-border/70 transition-transform hover:scale-105",
+                    "h-5 w-5 rounded-full border border-border/70 transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 focus-visible:ring-offset-2",
                     isActive && "ring-2 ring-offset-2 ring-blue-500/70 ring-offset-bg-surface",
                   )}
                   style={{ backgroundColor: color }}
-                  aria-label={`${t("board.toolbar.stroke")} ${color}`}
+                  aria-label={`${t("board.toolbar.stroke")} ${label}`}
                   onClick={() => onStrokeChange(color)}
                 />
               );
