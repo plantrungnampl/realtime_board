@@ -53,3 +53,14 @@
 1. Implement a `security_headers` middleware using `axum::middleware::from_fn`.
 2. Apply `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, and `X-XSS-Protection: 1; mode=block`.
 3. Register this middleware globally in the main router.
+
+## 2026-02-20 - Rate Limiting DoS Risk behind Proxy
+
+**Vulnerability:** The application used `PeerIpKeyExtractor` for authentication rate limiting. This extracts the immediate peer IP. In containerized environments (like Docker) or behind reverse proxies (Load Balancers), all traffic appears to come from the proxy's IP (e.g., Docker Gateway). This means a single user triggering the rate limit would block *all* users sharing that proxy, causing a Denial of Service.
+
+**Learning:** "Default" configurations often assume direct exposure. When deploying in containers or behind proxies, identity extraction must be "proxy-aware".
+
+**Prevention:**
+1. Use `SmartIpKeyExtractor` (or similar) that respects `X-Forwarded-For` and `Forwarded` headers.
+2. Ensure infrastructure (proxy) properly sets these headers and strips them from incoming untrusted traffic (to prevent spoofing).
+3. Test rate limiting behavior in the actual deployment topology (or simulate proxy headers in tests).
