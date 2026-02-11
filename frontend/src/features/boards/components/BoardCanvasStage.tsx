@@ -140,26 +140,37 @@ const CursorMarker = memo(function CursorMarker({ cursor }: { cursor: CursorBroa
       node.position.y + (targetRef.current.y - node.position.y) * CURSOR_SMOOTHING,
     );
   });
+
+  // Optimize: Memoize draw function and style object to prevent re-creation on every render (e.g. cursor movement).
+  // This avoids expensive re-draws in PixiJS components.
+  const draw = useCallback(
+    (graphics: PixiGraphics) => {
+      graphics.clear();
+      setFillStyle(graphics, parseColor(cursor.color, 0xffffff));
+      setStrokeStyle(graphics, 1, 0x171717);
+      graphics.circle(0, 0, 4);
+      graphics.fill();
+      graphics.stroke();
+    },
+    [cursor.color],
+  );
+
+  const textStyle = useMemo(
+    () => ({
+      fontSize: 11,
+      fill: cursor.color,
+    }),
+    [cursor.color],
+  );
+
   return (
     <pixiContainer ref={groupRef} x={initialPos.x} y={initialPos.y} eventMode="passive">
-      <pixiGraphics
-        draw={(graphics) => {
-          graphics.clear();
-          setFillStyle(graphics, parseColor(cursor.color, 0xffffff));
-          setStrokeStyle(graphics, 1, 0x171717);
-          graphics.circle(0, 0, 4);
-          graphics.fill();
-          graphics.stroke();
-        }}
-      />
+      <pixiGraphics draw={draw} />
       <pixiText
         text={cursor.user_name}
         x={-10}
         y={10}
-        style={{
-          fontSize: 11,
-          fill: cursor.color,
-        }}
+        style={textStyle}
       />
     </pixiContainer>
   );
