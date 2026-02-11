@@ -21,3 +21,7 @@
 ## 2024-10-27 - Keyboard Shortcuts Discovery
 **Learning:** Keyboard shortcuts are powerful but useless if users don't know them. Displaying shortcuts in tooltips (e.g., "Rectangle (R)") bridges the gap between novice and power users without cluttering the UI.
 **Action:** When implementing keyboard shortcuts for actions that have UI buttons, always update the button's tooltip or label to include the shortcut key.
+
+## 2024-11-06 - Color Accessibility & Human-Readable Labels
+**Learning:** Using hex codes in `aria-label` (e.g., "Fill #FFFFFF") is confusing for screen reader users. Mapping hex codes to human-readable names (e.g., "Fill White") significantly improves accessibility.
+**Action:** Always map color values to localized, human-readable names in accessibility labels, even if the visual interface only shows the color.
