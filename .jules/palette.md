@@ -21,3 +21,7 @@
 ## 2024-10-27 - Keyboard Shortcuts Discovery
 **Learning:** Keyboard shortcuts are powerful but useless if users don't know them. Displaying shortcuts in tooltips (e.g., "Rectangle (R)") bridges the gap between novice and power users without cluttering the UI.
 **Action:** When implementing keyboard shortcuts for actions that have UI buttons, always update the button's tooltip or label to include the shortcut key.
+
+## 2025-02-17 - Double Tooltips
+**Learning:** Using `title` attributes on buttons that already have custom tooltip components creates a redundant and cluttered "double tooltip" effect.
+**Action:** Remove `title` attributes from interactive elements when a custom `TooltipLabel` or similar component is used, ensuring `aria-label` is present for accessibility.
