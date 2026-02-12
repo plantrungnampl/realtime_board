@@ -53,3 +53,14 @@
 1. Implement a `security_headers` middleware using `axum::middleware::from_fn`.
 2. Apply `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, and `X-XSS-Protection: 1; mode=block`.
 3. Register this middleware globally in the main router.
+
+## 2026-02-21 - Rate Limiting Behind Proxies
+
+**Vulnerability:** The rate limiter (`tower_governor`) was configured to use `PeerIpKeyExtractor`, which extracts the IP address from the direct TCP connection. When deployed behind a reverse proxy (like Nginx, AWS ALB, or Docker gateway), all traffic appears to come from the proxy's IP. This causes the rate limiter to treat all users as a single entity, leading to a self-inflicted Denial of Service (DoS) where legitimate users are blocked due to shared traffic volume.
+
+**Learning:** Rate limiting libraries often default to the safest *local* option (Peer IP) to avoid IP spoofing risks if the application is directly exposed. However, in containerized or cloud environments, this default is almost always incorrect. Developers must explicitly configure the application to trust specific headers (like `X-Forwarded-For`) when they know they are behind a trusted proxy.
+
+**Prevention:**
+1. Use `SmartIpKeyExtractor` (or equivalent) that inspects `X-Forwarded-For` headers when the application is behind a proxy.
+2. Verify that the proxy is configured to strip or overwrite `X-Forwarded-For` headers from the client to prevent spoofing.
+3. Test rate limiting behavior in a staging environment that mirrors the production network topology.
