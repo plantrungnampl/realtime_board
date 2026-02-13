@@ -438,3 +438,10 @@ export interface WsBoardElementAction {
   action: WsActionType;
   payload: BoardElement | CursorMove;
 }
+
+export type SelectionOverlay = {
+  key: string;
+  element: BoardElement;
+  color: string;
+  label?: string;
+};
