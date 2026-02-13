@@ -21,7 +21,7 @@ type TooltipLabelProps = {
 const TooltipLabel = ({ label }: TooltipLabelProps) => (
   <span
     aria-hidden="true"
-    className="pointer-events-none absolute left-full top-1/2 ml-3 -translate-y-1/2 translate-x-1 whitespace-nowrap rounded-md border border-neutral-700 bg-neutral-900/95 px-2 py-1 text-xs text-neutral-100 opacity-0 shadow-md transition-all group-hover:translate-x-0 group-hover:opacity-100"
+    className="pointer-events-none absolute left-full top-1/2 ml-3 -translate-y-1/2 translate-x-1 whitespace-nowrap rounded-md border border-neutral-700 bg-neutral-900/95 px-2 py-1 text-xs text-neutral-100 opacity-0 shadow-md transition-all group-hover:translate-x-0 group-hover:opacity-100 group-focus-visible:translate-x-0 group-focus-visible:opacity-100"
   >
     {label}
   </span>
@@ -66,7 +66,6 @@ export function BoardToolbar({
               isDisabled && "cursor-not-allowed opacity-40 hover:bg-transparent",
               focusRing,
             )}
-            title={label}
           >
             <tool.icon className="h-5 w-5" />
             <TooltipLabel label={label} />
@@ -86,7 +85,6 @@ export function BoardToolbar({
             : "text-neutral-700 cursor-not-allowed",
           focusRing,
         )}
-        title="Undo (Ctrl+Z)"
       >
         <Undo2 className="h-5 w-5" />
         <TooltipLabel label="Undo (Ctrl+Z)" />
@@ -103,7 +101,6 @@ export function BoardToolbar({
             : "text-neutral-700 cursor-not-allowed",
           focusRing,
         )}
-        title="Redo (Ctrl+Y)"
       >
         <Redo2 className="h-5 w-5" />
         <TooltipLabel label="Redo (Ctrl+Y)" />
@@ -116,7 +113,6 @@ export function BoardToolbar({
           "group relative flex h-11 w-11 items-center justify-center rounded-xl text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-200",
           focusRing,
         )}
-        title="Reset zoom"
       >
         <RotateCcw className="h-5 w-5" />
         <TooltipLabel label="Reset zoom" />
