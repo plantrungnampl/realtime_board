@@ -53,3 +53,14 @@
 1. Implement a `security_headers` middleware using `axum::middleware::from_fn`.
 2. Apply `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, and `X-XSS-Protection: 1; mode=block`.
 3. Register this middleware globally in the main router.
+
+## 2026-02-21 - Rate Limiting Bypass via Proxy IP
+
+**Vulnerability:** The application's rate limiter defaulted to using the peer IP address (`PeerIpKeyExtractor`) for tracking requests. When deployed behind a reverse proxy (e.g., Nginx, load balancer), all client requests would appear to originate from the proxy's single IP address. This could lead to legitimate users being collectively blocked (DoS) or attackers bypassing rate limits if the proxy IP was whitelisted/trusted.
+
+**Learning:** Default configurations in libraries (like `tower_governor`) often assume direct internet exposure. In modern containerized/cloud environments, applications are almost always behind proxies. Security controls must explicitly account for `X-Forwarded-For` and similar headers to identify the true client.
+
+**Prevention:**
+1. Explicitly configure rate limiters to use `SmartIpKeyExtractor` (or equivalent) which respects `X-Forwarded-For` headers.
+2. Verify that the application is configured to trust the upstream proxy (e.g., via `ConnectInfo` in Axum).
+3. Ensure the proxy infrastructure strips or overwrites `X-Forwarded-For` headers from the client to prevent spoofing.
