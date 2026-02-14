@@ -23,6 +23,20 @@ const STROKE_COLORS = [
   "#EF4444",
 ];
 
+const COLOR_NAMES: Record<string, string> = {
+  "#FFFFFF": "board.colors.white",
+  "#FDE68A": "board.colors.yellowLight",
+  "#A7F3D0": "board.colors.greenLight",
+  "#BFDBFE": "board.colors.blueLight",
+  "#FCA5A5": "board.colors.redLight",
+  transparent: "board.colors.transparent",
+  "#111827": "board.colors.black",
+  "#F59E0B": "board.colors.yellow",
+  "#22C55E": "board.colors.green",
+  "#3B82F6": "board.colors.blue",
+  "#EF4444": "board.colors.red",
+};
+
 const STROKE_WIDTHS = [1, 2, 4];
 
 type ToolbarPosition = {
@@ -88,12 +102,12 @@ export function BoardSelectionToolbar({
                   key={`fill-${color}`}
                   type="button"
                   className={cn(
-                    "h-5 w-5 rounded-full border border-border/70 transition-transform hover:scale-105",
+                    "h-5 w-5 rounded-full border border-border/70 transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 focus-visible:ring-offset-2 focus-visible:ring-offset-bg-surface",
                     isActive && "ring-2 ring-offset-2 ring-blue-500/70 ring-offset-bg-surface",
                     color === "transparent" && "bg-[linear-gradient(135deg,#374151_25%,transparent_25%,transparent_50%,#374151_50%,#374151_75%,transparent_75%,transparent)] bg-[length:8px_8px]",
                   )}
                   style={color === "transparent" ? undefined : { backgroundColor: color }}
-                  aria-label={`${t("board.toolbar.fill")} ${color}`}
+                  aria-label={`${t("board.toolbar.fill")} ${t(COLOR_NAMES[color])}`}
                   onClick={() => onFillChange(color)}
                 />
               );
@@ -113,11 +127,11 @@ export function BoardSelectionToolbar({
                   key={`stroke-${color}`}
                   type="button"
                   className={cn(
-                    "h-5 w-5 rounded-full border border-border/70 transition-transform hover:scale-105",
+                    "h-5 w-5 rounded-full border border-border/70 transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-500/50 focus-visible:ring-offset-2 focus-visible:ring-offset-bg-surface",
                     isActive && "ring-2 ring-offset-2 ring-blue-500/70 ring-offset-bg-surface",
                   )}
                   style={{ backgroundColor: color }}
-                  aria-label={`${t("board.toolbar.stroke")} ${color}`}
+                  aria-label={`${t("board.toolbar.stroke")} ${t(COLOR_NAMES[color])}`}
                   onClick={() => onStrokeChange(color)}
                 />
               );
