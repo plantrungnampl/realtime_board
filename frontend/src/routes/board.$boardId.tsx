@@ -109,6 +109,7 @@ function BoardComponent() {
 
   useEffect(() => {
     if (!canComment && tool === "comment") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setTool("select");
     }
   }, [canComment, tool]);
