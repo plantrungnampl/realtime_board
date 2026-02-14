@@ -19,3 +19,8 @@
 **Learning:** In `@pixi/react`, passing a new function to the `draw` prop of `<Graphics>` on every render forces the underlying Pixi object to clear and redraw, even if the visual output hasn't changed. By memoizing the `draw` callback with granular dependencies (e.g., style, width, height) instead of the volatile `element` object (which changes on every drag frame due to position updates), we prevent expensive redraws during dragging.
 
 **Action:** When using `<Graphics>` in `@pixi/react`, always wrap the `draw` function in `useCallback` and ensure its dependencies are visually relevant properties, not the entire state object. Suppress `react-hooks/preserve-manual-memoization` if necessary.
+
+## 2025-02-24 - [Optimization] PixiText Style Object Identity
+**Learning:** In `@pixi/react`, passing an inline object literal to the `style` prop of `<pixiText>` (or `Text`) components triggers a re-processing of the text style on every render, even if the content is identical. This can be surprisingly expensive. Memoizing the `style` object with `useMemo` ensures referential stability and prevents unnecessary updates.
+
+**Action:** Always wrap the `style` object passed to `<pixiText>` in `useMemo`, especially in components that re-render frequently (like cursors or labels).
