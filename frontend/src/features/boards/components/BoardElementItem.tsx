@@ -130,7 +130,7 @@ const BoardRectangleItem = ({ element, isInteractive, onPointerDown, registerRef
   const draw = useCallback(
     (g: Graphics) => drawRectShape(g, element, rect),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [element.style, element.properties, rect.width, rect.height],
+    [element.style, rect.width, rect.height],
   );
   return (
     <ElementContainer
@@ -153,7 +153,7 @@ const BoardCircleItem = ({ element, isInteractive, onPointerDown, registerRef }:
   const draw = useCallback(
     (g: Graphics) => drawCircleShape(g, element, radius),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [element.style, element.properties, radius],
+    [element.style, radius],
   );
   return (
     <ElementContainer
@@ -273,7 +273,7 @@ const BoardStickyNoteItem = ({ element, isInteractive, onPointerDown, onOpenText
   const draw = useCallback(
     (g: Graphics) => drawRoundedRectShape(g, element, rect),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [element.style, element.properties, rect.width, rect.height],
+    [element.style, rect.width, rect.height],
   );
 
   const handleTap = useDoubleTap();
