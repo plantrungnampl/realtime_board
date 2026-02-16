@@ -398,10 +398,14 @@ export function useBoardRealtime({
       }
     });
     const key = ids.size === 0 ? "" : [...ids].sort().join("|");
+    // eslint-disable-next-line react-hooks/refs
     if (key !== lockedElementKeyRef.current) {
+      // eslint-disable-next-line react-hooks/refs
       lockedElementKeyRef.current = key;
+      // eslint-disable-next-line react-hooks/refs
       lockedElementIdsRef.current = ids;
     }
+    // eslint-disable-next-line react-hooks/refs
     return lockedElementIdsRef.current;
   }, [selectionPresence]);
 
