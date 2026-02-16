@@ -1,6 +1,6 @@
 import { memo, useCallback, useMemo, useRef } from "react";
 import type { Container as PixiContainer, FederatedPointerEvent, Graphics } from "pixi.js";
-import type { BoardElement } from "@/types/board";
+import type { BoardElement, DrawingElement, StickyNoteElement, TextElement } from "@/types/board";
 import { DEFAULT_TEXT_STYLE } from "@/features/boards/boardRoute/elements";
 import {
   coerceNumber,
@@ -129,8 +129,9 @@ const BoardRectangleItem = ({ element, isInteractive, onPointerDown, registerRef
   const rect = getRectBounds(element);
   const draw = useCallback(
     (g: Graphics) => drawRectShape(g, element, rect),
+    // Optimization: Exclude element.properties to prevent redraws when non-visual properties change
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [element.style, element.properties, rect.width, rect.height],
+    [element.style, rect.width, rect.height],
   );
   return (
     <ElementContainer
@@ -152,8 +153,9 @@ const BoardCircleItem = ({ element, isInteractive, onPointerDown, registerRef }:
   const positionY = coerceNumber(element.position_y, 0);
   const draw = useCallback(
     (g: Graphics) => drawCircleShape(g, element, radius),
+    // Optimization: Exclude element.properties to prevent redraws when non-visual properties change
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [element.style, element.properties, radius],
+    [element.style, radius],
   );
   return (
     <ElementContainer
@@ -170,7 +172,7 @@ const BoardCircleItem = ({ element, isInteractive, onPointerDown, registerRef }:
 };
 
 const BoardDrawingItem = ({ element, isInteractive, onPointerDown, registerRef }: BoardElementItemProps) => {
-  const points = element.properties.points;
+  const points = (element as DrawingElement).properties.points;
   const isValid = Array.isArray(points) && isValidDrawingPoints(points);
   const positionX = coerceNumber(element.position_x, 0);
   const positionY = coerceNumber(element.position_y, 0);
@@ -210,7 +212,7 @@ const BoardTextItem = ({ element, isInteractive, onPointerDown, onOpenTextEditor
   const positionX = coerceNumber(element.position_x, 0);
   const positionY = coerceNumber(element.position_y, 0);
   const fontSize = element.style.fontSize ?? DEFAULT_TEXT_STYLE.fontSize ?? 16;
-  const content = element.properties?.content ?? "";
+  const content = (element as TextElement).properties.content ?? "";
   const color = element.style.textColor ?? DEFAULT_TEXT_STYLE.fill ?? "#1F2937";
   const style = useMemo(
     () => ({
@@ -258,7 +260,7 @@ const BoardTextItem = ({ element, isInteractive, onPointerDown, onOpenTextEditor
 const BoardStickyNoteItem = ({ element, isInteractive, onPointerDown, onOpenTextEditor, registerRef }: BoardElementItemProps) => {
   const rect = getRectBounds(element);
   const fontSize = element.style.fontSize ?? 16;
-  const content = element.properties?.content ?? "";
+  const content = (element as StickyNoteElement).properties.content ?? "";
   const padding = 12;
   const color = element.style.textColor ?? "#1F2937";
   const style = useMemo(
@@ -272,8 +274,9 @@ const BoardStickyNoteItem = ({ element, isInteractive, onPointerDown, onOpenText
   );
   const draw = useCallback(
     (g: Graphics) => drawRoundedRectShape(g, element, rect),
+    // Optimization: Exclude element.properties (e.g. content) to prevent background redraws during typing
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [element.style, element.properties, rect.width, rect.height],
+    [element.style, rect.width, rect.height],
   );
 
   const handleTap = useDoubleTap();
