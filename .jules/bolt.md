@@ -19,3 +19,8 @@
 **Learning:** In `@pixi/react`, passing a new function to the `draw` prop of `<Graphics>` on every render forces the underlying Pixi object to clear and redraw, even if the visual output hasn't changed. By memoizing the `draw` callback with granular dependencies (e.g., style, width, height) instead of the volatile `element` object (which changes on every drag frame due to position updates), we prevent expensive redraws during dragging.
 
 **Action:** When using `<Graphics>` in `@pixi/react`, always wrap the `draw` function in `useCallback` and ensure its dependencies are visually relevant properties, not the entire state object. Suppress `react-hooks/preserve-manual-memoization` if necessary.
+
+## 2025-05-24 - [Optimization] Exclude Non-Visual Properties from Draw Dependencies
+**Learning:** In `BoardElementItem` components (e.g., `BoardStickyNoteItem`), including `element.properties` in the `useCallback` dependency array for the `draw` function causes unnecessary background redraws when non-visual properties (like text content) change. Since the `draw` function often only depends on `element.style` and dimensions, omitting `properties` allows the background shape to remain cached by `@pixi/react` while only the text child updates. This is critical for typing performance in sticky notes.
+
+**Action:** Carefully audit `useCallback` dependencies for `draw` functions in `@pixi/react` components. Exclude properties that do not affect the `Graphics` output (e.g., text content), even if it requires `eslint-disable-next-line react-hooks/exhaustive-deps`. Ensure the captured variables in the closure are sufficient or stable.
