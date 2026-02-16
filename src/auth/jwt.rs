@@ -17,6 +17,8 @@ pub struct Claims {
     pub iss: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub aud: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub typ: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -75,6 +77,7 @@ impl JwtConfig {
             iat: now.timestamp(),
             iss: self.issuer.clone(),
             aud: self.audience.clone(),
+            typ: Some("access".to_string()),
         };
         encode(
             &Header::new(Algorithm::HS256),
@@ -95,6 +98,11 @@ impl JwtConfig {
             &DecodingKey::from_secret(self.secret.as_bytes()),
             &validation,
         )?;
+        if let Some(typ) = &token_data.claims.typ {
+            if typ != "access" {
+                return Err(jsonwebtoken::errors::ErrorKind::InvalidToken.into());
+            }
+        }
         Ok(token_data.claims)
     }
 
@@ -137,6 +145,9 @@ impl JwtConfig {
             &DecodingKey::from_secret(self.secret.as_bytes()),
             &validation,
         )?;
+        if token_data.claims.typ != "email_verification" {
+            return Err(jsonwebtoken::errors::ErrorKind::InvalidToken.into());
+        }
         Ok(token_data.claims)
     }
 }
@@ -157,4 +168,54 @@ pub fn verify_password_user(
         .verify_password(passoword.as_bytes(), &parsed_hash)
         .is_ok();
     Ok(is_valid)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_email_verification_token_as_auth_token_vulnerability() {
+        let config = JwtConfig {
+            secret: "secret".to_string(),
+            expiration_hours: 1,
+            issuer: None,
+            audience: None,
+        };
+        let user_id = Uuid::new_v4();
+        let email = "test@example.com".to_string();
+
+        // Create an email verification token
+        let token = config.create_email_verification_token(user_id, email.clone()).unwrap();
+
+        // Attempt to verify it as an auth token
+        let claims = config.verify_token(&token);
+
+        // VULNERABILITY: This should fail, but currently succeeds
+        assert!(claims.is_err(), "Email verification token was accepted as auth token!");
+    }
+
+    #[test]
+    fn test_valid_auth_token() {
+        let config = JwtConfig {
+            secret: "secret".to_string(),
+            expiration_hours: 1,
+            issuer: None,
+            audience: None,
+        };
+        let user_id = Uuid::new_v4();
+        let email = "test@example.com".to_string();
+
+        // Create a valid auth token
+        let token = config.create_token(user_id, email.clone()).unwrap();
+
+        // Verify it
+        let claims = config.verify_token(&token);
+        assert!(claims.is_ok());
+
+        let claims = claims.unwrap();
+        assert_eq!(claims.sub, user_id.to_string());
+        assert_eq!(claims.email, email);
+        assert_eq!(claims.typ, Some("access".to_string()));
+    }
 }
