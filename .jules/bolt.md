@@ -19,3 +19,7 @@
 **Learning:** In `@pixi/react`, passing a new function to the `draw` prop of `<Graphics>` on every render forces the underlying Pixi object to clear and redraw, even if the visual output hasn't changed. By memoizing the `draw` callback with granular dependencies (e.g., style, width, height) instead of the volatile `element` object (which changes on every drag frame due to position updates), we prevent expensive redraws during dragging.
 
 **Action:** When using `<Graphics>` in `@pixi/react`, always wrap the `draw` function in `useCallback` and ensure its dependencies are visually relevant properties, not the entire state object. Suppress `react-hooks/preserve-manual-memoization` if necessary.
+
+## 2026-02-17 - [Optimization] Memoizing Expensive Calculations with Unstable Inputs
+**Learning:** When an expensive utility function (like `resolveConnectorPoints`) depends on an object that changes reference frequently (like `element`), wrapping the call in `useMemo` with the object as a dependency fails to optimize. By constructing a minimal "proxy" object inside `useMemo` that only includes the strictly necessary properties (decomposed from the unstable source), we can ensure the calculation only re-runs when the relevant data actually changes.
+**Action:** Use decomposed properties and proxy objects inside `useMemo` to stabilize expensive calculations dependent on volatile parent objects.
