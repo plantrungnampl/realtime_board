@@ -13,6 +13,7 @@ pub struct Claims {
     pub exp: i64,
     pub email: String,
     pub iat: i64,
+    pub typ: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub iss: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -73,6 +74,7 @@ impl JwtConfig {
             email,
             exp: exp.timestamp(),
             iat: now.timestamp(),
+            typ: "access".to_string(),
             iss: self.issuer.clone(),
             aud: self.audience.clone(),
         };
@@ -95,6 +97,11 @@ impl JwtConfig {
             &DecodingKey::from_secret(self.secret.as_bytes()),
             &validation,
         )?;
+        if token_data.claims.typ != "access" {
+            return Err(jsonwebtoken::errors::Error::from(
+                jsonwebtoken::errors::ErrorKind::InvalidToken,
+            ));
+        }
         Ok(token_data.claims)
     }
 
@@ -137,6 +144,11 @@ impl JwtConfig {
             &DecodingKey::from_secret(self.secret.as_bytes()),
             &validation,
         )?;
+        if token_data.claims.typ != "email_verification" {
+            return Err(jsonwebtoken::errors::Error::from(
+                jsonwebtoken::errors::ErrorKind::InvalidToken,
+            ));
+        }
         Ok(token_data.claims)
     }
 }
@@ -157,4 +169,87 @@ pub fn verify_password_user(
         .verify_password(passoword.as_bytes(), &parsed_hash)
         .is_ok();
     Ok(is_valid)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use uuid::Uuid;
+
+    #[test]
+    fn test_token_substitution_vulnerability() {
+        let config = JwtConfig {
+            secret: "secret".to_string(),
+            expiration_hours: 1,
+            issuer: None,
+            audience: None,
+        };
+
+        let user_id = Uuid::new_v4();
+        let email = "test@example.com".to_string();
+
+        // Create an email verification token
+        let token = config
+            .create_email_verification_token(user_id, email.clone())
+            .unwrap();
+
+        // Attempt to verify it as an access token
+        let result = config.verify_token(&token);
+
+        // Assert that it fails
+        assert!(
+            result.is_err(),
+            "Vulnerability fixed: Email verification token rejected as access token"
+        );
+    }
+
+    #[test]
+    fn test_valid_access_token() {
+        let config = JwtConfig {
+            secret: "secret".to_string(),
+            expiration_hours: 1,
+            issuer: None,
+            audience: None,
+        };
+
+        let user_id = Uuid::new_v4();
+        let email = "test@example.com".to_string();
+
+        // Create a valid access token
+        let token = config.create_token(user_id, email.clone()).unwrap();
+
+        // Attempt to verify it
+        let result = config.verify_token(&token);
+
+        // Assert that it succeeds
+        assert!(result.is_ok());
+        let claims = result.unwrap();
+        assert_eq!(claims.email, email);
+        assert_eq!(claims.typ, "access");
+    }
+
+    #[test]
+    fn test_access_token_as_email_verification_token() {
+        let config = JwtConfig {
+            secret: "secret".to_string(),
+            expiration_hours: 1,
+            issuer: None,
+            audience: None,
+        };
+
+        let user_id = Uuid::new_v4();
+        let email = "test@example.com".to_string();
+
+        // Create a valid access token
+        let token = config.create_token(user_id, email.clone()).unwrap();
+
+        // Attempt to verify it as an email verification token
+        let result = config.verify_email_verification_token(&token);
+
+        // Assert that it fails
+        assert!(
+            result.is_err(),
+            "Vulnerability fixed: Access token rejected as email verification token"
+        );
+    }
 }

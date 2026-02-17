@@ -253,7 +253,9 @@ pub fn build_router(state: AppState) -> Router {
         .merge(verified_routes)
         .merge(ws_routes)
         .layer(cors)
-        .layer(middleware::from_fn(crate::app::middleware::security_headers))
+        .layer(middleware::from_fn(
+            crate::app::middleware::security_headers,
+        ))
         .layer(middleware::from_fn(telemetry::request_logging_middleware))
         .with_state(state)
 }
