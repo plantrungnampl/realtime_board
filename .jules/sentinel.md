@@ -53,3 +53,14 @@
 1. Implement a `security_headers` middleware using `axum::middleware::from_fn`.
 2. Apply `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, and `X-XSS-Protection: 1; mode=block`.
 3. Register this middleware globally in the main router.
+
+## 2026-02-21 - JWT Token Substitution
+
+**Vulnerability:** The application used the same `verify_token` function for both access tokens and email verification tokens without checking the token type (`typ` claim). This allowed an attacker to use an email verification token (obtained via registration or password reset) as a valid access token to authenticate.
+
+**Learning:** Reusing the same verification logic for different token types (access, refresh, verification) without explicit type checks leads to privilege escalation. `serde`'s default behavior of ignoring unknown fields masked the fact that `Claims` was missing the `typ` field present in the verification token.
+
+**Prevention:**
+1. Include a `typ` (type) claim in all JWTs to explicitly state their purpose (e.g., "access", "refresh", "email_verification").
+2. Enforce strict validation of the `typ` claim in verification logic.
+3. Use distinct keys or distinct structures/functions if token types have vastly different lifecycles or permissions.
