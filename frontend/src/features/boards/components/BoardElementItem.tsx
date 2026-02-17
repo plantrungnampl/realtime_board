@@ -1,6 +1,13 @@
 import { memo, useCallback, useMemo, useRef } from "react";
 import type { Container as PixiContainer, FederatedPointerEvent, Graphics } from "pixi.js";
-import type { BoardElement } from "@/types/board";
+import type {
+  BoardElement,
+  ConnectorElement,
+  DrawingElement,
+  ShapeElement,
+  StickyNoteElement,
+  TextElement,
+} from "@/types/board";
 import { DEFAULT_TEXT_STYLE } from "@/features/boards/boardRoute/elements";
 import {
   coerceNumber,
@@ -125,12 +132,13 @@ function useDoubleTap() {
   }, []);
 }
 
-const BoardRectangleItem = ({ element, isInteractive, onPointerDown, registerRef }: BoardElementItemProps) => {
+const BoardRectangleItem = ({ element: baseElement, isInteractive, onPointerDown, registerRef }: BoardElementItemProps) => {
+  const element = baseElement as ShapeElement;
   const rect = getRectBounds(element);
   const draw = useCallback(
     (g: Graphics) => drawRectShape(g, element, rect),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [element.style, element.properties, rect.width, rect.height],
+    [element.style, rect.width, rect.height],
   );
   return (
     <ElementContainer
@@ -146,14 +154,15 @@ const BoardRectangleItem = ({ element, isInteractive, onPointerDown, registerRef
   );
 };
 
-const BoardCircleItem = ({ element, isInteractive, onPointerDown, registerRef }: BoardElementItemProps) => {
+const BoardCircleItem = ({ element: baseElement, isInteractive, onPointerDown, registerRef }: BoardElementItemProps) => {
+  const element = baseElement as ShapeElement;
   const radius = Math.hypot(element.width || 0, element.height || 0);
   const positionX = coerceNumber(element.position_x, 0);
   const positionY = coerceNumber(element.position_y, 0);
   const draw = useCallback(
     (g: Graphics) => drawCircleShape(g, element, radius),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [element.style, element.properties, radius],
+    [element.style, radius],
   );
   return (
     <ElementContainer
@@ -169,7 +178,8 @@ const BoardCircleItem = ({ element, isInteractive, onPointerDown, registerRef }:
   );
 };
 
-const BoardDrawingItem = ({ element, isInteractive, onPointerDown, registerRef }: BoardElementItemProps) => {
+const BoardDrawingItem = ({ element: baseElement, isInteractive, onPointerDown, registerRef }: BoardElementItemProps) => {
+  const element = baseElement as DrawingElement;
   const points = element.properties.points;
   const isValid = Array.isArray(points) && isValidDrawingPoints(points);
   const positionX = coerceNumber(element.position_x, 0);
@@ -206,7 +216,14 @@ const BoardDrawingItem = ({ element, isInteractive, onPointerDown, registerRef }
   );
 };
 
-const BoardTextItem = ({ element, isInteractive, onPointerDown, onOpenTextEditor, registerRef }: BoardElementItemProps) => {
+const BoardTextItem = ({
+  element: baseElement,
+  isInteractive,
+  onPointerDown,
+  onOpenTextEditor,
+  registerRef,
+}: BoardElementItemProps) => {
+  const element = baseElement as TextElement;
   const positionX = coerceNumber(element.position_x, 0);
   const positionY = coerceNumber(element.position_y, 0);
   const fontSize = element.style.fontSize ?? DEFAULT_TEXT_STYLE.fontSize ?? 16;
@@ -255,7 +272,14 @@ const BoardTextItem = ({ element, isInteractive, onPointerDown, onOpenTextEditor
   );
 };
 
-const BoardStickyNoteItem = ({ element, isInteractive, onPointerDown, onOpenTextEditor, registerRef }: BoardElementItemProps) => {
+const BoardStickyNoteItem = ({
+  element: baseElement,
+  isInteractive,
+  onPointerDown,
+  onOpenTextEditor,
+  registerRef,
+}: BoardElementItemProps) => {
+  const element = baseElement as StickyNoteElement;
   const rect = getRectBounds(element);
   const fontSize = element.style.fontSize ?? 16;
   const content = element.properties?.content ?? "";
@@ -273,7 +297,7 @@ const BoardStickyNoteItem = ({ element, isInteractive, onPointerDown, onOpenText
   const draw = useCallback(
     (g: Graphics) => drawRoundedRectShape(g, element, rect),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [element.style, element.properties, rect.width, rect.height],
+    [element.style, rect.width, rect.height],
   );
 
   const handleTap = useDoubleTap();
@@ -315,8 +339,30 @@ const BoardStickyNoteItem = ({ element, isInteractive, onPointerDown, onOpenText
   );
 };
 
-const BoardConnectorItem = ({ element, isInteractive, onPointerDown, registerRef }: BoardElementItemProps) => {
-  const points = resolveConnectorPoints(element);
+const BoardConnectorItem = ({ element: baseElement, isInteractive, onPointerDown, registerRef }: BoardElementItemProps) => {
+  const element = baseElement as ConnectorElement;
+  const routingMode = element.properties?.routing?.mode;
+  const storedPoints = element.properties?.points;
+  const startX = element.properties?.start?.x;
+  const startY = element.properties?.start?.y;
+  const endX = element.properties?.end?.x;
+  const endY = element.properties?.end?.y;
+
+  const points = useMemo(() => {
+    // Construct a proxy element to ensure resolveConnectorPoints uses the tracked dependencies
+    // instead of the potentially unstable element reference.
+    const proxyElement = {
+      element_type: "Connector",
+      properties: {
+        points: storedPoints,
+        routing: { mode: routingMode },
+        start: (Number.isFinite(startX) && Number.isFinite(startY)) ? { x: startX, y: startY } : undefined,
+        end: (Number.isFinite(endX) && Number.isFinite(endY)) ? { x: endX, y: endY } : undefined,
+      },
+    } as unknown as BoardElement;
+    return resolveConnectorPoints(proxyElement);
+  }, [routingMode, storedPoints, startX, startY, endX, endY]);
+
   const isValid = points && points.length >= 4;
 
   const draw = useCallback(
