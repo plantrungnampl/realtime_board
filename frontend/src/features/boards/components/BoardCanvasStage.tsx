@@ -140,27 +140,33 @@ const CursorMarker = memo(function CursorMarker({ cursor }: { cursor: CursorBroa
       node.position.y + (targetRef.current.y - node.position.y) * CURSOR_SMOOTHING,
     );
   });
+
+  // Memoize draw function to prevent re-processing graphics instructions on every render
+  const drawCursor = useCallback(
+    (graphics: PixiGraphics) => {
+      graphics.clear();
+      setFillStyle(graphics, parseColor(cursor.color, 0xffffff));
+      setStrokeStyle(graphics, 1, 0x171717);
+      graphics.circle(0, 0, 4);
+      graphics.fill();
+      graphics.stroke();
+    },
+    [cursor.color],
+  );
+
+  // Memoize style object to prevent expensive text texture regeneration on every render
+  const labelStyle = useMemo(
+    () => ({
+      fontSize: 11,
+      fill: cursor.color,
+    }),
+    [cursor.color],
+  );
+
   return (
     <pixiContainer ref={groupRef} x={initialPos.x} y={initialPos.y} eventMode="passive">
-      <pixiGraphics
-        draw={(graphics) => {
-          graphics.clear();
-          setFillStyle(graphics, parseColor(cursor.color, 0xffffff));
-          setStrokeStyle(graphics, 1, 0x171717);
-          graphics.circle(0, 0, 4);
-          graphics.fill();
-          graphics.stroke();
-        }}
-      />
-      <pixiText
-        text={cursor.user_name}
-        x={-10}
-        y={10}
-        style={{
-          fontSize: 11,
-          fill: cursor.color,
-        }}
-      />
+      <pixiGraphics draw={drawCursor} />
+      <pixiText text={cursor.user_name} x={-10} y={10} style={labelStyle} />
     </pixiContainer>
   );
 });
@@ -188,29 +194,36 @@ const BackgroundGridLayer = memo(function BackgroundGridLayer({
   worldRect: { x: number; y: number; width: number; height: number };
   stageScale: number;
 }) {
+  // Memoize draw function to prevent unnecessary redraws when other props change
+  const drawBackground = useCallback(
+    (graphics: PixiGraphics) => {
+      graphics.clear();
+      setFillStyle(graphics, parseColor(backgroundColor, 0x141414));
+      graphics.rect(worldRect.x, worldRect.y, worldRect.width, worldRect.height);
+      graphics.fill();
+    },
+    [backgroundColor, worldRect],
+  );
+
+  // Memoize grid drawing to prevent unnecessary processing on re-renders
+  const drawGrid = useCallback(
+    (graphics: PixiGraphics) => {
+      graphics.clear();
+      gridLines.forEach((line) => {
+        const color = line.major ? 0x2f2f2f : 0x222222;
+        setStrokeStyle(graphics, (line.major ? 1.2 : 1) / stageScale, color);
+        graphics.moveTo(line.points[0], line.points[1]);
+        graphics.lineTo(line.points[2], line.points[3]);
+        graphics.stroke();
+      });
+    },
+    [gridLines, stageScale],
+  );
+
   return (
     <pixiContainer eventMode="passive">
-      <pixiGraphics
-        draw={(graphics) => {
-          graphics.clear();
-          setFillStyle(graphics, parseColor(backgroundColor, 0x141414));
-          graphics.rect(worldRect.x, worldRect.y, worldRect.width, worldRect.height);
-          graphics.fill();
-        }}
-      />
-
-      <pixiGraphics
-        draw={(graphics) => {
-          graphics.clear();
-          gridLines.forEach((line) => {
-            const color = line.major ? 0x2f2f2f : 0x222222;
-            setStrokeStyle(graphics, (line.major ? 1.2 : 1) / stageScale, color);
-            graphics.moveTo(line.points[0], line.points[1]);
-            graphics.lineTo(line.points[2], line.points[3]);
-            graphics.stroke();
-          });
-        }}
-      />
+      <pixiGraphics draw={drawBackground} />
+      <pixiGraphics draw={drawGrid} />
     </pixiContainer>
   );
 });
