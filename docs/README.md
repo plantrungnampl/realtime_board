@@ -34,6 +34,23 @@ docs/
 
 ## Quick Start
 
+### Running Locally
+
+To start the application locally using Docker Compose:
+
+1. **Configure Environment Variables**:
+   Copy `.env.example` to `.env` and update the values:
+   ```bash
+   cp .env.example .env
+   # Edit .env and set POSTGRES_PASSWORD, POSTGRES_USER, etc.
+   ```
+   **Important:** You must set `POSTGRES_PASSWORD`, `POSTGRES_USER`, and `POSTGRES_DB` as they are required by the database container.
+
+2. **Start Services**:
+   ```bash
+   docker-compose up -d
+   ```
+
 ### For Developers
 
 1. **Understanding the System**:
