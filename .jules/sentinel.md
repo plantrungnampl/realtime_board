@@ -53,3 +53,14 @@
 1. Implement a `security_headers` middleware using `axum::middleware::from_fn`.
 2. Apply `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, and `X-XSS-Protection: 1; mode=block`.
 3. Register this middleware globally in the main router.
+
+## 2026-03-01 - Rate Limiting IP Bypass via Proxy
+
+**Vulnerability:** The authentication rate limiter (`build_auth_rate_limiter`) and onboarding rate limiter used `PeerIpKeyExtractor` by default. This extractor uses the direct connection IP (peer IP). In environments behind a proxy (Load Balancer, Reverse Proxy, Docker Gateway), all requests appear to come from the proxy's IP. This would cause the rate limiter to block the proxy itself after a few attempts, effectively causing a Denial of Service for all legitimate users sharing that proxy.
+
+**Learning:** Rate limiters defaults are often "secure by default" for direct connections but "broken by default" for proxied environments. Always consider the deployment topology. `SmartIpKeyExtractor` is designed to handle `X-Forwarded-For` headers correctly while falling back to Peer IP if headers are missing.
+
+**Prevention:**
+1. Explicitly configure rate limiters to use `SmartIpKeyExtractor` or a custom extractor that handles `X-Forwarded-For` headers.
+2. Verify that the application server (Axum in this case) is configured to provide connection info (e.g. `into_make_service_with_connect_info::<SocketAddr>`).
+3. Ensure trusted proxies are configured to prevent header spoofing (though this is an infrastructure concern, the code should support the headers).
