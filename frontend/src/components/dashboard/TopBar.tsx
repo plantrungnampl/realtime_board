@@ -205,16 +205,16 @@ export function TopBar() {
         <div className="h-6 w-px bg-border mx-2 hidden sm:block" />
 
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" className="w-9 h-9 p-0 rounded-full">
+          <Button variant="ghost" size="sm" className="w-9 h-9 p-0 rounded-full" aria-label={t("nav.whatsNew")}>
             <Gift className="w-5 h-5 text-text-secondary" />
           </Button>
-          <Button variant="ghost" size="sm" className="w-9 h-9 p-0 rounded-full">
+          <Button variant="ghost" size="sm" className="w-9 h-9 p-0 rounded-full" aria-label={t("nav.notifications")}>
             <Bell className="w-5 h-5 text-text-secondary" />
           </Button>
           
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="relative h-9 w-9 rounded-full ml-2">
+              <Button variant="ghost" className="relative h-9 w-9 rounded-full ml-2" aria-label={t("nav.userMenu")}>
                 <Avatar className="h-9 w-9 border border-border">
                   <AvatarImage src={user?.avatar_url || ''} alt={displayName} />
                   <AvatarFallback className="bg-blue-500 text-white">{avatarFallback}</AvatarFallback>
