@@ -21,3 +21,7 @@
 ## 2024-10-27 - Keyboard Shortcuts Discovery
 **Learning:** Keyboard shortcuts are powerful but useless if users don't know them. Displaying shortcuts in tooltips (e.g., "Rectangle (R)") bridges the gap between novice and power users without cluttering the UI.
 **Action:** When implementing keyboard shortcuts for actions that have UI buttons, always update the button's tooltip or label to include the shortcut key.
+
+## 2024-10-28 - Icon-Only Button Accessibility
+**Learning:** Common navigation patterns (top bars, sidebars) frequently use icon-only buttons for aesthetics, leaving screen reader users without context.
+**Action:** Always audit `Button` components with `variant="ghost"` or custom dimensions for missing `aria-label` attributes, using localized keys for accessibility.
