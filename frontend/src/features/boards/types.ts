@@ -270,6 +270,13 @@ export type SelectionPresence = {
   editing?: { element_id: string; mode: SelectionEditMode } | null;
 };
 
+export type SelectionOverlay = {
+  key: string;
+  element: BoardElement;
+  color: string;
+  label?: string;
+};
+
 export type PresenceStatus = "online" | "idle" | "away";
 
 export interface PresenceUser {

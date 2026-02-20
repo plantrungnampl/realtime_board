@@ -1,4 +1,4 @@
-import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { Application, extend, useApplication, useTick } from "@pixi/react";
 import {
@@ -9,7 +9,7 @@ import {
   Text as PixiText,
 } from "pixi.js";
 import type { BoardElement } from "@/types/board";
-import type { CursorBroadcast, DragPresence, SelectionPresence } from "@/features/boards/types";
+import type { CursorBroadcast, DragPresence, SelectionPresence, SelectionOverlay } from "@/features/boards/types";
 import { DEFAULT_TEXT_STYLE } from "@/features/boards/boardRoute/elements";
 import { getTextMetrics } from "@/features/boards/boardRoute.utils";
 import type { SnapGuide } from "@/features/boards/elementMove.utils";
@@ -25,19 +25,13 @@ import {
   setFillStyle,
 } from "@/features/boards/boardCanvas/renderUtils";
 import { BoardElementItem, type TextEditorPayload } from "@/features/boards/components/BoardElementItem";
+import { SelectionRectOutline, SelectionCircleOutline, PresenceOverlayItem } from "@/features/boards/components/BoardSelectionItems";
 
 extend({
   Container: PixiContainer,
   Graphics: PixiGraphics,
   Text: PixiText,
 });
-
-type SelectionOverlay = {
-  key: string;
-  element: BoardElement;
-  color: string;
-  label?: string;
-};
 
 type BoardCanvasStageProps = {
   stageRef: RefObject<HTMLDivElement | null>;
@@ -241,6 +235,8 @@ const SelectionLayer = memo(function SelectionLayer({
   onBeginRotate: (event: FederatedPointerEvent, element: BoardElement) => void;
   onBeginResize: (event: FederatedPointerEvent, element: BoardElement, handle: "nw" | "ne" | "se" | "sw") => void;
 }) {
+  const parsedSelectionStroke = useMemo(() => parseColor(SELECTION_STROKE), []);
+
   return (
     <pixiContainer eventMode="passive">
       {localSelections.map((element) => {
@@ -255,18 +251,12 @@ const SelectionLayer = memo(function SelectionLayer({
                 rotation={(element.rotation ?? 0) * DEG_TO_RAD}
                 eventMode="passive"
               >
-                <pixiGraphics
-                  draw={(graphics) => {
-                    graphics.clear();
-                    setStrokeStyle(graphics, selectionStrokeWidth, parseColor(SELECTION_STROKE));
-                    graphics.rect(
-                      -selectionPadding,
-                      -selectionPadding,
-                      rect.width + selectionPadding * 2,
-                      rect.height + selectionPadding * 2,
-                    );
-                    graphics.stroke();
-                  }}
+                <SelectionRectOutline
+                  width={rect.width}
+                  height={rect.height}
+                  color={parsedSelectionStroke}
+                  strokeWidth={selectionStrokeWidth}
+                  padding={selectionPadding}
                 />
               </pixiContainer>
             );
@@ -283,13 +273,11 @@ const SelectionLayer = memo(function SelectionLayer({
                 rotation={(element.rotation ?? 0) * DEG_TO_RAD}
                 eventMode="passive"
               >
-                <pixiGraphics
-                  draw={(graphics) => {
-                    graphics.clear();
-                    setStrokeStyle(graphics, selectionStrokeWidth, parseColor(SELECTION_STROKE));
-                    graphics.circle(0, 0, radius + selectionPadding);
-                    graphics.stroke();
-                  }}
+                <SelectionCircleOutline
+                  radius={radius}
+                  color={parsedSelectionStroke}
+                  strokeWidth={selectionStrokeWidth}
+                  padding={selectionPadding}
                 />
               </pixiContainer>
             );
@@ -310,18 +298,12 @@ const SelectionLayer = memo(function SelectionLayer({
               rotation={(element.rotation ?? 0) * DEG_TO_RAD}
               eventMode="passive"
             >
-              <pixiGraphics
-                draw={(graphics) => {
-                  graphics.clear();
-                  setStrokeStyle(graphics, selectionStrokeWidth, parseColor(SELECTION_STROKE));
-                  graphics.rect(
-                    -selectionPadding,
-                    -selectionPadding,
-                    metrics.width + selectionPadding * 2,
-                    metrics.height + selectionPadding * 2,
-                  );
-                  graphics.stroke();
-                }}
+              <SelectionRectOutline
+                width={metrics.width}
+                height={metrics.height}
+                color={parsedSelectionStroke}
+                strokeWidth={selectionStrokeWidth}
+                padding={selectionPadding}
               />
             </pixiContainer>
           );
@@ -337,18 +319,12 @@ const SelectionLayer = memo(function SelectionLayer({
               rotation={(element.rotation ?? 0) * DEG_TO_RAD}
               eventMode="passive"
             >
-              <pixiGraphics
-                draw={(graphics) => {
-                  graphics.clear();
-                  setStrokeStyle(graphics, selectionStrokeWidth, parseColor(SELECTION_STROKE));
-                  graphics.rect(
-                    -selectionPadding,
-                    -selectionPadding,
-                    rect.width + selectionPadding * 2,
-                    rect.height + selectionPadding * 2,
-                  );
-                  graphics.stroke();
-                }}
+              <SelectionRectOutline
+                width={rect.width}
+                height={rect.height}
+                color={parsedSelectionStroke}
+                strokeWidth={selectionStrokeWidth}
+                padding={selectionPadding}
               />
             </pixiContainer>
           );
@@ -364,32 +340,19 @@ const SelectionLayer = memo(function SelectionLayer({
         const labelFontSize = 11 / stageScale;
         const labelOffset = 6 / stageScale;
         return (
-          <Fragment key={overlay.key}>
-            <pixiGraphics
-              draw={(graphics) => {
-                graphics.clear();
-                setStrokeStyle(graphics, selectionStrokeWidth, parseColor(overlay.color));
-                graphics.rect(
-                  bounds.x - selectionPadding,
-                  bounds.y - selectionPadding,
-                  bounds.width + selectionPadding * 2,
-                  bounds.height + selectionPadding * 2,
-                );
-                graphics.stroke();
-              }}
-            />
-            {overlay.label && (
-              <pixiText
-                text={overlay.label}
-                x={bounds.x}
-                y={bounds.y - labelFontSize - labelOffset}
-                style={{
-                  fontSize: labelFontSize,
-                  fill: overlay.color,
-                }}
-              />
-            )}
-          </Fragment>
+          <PresenceOverlayItem
+            key={overlay.key}
+            x={bounds.x}
+            y={bounds.y}
+            width={bounds.width}
+            height={bounds.height}
+            color={overlay.color}
+            label={overlay.label}
+            strokeWidth={selectionStrokeWidth}
+            padding={selectionPadding}
+            labelFontSize={labelFontSize}
+            labelOffset={labelOffset}
+          />
         );
       })}
 
@@ -398,7 +361,7 @@ const SelectionLayer = memo(function SelectionLayer({
           <pixiGraphics
             draw={(graphics) => {
               graphics.clear();
-              setStrokeStyle(graphics, selectionStrokeWidth, parseColor(SELECTION_STROKE));
+              setStrokeStyle(graphics, selectionStrokeWidth, parsedSelectionStroke);
               graphics.moveTo(transformHandles.rotateLineStart.x, transformHandles.rotateLineStart.y);
               graphics.lineTo(transformHandles.rotateHandle.x, transformHandles.rotateHandle.y);
               graphics.stroke();
@@ -413,7 +376,7 @@ const SelectionLayer = memo(function SelectionLayer({
             }
             draw={(graphics) => {
               graphics.clear();
-              setFillStyle(graphics, parseColor(SELECTION_STROKE));
+              setFillStyle(graphics, parsedSelectionStroke);
               graphics.circle(0, 0, handleSize / 2);
               graphics.fill();
             }}
@@ -430,7 +393,7 @@ const SelectionLayer = memo(function SelectionLayer({
               draw={(graphics) => {
                 graphics.clear();
                 setFillStyle(graphics, 0xffffff);
-                setStrokeStyle(graphics, 1 / stageScale, parseColor(SELECTION_STROKE));
+                setStrokeStyle(graphics, 1 / stageScale, parsedSelectionStroke);
                 graphics.rect(-handleSize / 2, -handleSize / 2, handleSize, handleSize);
                 graphics.fill();
                 graphics.stroke();
