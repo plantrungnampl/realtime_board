@@ -10,7 +10,7 @@ use tower_governor::{
     GovernorLayer,
     errors::GovernorError,
     governor::GovernorConfigBuilder,
-    key_extractor::{KeyExtractor, PeerIpKeyExtractor, SmartIpKeyExtractor},
+    key_extractor::{KeyExtractor, SmartIpKeyExtractor},
 };
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use uuid::Uuid;
@@ -258,7 +258,7 @@ pub fn build_router(state: AppState) -> Router {
         .with_state(state)
 }
 
-fn build_auth_rate_limiter() -> GovernorLayer<PeerIpKeyExtractor, NoOpMiddleware> {
+fn build_auth_rate_limiter() -> GovernorLayer<SmartIpKeyExtractor, NoOpMiddleware> {
     let per_second = std::env::var("AUTH_RATE_LIMIT_PER_SECOND")
         .ok()
         .and_then(|value| value.parse::<u32>().ok())
@@ -269,8 +269,11 @@ fn build_auth_rate_limiter() -> GovernorLayer<PeerIpKeyExtractor, NoOpMiddleware
         .and_then(|value| value.parse::<u32>().ok())
         .filter(|value| *value > 0)
         .unwrap_or(10);
+    // Use SmartIpKeyExtractor to correctly identify clients behind proxies (e.g. Docker, AWS ALB)
+    // using headers like X-Forwarded-For, preventing shared rate limits (DoS risk).
     let config = Arc::new(
         GovernorConfigBuilder::default()
+            .key_extractor(SmartIpKeyExtractor)
             .per_second(u64::from(per_second))
             .burst_size(burst_size)
             .finish()
