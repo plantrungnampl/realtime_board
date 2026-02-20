@@ -21,3 +21,7 @@
 ## 2024-10-27 - Keyboard Shortcuts Discovery
 **Learning:** Keyboard shortcuts are powerful but useless if users don't know them. Displaying shortcuts in tooltips (e.g., "Rectangle (R)") bridges the gap between novice and power users without cluttering the UI.
 **Action:** When implementing keyboard shortcuts for actions that have UI buttons, always update the button's tooltip or label to include the shortcut key.
+
+## 2025-05-22 - Accessible Tooltips on Icon Buttons
+**Learning:** Native `title` attributes on buttons create redundant tooltips when custom tooltips are also used, and custom tooltips often fail to appear on keyboard focus.
+**Action:** Remove `title` attributes when using custom tooltips, ensure `aria-label` provides the accessible name, and use `group-focus-visible` classes to show custom tooltips on focus.
