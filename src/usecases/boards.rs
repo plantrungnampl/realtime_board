@@ -1090,12 +1090,25 @@ async fn load_invite_users(
     pool: &PgPool,
     emails: &[String],
 ) -> Result<Vec<crate::models::users::User>, AppError> {
-    let mut users = Vec::new();
+    if emails.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let found_users = user_repo::find_users_by_emails(pool, emails).await?;
+    let mut user_map = HashMap::with_capacity(found_users.len());
+
+    for user in found_users {
+        user_map.insert(user.email.clone(), user);
+    }
+
+    let mut users = Vec::with_capacity(emails.len());
     let mut missing = Vec::new();
+
     for email in emails {
-        match user_repo::find_user_by_email(pool, email).await? {
-            Some(user) => users.push(user),
-            None => missing.push(email.clone()),
+        if let Some(user) = user_map.get(email) {
+            users.push(user.clone());
+        } else {
+            missing.push(email.clone());
         }
     }
 
