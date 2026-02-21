@@ -10,7 +10,7 @@ use tower_governor::{
     GovernorLayer,
     errors::GovernorError,
     governor::GovernorConfigBuilder,
-    key_extractor::{KeyExtractor, PeerIpKeyExtractor, SmartIpKeyExtractor},
+    key_extractor::{KeyExtractor, SmartIpKeyExtractor},
 };
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use uuid::Uuid;
@@ -258,7 +258,7 @@ pub fn build_router(state: AppState) -> Router {
         .with_state(state)
 }
 
-fn build_auth_rate_limiter() -> GovernorLayer<PeerIpKeyExtractor, NoOpMiddleware> {
+fn build_auth_rate_limiter() -> GovernorLayer<SmartIpKeyExtractor, NoOpMiddleware> {
     let per_second = std::env::var("AUTH_RATE_LIMIT_PER_SECOND")
         .ok()
         .and_then(|value| value.parse::<u32>().ok())
@@ -271,6 +271,7 @@ fn build_auth_rate_limiter() -> GovernorLayer<PeerIpKeyExtractor, NoOpMiddleware
         .unwrap_or(10);
     let config = Arc::new(
         GovernorConfigBuilder::default()
+            .key_extractor(SmartIpKeyExtractor)
             .per_second(u64::from(per_second))
             .burst_size(burst_size)
             .finish()
@@ -377,5 +378,18 @@ mod tests {
         let extractor = InviteKeyExtractor;
         let key = extractor.extract(&request).expect("key");
         assert!(matches!(key, InviteRateLimitKey::User(id) if id == user_id));
+    }
+
+    #[test]
+    fn smart_ip_key_extractor_extracts_forwarded_ip() {
+        let request = Request::builder()
+            .uri("/")
+            .header("x-forwarded-for", "203.0.113.42")
+            .body(())
+            .expect("request");
+        let extractor = SmartIpKeyExtractor;
+        let key = extractor.extract(&request).expect("key");
+        let expected_ip: IpAddr = "203.0.113.42".parse().expect("ip");
+        assert_eq!(key, expected_ip);
     }
 }
