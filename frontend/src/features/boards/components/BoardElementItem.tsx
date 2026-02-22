@@ -1,6 +1,6 @@
 import { memo, useCallback, useMemo, useRef } from "react";
 import type { Container as PixiContainer, FederatedPointerEvent, Graphics } from "pixi.js";
-import type { BoardElement } from "@/types/board";
+import type { BoardElement, ConnectorElement, DrawingElement, ShapeElement, StickyNoteElement, TextElement } from "@/types/board";
 import { DEFAULT_TEXT_STYLE } from "@/features/boards/boardRoute/elements";
 import {
   coerceNumber,
@@ -126,11 +126,12 @@ function useDoubleTap() {
 }
 
 const BoardRectangleItem = ({ element, isInteractive, onPointerDown, registerRef }: BoardElementItemProps) => {
-  const rect = getRectBounds(element);
+  const shapeElement = element as ShapeElement;
+  const rect = getRectBounds(shapeElement);
   const draw = useCallback(
-    (g: Graphics) => drawRectShape(g, element, rect),
+    (g: Graphics) => drawRectShape(g, shapeElement, rect),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [element.style, element.properties, rect.width, rect.height],
+    [shapeElement.style, shapeElement.properties, rect.width, rect.height],
   );
   return (
     <ElementContainer
@@ -147,13 +148,14 @@ const BoardRectangleItem = ({ element, isInteractive, onPointerDown, registerRef
 };
 
 const BoardCircleItem = ({ element, isInteractive, onPointerDown, registerRef }: BoardElementItemProps) => {
-  const radius = Math.hypot(element.width || 0, element.height || 0);
-  const positionX = coerceNumber(element.position_x, 0);
-  const positionY = coerceNumber(element.position_y, 0);
+  const shapeElement = element as ShapeElement;
+  const radius = Math.hypot(shapeElement.width || 0, shapeElement.height || 0);
+  const positionX = coerceNumber(shapeElement.position_x, 0);
+  const positionY = coerceNumber(shapeElement.position_y, 0);
   const draw = useCallback(
-    (g: Graphics) => drawCircleShape(g, element, radius),
+    (g: Graphics) => drawCircleShape(g, shapeElement, radius),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [element.style, element.properties, radius],
+    [shapeElement.style, shapeElement.properties, radius],
   );
   return (
     <ElementContainer
@@ -170,10 +172,11 @@ const BoardCircleItem = ({ element, isInteractive, onPointerDown, registerRef }:
 };
 
 const BoardDrawingItem = ({ element, isInteractive, onPointerDown, registerRef }: BoardElementItemProps) => {
-  const points = element.properties.points;
+  const drawingElement = element as DrawingElement;
+  const points = drawingElement.properties.points;
   const isValid = Array.isArray(points) && isValidDrawingPoints(points);
-  const positionX = coerceNumber(element.position_x, 0);
-  const positionY = coerceNumber(element.position_y, 0);
+  const positionX = coerceNumber(drawingElement.position_x, 0);
+  const positionY = coerceNumber(drawingElement.position_y, 0);
 
   const draw = useCallback(
     (graphics: Graphics) => {
@@ -182,12 +185,12 @@ const BoardDrawingItem = ({ element, isInteractive, onPointerDown, registerRef }
         drawPolyline(
           graphics,
           points,
-          element.style.strokeWidth ?? 2,
-          parseColor(element.style.stroke, 0xffffff),
+          drawingElement.style.strokeWidth ?? 2,
+          parseColor(drawingElement.style.stroke, 0xffffff),
         );
       }
     },
-    [element.style, points, isValid],
+    [drawingElement.style, points, isValid],
   );
 
   if (!isValid) return null;
@@ -207,11 +210,12 @@ const BoardDrawingItem = ({ element, isInteractive, onPointerDown, registerRef }
 };
 
 const BoardTextItem = ({ element, isInteractive, onPointerDown, onOpenTextEditor, registerRef }: BoardElementItemProps) => {
-  const positionX = coerceNumber(element.position_x, 0);
-  const positionY = coerceNumber(element.position_y, 0);
-  const fontSize = element.style.fontSize ?? DEFAULT_TEXT_STYLE.fontSize ?? 16;
-  const content = element.properties?.content ?? "";
-  const color = element.style.textColor ?? DEFAULT_TEXT_STYLE.fill ?? "#1F2937";
+  const textElement = element as TextElement;
+  const positionX = coerceNumber(textElement.position_x, 0);
+  const positionY = coerceNumber(textElement.position_y, 0);
+  const fontSize = textElement.style.fontSize ?? DEFAULT_TEXT_STYLE.fontSize ?? 16;
+  const content = textElement.properties.content;
+  const color = textElement.style.textColor ?? DEFAULT_TEXT_STYLE.fill ?? "#1F2937";
   const style = useMemo(
     () => ({
       fontSize,
@@ -227,7 +231,7 @@ const BoardTextItem = ({ element, isInteractive, onPointerDown, onOpenTextEditor
       handleTap(event, () => {
         onOpenTextEditor(
           buildTextEditorPayload({
-            element,
+            element: textElement,
             x: positionX,
             y: positionY,
             content,
@@ -237,7 +241,7 @@ const BoardTextItem = ({ element, isInteractive, onPointerDown, onOpenTextEditor
           }),
         );
       }),
-    [handleTap, onOpenTextEditor, element, positionX, positionY, content, fontSize, color],
+    [handleTap, onOpenTextEditor, textElement, positionX, positionY, content, fontSize, color],
   );
 
   return (
@@ -256,11 +260,12 @@ const BoardTextItem = ({ element, isInteractive, onPointerDown, onOpenTextEditor
 };
 
 const BoardStickyNoteItem = ({ element, isInteractive, onPointerDown, onOpenTextEditor, registerRef }: BoardElementItemProps) => {
-  const rect = getRectBounds(element);
-  const fontSize = element.style.fontSize ?? 16;
-  const content = element.properties?.content ?? "";
+  const stickyElement = element as StickyNoteElement;
+  const rect = getRectBounds(stickyElement);
+  const fontSize = stickyElement.style.fontSize ?? 16;
+  const content = stickyElement.properties.content;
   const padding = 12;
-  const color = element.style.textColor ?? "#1F2937";
+  const color = stickyElement.style.textColor ?? "#1F2937";
   const style = useMemo(
     () => ({
       fontSize,
@@ -271,9 +276,9 @@ const BoardStickyNoteItem = ({ element, isInteractive, onPointerDown, onOpenText
     [fontSize, color, rect.width],
   );
   const draw = useCallback(
-    (g: Graphics) => drawRoundedRectShape(g, element, rect),
+    (g: Graphics) => drawRoundedRectShape(g, stickyElement, rect),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [element.style, element.properties, rect.width, rect.height],
+    [stickyElement.style, stickyElement.properties, rect.width, rect.height],
   );
 
   const handleTap = useDoubleTap();
@@ -283,20 +288,20 @@ const BoardStickyNoteItem = ({ element, isInteractive, onPointerDown, onOpenText
       handleTap(event, () => {
         onOpenTextEditor(
           buildTextEditorPayload({
-            element,
+            element: stickyElement,
             x: rect.x + padding,
             y: rect.y + padding,
             content,
             fontSize,
             color,
             elementType: "StickyNote",
-            backgroundColor: element.style.fill,
+            backgroundColor: stickyElement.style.fill,
             editorWidth: Math.max(0, rect.width - padding * 2),
             editorHeight: Math.max(0, rect.height - padding * 2),
           }),
         );
       }),
-    [handleTap, onOpenTextEditor, element, rect.x, rect.y, rect.width, rect.height, content, fontSize, color],
+    [handleTap, onOpenTextEditor, stickyElement, rect.x, rect.y, rect.width, rect.height, content, fontSize, color],
   );
 
   return (
@@ -316,7 +321,8 @@ const BoardStickyNoteItem = ({ element, isInteractive, onPointerDown, onOpenText
 };
 
 const BoardConnectorItem = ({ element, isInteractive, onPointerDown, registerRef }: BoardElementItemProps) => {
-  const points = resolveConnectorPoints(element);
+  const connectorElement = element as ConnectorElement;
+  const points = resolveConnectorPoints(connectorElement);
   const isValid = points && points.length >= 4;
 
   const draw = useCallback(
@@ -326,12 +332,12 @@ const BoardConnectorItem = ({ element, isInteractive, onPointerDown, registerRef
         drawPolyline(
           graphics,
           points,
-          element.style.strokeWidth ?? 2,
-          parseColor(element.style.stroke, 0xffffff),
+          connectorElement.style.strokeWidth ?? 2,
+          parseColor(connectorElement.style.stroke, 0xffffff),
         );
       }
     },
-    [element.style, points, isValid],
+    [connectorElement.style, points, isValid],
   );
 
   if (!isValid) return null;

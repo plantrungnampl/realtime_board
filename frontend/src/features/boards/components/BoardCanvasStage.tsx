@@ -1,4 +1,4 @@
-import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { Application, extend, useApplication, useTick } from "@pixi/react";
 import {
@@ -25,6 +25,7 @@ import {
   setFillStyle,
 } from "@/features/boards/boardCanvas/renderUtils";
 import { BoardElementItem, type TextEditorPayload } from "@/features/boards/components/BoardElementItem";
+import { PresenceOverlayItem, SelectionCircle, SelectionOutline } from "@/features/boards/components/BoardSelectionItems";
 
 extend({
   Container: PixiContainer,
@@ -255,18 +256,12 @@ const SelectionLayer = memo(function SelectionLayer({
                 rotation={(element.rotation ?? 0) * DEG_TO_RAD}
                 eventMode="passive"
               >
-                <pixiGraphics
-                  draw={(graphics) => {
-                    graphics.clear();
-                    setStrokeStyle(graphics, selectionStrokeWidth, parseColor(SELECTION_STROKE));
-                    graphics.rect(
-                      -selectionPadding,
-                      -selectionPadding,
-                      rect.width + selectionPadding * 2,
-                      rect.height + selectionPadding * 2,
-                    );
-                    graphics.stroke();
-                  }}
+                <SelectionOutline
+                  width={rect.width}
+                  height={rect.height}
+                  strokeWidth={selectionStrokeWidth}
+                  padding={selectionPadding}
+                  color={SELECTION_STROKE}
                 />
               </pixiContainer>
             );
@@ -283,13 +278,11 @@ const SelectionLayer = memo(function SelectionLayer({
                 rotation={(element.rotation ?? 0) * DEG_TO_RAD}
                 eventMode="passive"
               >
-                <pixiGraphics
-                  draw={(graphics) => {
-                    graphics.clear();
-                    setStrokeStyle(graphics, selectionStrokeWidth, parseColor(SELECTION_STROKE));
-                    graphics.circle(0, 0, radius + selectionPadding);
-                    graphics.stroke();
-                  }}
+                <SelectionCircle
+                  radius={radius}
+                  strokeWidth={selectionStrokeWidth}
+                  padding={selectionPadding}
+                  color={SELECTION_STROKE}
                 />
               </pixiContainer>
             );
@@ -310,18 +303,12 @@ const SelectionLayer = memo(function SelectionLayer({
               rotation={(element.rotation ?? 0) * DEG_TO_RAD}
               eventMode="passive"
             >
-              <pixiGraphics
-                draw={(graphics) => {
-                  graphics.clear();
-                  setStrokeStyle(graphics, selectionStrokeWidth, parseColor(SELECTION_STROKE));
-                  graphics.rect(
-                    -selectionPadding,
-                    -selectionPadding,
-                    metrics.width + selectionPadding * 2,
-                    metrics.height + selectionPadding * 2,
-                  );
-                  graphics.stroke();
-                }}
+              <SelectionOutline
+                width={metrics.width}
+                height={metrics.height}
+                strokeWidth={selectionStrokeWidth}
+                padding={selectionPadding}
+                color={SELECTION_STROKE}
               />
             </pixiContainer>
           );
@@ -337,18 +324,12 @@ const SelectionLayer = memo(function SelectionLayer({
               rotation={(element.rotation ?? 0) * DEG_TO_RAD}
               eventMode="passive"
             >
-              <pixiGraphics
-                draw={(graphics) => {
-                  graphics.clear();
-                  setStrokeStyle(graphics, selectionStrokeWidth, parseColor(SELECTION_STROKE));
-                  graphics.rect(
-                    -selectionPadding,
-                    -selectionPadding,
-                    rect.width + selectionPadding * 2,
-                    rect.height + selectionPadding * 2,
-                  );
-                  graphics.stroke();
-                }}
+              <SelectionOutline
+                width={rect.width}
+                height={rect.height}
+                strokeWidth={selectionStrokeWidth}
+                padding={selectionPadding}
+                color={SELECTION_STROKE}
               />
             </pixiContainer>
           );
@@ -364,32 +345,19 @@ const SelectionLayer = memo(function SelectionLayer({
         const labelFontSize = 11 / stageScale;
         const labelOffset = 6 / stageScale;
         return (
-          <Fragment key={overlay.key}>
-            <pixiGraphics
-              draw={(graphics) => {
-                graphics.clear();
-                setStrokeStyle(graphics, selectionStrokeWidth, parseColor(overlay.color));
-                graphics.rect(
-                  bounds.x - selectionPadding,
-                  bounds.y - selectionPadding,
-                  bounds.width + selectionPadding * 2,
-                  bounds.height + selectionPadding * 2,
-                );
-                graphics.stroke();
-              }}
-            />
-            {overlay.label && (
-              <pixiText
-                text={overlay.label}
-                x={bounds.x}
-                y={bounds.y - labelFontSize - labelOffset}
-                style={{
-                  fontSize: labelFontSize,
-                  fill: overlay.color,
-                }}
-              />
-            )}
-          </Fragment>
+          <PresenceOverlayItem
+            key={overlay.key}
+            x={bounds.x}
+            y={bounds.y}
+            width={bounds.width}
+            height={bounds.height}
+            color={overlay.color}
+            label={overlay.label}
+            strokeWidth={selectionStrokeWidth}
+            padding={selectionPadding}
+            labelFontSize={labelFontSize}
+            labelOffset={labelOffset}
+          />
         );
       })}
 
