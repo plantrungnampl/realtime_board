@@ -53,3 +53,15 @@
 1. Implement a `security_headers` middleware using `axum::middleware::from_fn`.
 2. Apply `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, and `X-XSS-Protection: 1; mode=block`.
 3. Register this middleware globally in the main router.
+
+## 2026-02-19 - JWT Type Confusion (Access vs Email Verification)
+
+**Vulnerability:** The application accepted email verification tokens as valid authentication tokens because the `typ` claim was not verified. Both tokens shared the same secret and structure, allowing an attacker to bypass authentication by using a token obtained from the signup/verification flow.
+
+**Learning:** Reusing the same signing key for different token types (access, refresh, verification) without explicit type checking creates a vulnerability where tokens can be used interchangeably. This is a common "cryptographic confusion" attack.
+
+**Prevention:**
+1. Always include a `typ` claim in JWTs to explicitly state their purpose (e.g., `access`, `email_verification`).
+2. Verify the `typ` claim on every usage.
+3. Consider using different signing keys for different purposes (or at least different `aud`/`iss` claims if strict type checking isn't possible).
+4. Use `#[serde(default)]` to handle backward compatibility when introducing new required claims to existing tokens.
