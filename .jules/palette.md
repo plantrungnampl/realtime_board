@@ -21,3 +21,7 @@
 ## 2024-10-27 - Keyboard Shortcuts Discovery
 **Learning:** Keyboard shortcuts are powerful but useless if users don't know them. Displaying shortcuts in tooltips (e.g., "Rectangle (R)") bridges the gap between novice and power users without cluttering the UI.
 **Action:** When implementing keyboard shortcuts for actions that have UI buttons, always update the button's tooltip or label to include the shortcut key.
+
+## 2024-10-28 - Tooltip Accessibility & Double Tooltips
+**Learning:** Using `title` attribute along with custom tooltips creates a "double tooltip" effect which is annoying. Also, custom tooltips that only appear on hover are inaccessible to keyboard users.
+**Action:** Remove `title` attributes when using custom tooltips. Ensure custom tooltips appear on `:focus-visible` (e.g., using `group-focus-visible`) for keyboard accessibility.
