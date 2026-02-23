@@ -53,3 +53,14 @@
 1. Implement a `security_headers` middleware using `axum::middleware::from_fn`.
 2. Apply `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, and `X-XSS-Protection: 1; mode=block`.
 3. Register this middleware globally in the main router.
+
+## 2026-02-23 - Inaccurate Rate Limiting behind Proxy
+
+**Vulnerability:** The authentication rate limiter (`build_auth_rate_limiter`) used `PeerIpKeyExtractor` by default, which extracts the IP address of the immediate TCP peer. In production environments involving reverse proxies (e.g., Nginx, load balancers), this causes all incoming traffic to appear as originating from the proxy's IP.
+
+**Learning:** Rate limiters that rely on connection information (`PeerIpKeyExtractor`) are fundamentally incompatible with reverse proxy architectures. This misconfiguration leads to "shared fate" where one malicious user can trigger a platform-wide block for all users routed through the same proxy.
+
+**Prevention:**
+1. Use `SmartIpKeyExtractor` (or similar mechanisms) that inspect `X-Forwarded-For` and `Forwarded` headers to identify the true client IP.
+2. Ensure the application is configured to trust these headers only from known proxies if possible.
+3. Explicitly configure key extractors in `tower_governor` rather than relying on defaults that may not suit the deployment environment.

@@ -1,0 +1,221 @@
+warning: method `can_edit` is never used
+  --> src/models/boards.rs:19:12
+   |
+17 | impl BoardRole {
+   | -------------- method in this implementation
+18 |     /// Returns true when the role is allowed to modify board content.
+19 |     pub fn can_edit(self) -> bool {
+   |            ^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `Comment` is never constructed
+  --> src/models/comments.rs:18:12
+   |
+18 | pub struct Comment {
+   |            ^^^^^^^
+
+warning: struct `PresenceRecord` is never constructed
+  --> src/models/presence.rs:34:12
+   |
+34 | pub struct PresenceRecord {
+   |            ^^^^^^^^^^^^^^
+
+warning: field `user_id` is never read
+  --> src/realtime/room.rs:17:9
+   |
+15 | pub struct QueuedSession {
+   |            ------------- field in this struct
+16 |     pub session_id: Uuid,
+17 |     pub user_id: Uuid,
+   |         ^^^^^^^
+
+warning: function `build_state_update` is never used
+   --> src/realtime/snapshot.rs:280:14
+    |
+280 | pub async fn build_state_update(pool: &PgPool, board_id: Uuid) -> Result<Vec<u8>, AppError> {
+    |              ^^^^^^^^^^^^^^^^^^
+
+warning: struct `UpdateElementParams` is never constructed
+  --> src/repositories/elements.rs:28:12
+   |
+28 | pub struct UpdateElementParams {
+   |            ^^^^^^^^^^^^^^^^^^^
+
+warning: struct `ElementVersionRow` is never constructed
+  --> src/repositories/elements.rs:72:12
+   |
+72 | pub struct ElementVersionRow {
+   |            ^^^^^^^^^^^^^^^^^
+
+warning: function `find_element_by_id_including_deleted` is never used
+   --> src/repositories/elements.rs:101:14
+    |
+101 | pub async fn find_element_by_id_including_deleted(
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `soft_delete_element` is never used
+   --> src/repositories/elements.rs:124:14
+    |
+124 | pub async fn soft_delete_element(
+    |              ^^^^^^^^^^^^^^^^^^^
+
+warning: function `restore_element` is never used
+   --> src/repositories/elements.rs:155:14
+    |
+155 | pub async fn restore_element(
+    |              ^^^^^^^^^^^^^^^
+
+warning: function `max_z_index` is never used
+   --> src/repositories/elements.rs:186:14
+    |
+186 | pub async fn max_z_index(
+    |              ^^^^^^^^^^^
+
+warning: function `set_actor_id` is never used
+   --> src/repositories/elements.rs:281:14
+    |
+281 | pub async fn set_actor_id(
+    |              ^^^^^^^^^^^^
+
+warning: function `update_element` is never used
+   --> src/repositories/elements.rs:295:14
+    |
+295 | pub async fn update_element(
+    |              ^^^^^^^^^^^^^^
+
+warning: function `upsert_projected_element` is never used
+   --> src/repositories/elements.rs:346:14
+    |
+346 | pub async fn upsert_projected_element(
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `list_element_versions` is never used
+   --> src/repositories/elements.rs:582:14
+    |
+582 | pub async fn list_element_versions(
+    |              ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `list_projection_defaults` is never used
+   --> src/repositories/elements.rs:646:14
+    |
+646 | pub async fn list_projection_defaults(
+    |              ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `updates_after_seq` is never used
+  --> src/repositories/realtime.rs:56:14
+   |
+56 | pub async fn updates_after_seq(
+   |              ^^^^^^^^^^^^^^^^^
+
+warning: function `insert_user` is never used
+  --> src/repositories/users.rs:44:14
+   |
+44 | pub async fn insert_user(
+   |              ^^^^^^^^^^^
+
+warning: fields `request_id` and `trace_id` are never read
+  --> src/telemetry/http.rs:20:9
+   |
+19 | pub struct RequestContext {
+   |            -------------- fields in this struct
+20 |     pub request_id: String,
+   |         ^^^^^^^^^^
+21 |     pub trace_id: String,
+   |         ^^^^^^^^
+   |
+   = note: `RequestContext` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: variant `Edit` is never constructed
+  --> src/usecases/boards.rs:51:5
+   |
+49 | enum BoardPermission {
+   |      --------------- variant in this enum
+50 |     View,
+51 |     Edit,
+   |     ^^^^
+   |
+   = note: `BoardPermission` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: associated function `get_access_role` is never used
+   --> src/usecases/boards.rs:102:18
+    |
+ 57 | impl BoardService {
+    | ----------------- associated function in this implementation
+...
+102 |     pub async fn get_access_role(
+    |                  ^^^^^^^^^^^^^^^
+
+warning: `Real-time_Board` (bin "Real-time_Board" test) generated 21 warnings
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.31s
+     Running unittests src/main.rs (target/debug/deps/Real_time_Board-f5f18f7f539f2d30)
+
+running 56 tests
+test api::ws::boards::tests::emits_user_left_only_when_no_active_session ... ok
+test api::ws::boards::tests::skips_user_left_on_presence_check_error ... ok
+test app::router::tests::invite_key_extractor_falls_back_to_ip ... ok
+test app::router::tests::invite_key_extractor_uses_auth_user ... ok
+test auth::invite_tokens::tests::generate_invite_token_returns_non_empty_value ... ok
+test auth::invite_tokens::tests::hash_invite_token_has_expected_length ... ok
+test auth::invite_tokens::tests::hash_invite_token_differs_for_different_tokens ... ok
+test app::middleware::tests::test_security_headers_middleware ... ok
+test auth::invite_tokens::tests::hash_invite_token_is_deterministic ... ok
+test auth::middleware::tests::extract_token_flexible_allows_query ... ok
+test auth::middleware::tests::extract_token_header_priority ... ok
+test dto::auth::tests::debug_redacts_change_password_request ... ok
+test auth::middleware::tests::extract_token_strict_ignores_query ... ok
+test dto::auth::tests::debug_redacts_delete_account_request ... ok
+test dto::auth::tests::debug_redacts_login_request ... ok
+test dto::auth::tests::debug_redacts_register_request ... ok
+test dto::auth::tests::debug_redacts_login_response ... ok
+test dto::auth::tests::debug_redacts_verify_email_request ... ok
+test dto::auth::tests::profile_setup_completed_defaults_false ... ok
+test dto::auth::tests::profile_setup_completed_true_when_set ... ok
+test models::boards::tests::board_permissions_apply_overrides_updates_only_specified_fields ... ok
+test models::boards::tests::board_permissions_from_role_defaults ... ok
+test telemetry::events::tests::redacts_empty_value ... ok
+test telemetry::events::tests::redacts_missing_domain ... ok
+test telemetry::events::tests::redacts_valid_email ... ok
+test usecases::boards::tests::limit_exceeded_skips_when_unlimited ... ok
+test usecases::boards::tests::limit_exceeded_when_over_capacity ... ok
+test usecases::comments::tests::accepts_position_for_element_comment ... ok
+test usecases::comments::tests::rejects_invalid_cursor_format ... ok
+test usecases::comments::tests::rejects_empty_content ... ok
+test usecases::comments::tests::accepts_valid_cursor ... ok
+test usecases::comments::tests::rejects_limit_over_max ... ok
+test usecases::comments::tests::rejects_limit_zero ... ok
+test usecases::comments::tests::rejects_long_content ... ok
+test usecases::comments::tests::rejects_mentions_over_limit ... ok
+test usecases::comments::tests::requires_position_for_board_comment ... ok
+test usecases::comments::tests::trims_content ... ok
+test usecases::elements::tests::normalize_dimension_flips_negative_sizes ... ok
+test usecases::elements::tests::validate_position_rejects_non_finite ... ok
+test usecases::elements::tests::validate_dimensions_rejects_non_positive ... ok
+test usecases::elements::tests::validate_rotation_accepts_range ... ok
+test usecases::invites::tests::normalizes_and_lowercases_emails ... ok
+test usecases::invites::tests::rejects_duplicate_emails_after_normalization ... ok
+test usecases::invites::tests::rejects_empty_email_list ... ok
+test usecases::invites::tests::rejects_invalid_emails ... ok
+test usecases::invites::tests::rejects_limit_before_duplicate_after_exceeding ... ok
+test usecases::invites::tests::rejects_when_invite_list_exceeds_limit ... ok
+test usecases::organizations::helpers::tests::build_slug_sanitizes_invalid_input ... ok
+test usecases::organizations::helpers::tests::build_slug_uses_provided_when_valid ... ok
+test usecases::organizations::helpers::tests::generate_slug_normalizes_name ... ok
+test usecases::organizations::helpers::tests::limit_exceeded_skips_when_unlimited ... ok
+test usecases::organizations::helpers::tests::limit_exceeded_when_over_capacity ... ok
+test usecases::organizations::helpers::tests::slug_validation_allows_expected_format ... ok
+test usecases::organizations::subscription::tests::tier_limits_follow_design_doc ... ok
+test usecases::organizations::usage::tests::usage_over_limit_respects_unlimited ... ok
+test usecases::organizations::usage::tests::usage_warning_triggers_at_eighty_percent ... ok
+
+test result: ok. 56 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/backfill_invite_tokens.rs (target/debug/deps/backfill_invite_tokens-cdefaf8e9b86a1c1)
+
+running 4 tests
+test invite_tokens::tests::hash_invite_token_has_expected_length ... ok
+test invite_tokens::tests::hash_invite_token_differs_for_different_tokens ... ok
+test invite_tokens::tests::hash_invite_token_is_deterministic ... ok
+test invite_tokens::tests::generate_invite_token_returns_non_empty_value ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
