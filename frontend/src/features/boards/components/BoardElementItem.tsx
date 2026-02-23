@@ -59,14 +59,26 @@ function ElementContainer({
   onPointerTap,
   children,
 }: ElementContainerProps) {
+  // Memoize the ref callback to prevent expensive ref detach/attach cycles on every render
+  const handleRef = useCallback(
+    (node: PixiContainer | null) => registerRef(element.id, node),
+    [registerRef, element.id],
+  );
+
+  // Memoize the pointer down handler to avoid recreating the function on every render
+  const handlePointerDown = useCallback(
+    (event: FederatedPointerEvent) => onPointerDown(event, element),
+    [onPointerDown, element],
+  );
+
   return (
     <pixiContainer
-      ref={(node: PixiContainer | null) => registerRef(element.id, node)}
+      ref={handleRef}
       x={x}
       y={y}
       rotation={(element.rotation ?? 0) * DEG_TO_RAD}
       eventMode={isInteractive ? "static" : "passive"}
-      onPointerDown={(event: FederatedPointerEvent) => onPointerDown(event, element)}
+      onPointerDown={handlePointerDown}
       onPointerTap={onPointerTap}
     >
       {children}
