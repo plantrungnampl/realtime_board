@@ -7,12 +7,22 @@ use chrono::{Duration, Utc};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+const ACCESS_TOKEN_TYPE: &str = "access";
+const EMAIL_VERIFICATION_TOKEN_TYPE: &str = "email_verification";
+
+fn default_access_type() -> String {
+    ACCESS_TOKEN_TYPE.to_string()
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Claims {
     pub(crate) sub: String,
     pub exp: i64,
     pub email: String,
     pub iat: i64,
+    #[serde(default = "default_access_type")]
+    pub typ: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub iss: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -73,6 +83,7 @@ impl JwtConfig {
             email,
             exp: exp.timestamp(),
             iat: now.timestamp(),
+            typ: ACCESS_TOKEN_TYPE.to_string(),
             iss: self.issuer.clone(),
             aud: self.audience.clone(),
         };
@@ -95,6 +106,13 @@ impl JwtConfig {
             &DecodingKey::from_secret(self.secret.as_bytes()),
             &validation,
         )?;
+
+        if token_data.claims.typ != ACCESS_TOKEN_TYPE {
+            return Err(jsonwebtoken::errors::Error::from(
+                jsonwebtoken::errors::ErrorKind::InvalidToken,
+            ));
+        }
+
         Ok(token_data.claims)
     }
 
@@ -110,7 +128,7 @@ impl JwtConfig {
             email,
             exp: exp.timestamp(),
             iat: now.timestamp(),
-            typ: "email_verification".to_string(),
+            typ: EMAIL_VERIFICATION_TOKEN_TYPE.to_string(),
             iss: self.issuer.clone(),
             aud: self.audience.clone(),
         };
@@ -157,4 +175,50 @@ pub fn verify_password_user(
         .verify_password(passoword.as_bytes(), &parsed_hash)
         .is_ok();
     Ok(is_valid)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use uuid::Uuid;
+
+    #[test]
+    fn test_email_verification_token_rejected() {
+        let config = JwtConfig {
+            secret: "secret".to_string(),
+            expiration_hours: 1,
+            issuer: None,
+            audience: None,
+        };
+
+        let user_id = Uuid::new_v4();
+        let email = "test@example.com".to_string();
+
+        // Create an email verification token
+        let token = config.create_email_verification_token(user_id, email.clone()).unwrap();
+
+        // Attempt to verify it as an access token
+        let result = config.verify_token(&token);
+
+        assert!(result.is_err(), "Email verification token should be rejected by verify_token");
+    }
+
+    #[test]
+    fn test_valid_access_token() {
+        let config = JwtConfig {
+            secret: "secret".to_string(),
+            expiration_hours: 1,
+            issuer: None,
+            audience: None,
+        };
+
+        let user_id = Uuid::new_v4();
+        let email = "test@example.com".to_string();
+
+        let token = config.create_token(user_id, email.clone()).unwrap();
+        let result = config.verify_token(&token);
+
+        assert!(result.is_ok(), "Valid access token should be accepted");
+        assert_eq!(result.unwrap().typ, ACCESS_TOKEN_TYPE);
+    }
 }
