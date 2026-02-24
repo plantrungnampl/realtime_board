@@ -361,3 +361,21 @@ pub async fn mark_email_verified(pool: &PgPool, user_id: Uuid) -> Result<User, A
 
     Ok(user)
 }
+
+pub async fn find_users_by_emails(
+    pool: &PgPool,
+    emails: &[String],
+) -> Result<Vec<User>, AppError> {
+    let users = crate::log_query_fetch_all!(
+        "users.find_users_by_emails",
+        sqlx::query_as::<_, User>(
+            r#"
+                SELECT * FROM core.user WHERE email = ANY($1) AND deleted_at IS NULL
+            "#,
+        )
+        .bind(emails)
+        .fetch_all(pool)
+    )?;
+
+    Ok(users)
+}
