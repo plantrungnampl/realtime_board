@@ -1090,21 +1090,31 @@ async fn load_invite_users(
     pool: &PgPool,
     emails: &[String],
 ) -> Result<Vec<crate::models::users::User>, AppError> {
-    let mut users = Vec::new();
-    let mut missing = Vec::new();
+    let users = user_repo::find_users_by_emails(pool, emails).await?;
+
+    let user_map: HashMap<String, crate::models::users::User> =
+        users.into_iter().map(|u| (u.email.clone(), u)).collect();
+
+    if user_map.len() != emails.len() {
+        let missing: Vec<String> = emails
+            .iter()
+            .filter(|e| !user_map.contains_key(*e))
+            .cloned()
+            .collect();
+
+        if !missing.is_empty() {
+            return Err(AppError::ValidationError(format!(
+                "User not found for email(s): {}",
+                missing.join(", ")
+            )));
+        }
+    }
+    let mut ordered_users = Vec::with_capacity(emails.len());
     for email in emails {
-        match user_repo::find_user_by_email(pool, email).await? {
-            Some(user) => users.push(user),
-            None => missing.push(email.clone()),
+        if let Some(user) = user_map.get(email) {
+            ordered_users.push(user.clone());
         }
     }
 
-    if !missing.is_empty() {
-        return Err(AppError::ValidationError(format!(
-            "User not found for email(s): {}",
-            missing.join(", ")
-        )));
-    }
-
-    Ok(users)
+    Ok(ordered_users)
 }

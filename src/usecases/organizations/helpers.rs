@@ -142,16 +142,22 @@ pub(super) async fn split_invite_targets(
     pool: &PgPool,
     emails: &[String],
 ) -> Result<(Vec<User>, Vec<String>), AppError> {
-    let mut users = Vec::new();
-    let mut pending = Vec::new();
+    let users = user_repo::find_users_by_emails(pool, emails).await?;
+    let user_map: std::collections::HashMap<String, User> =
+        users.into_iter().map(|u| (u.email.clone(), u)).collect();
+
+    let mut found_users = Vec::with_capacity(user_map.len());
+    let mut pending_emails = Vec::new();
+
     for email in emails {
-        match user_repo::find_user_by_email(pool, email).await? {
-            Some(user) => users.push(user),
-            None => pending.push(email.clone()),
+        if let Some(user) = user_map.get(email) {
+            found_users.push(user.clone());
+        } else {
+            pending_emails.push(email.clone());
         }
     }
 
-    Ok((users, pending))
+    Ok((found_users, pending_emails))
 }
 
 pub(super) async fn suggest_slugs(pool: &PgPool, base: &str) -> Result<Vec<String>, AppError> {
