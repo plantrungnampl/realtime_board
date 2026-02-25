@@ -67,6 +67,21 @@ pub async fn insert_user(
     Ok(user)
 }
 
+pub async fn find_users_by_emails(pool: &PgPool, emails: &[String]) -> Result<Vec<User>, AppError> {
+    let users = crate::log_query_fetch_all!(
+        "users.find_users_by_emails",
+        sqlx::query_as::<_, User>(
+            r#"
+                SELECT * FROM core.user WHERE email = ANY($1) AND deleted_at IS NULL
+            "#,
+        )
+        .bind(emails)
+        .fetch_all(pool)
+    )?;
+
+    Ok(users)
+}
+
 pub async fn insert_user_tx(
     tx: &mut Transaction<'_, Postgres>,
     email: &str,
