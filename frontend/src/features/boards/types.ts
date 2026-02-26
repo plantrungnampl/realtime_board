@@ -221,6 +221,7 @@ export interface BoardElementUpdateResponse {
   id: string;
   version: number;
   updated_at: string;
+  already_deleted?: boolean | null;
 }
 
 export interface DeleteBoardElementResponse {
@@ -437,4 +438,11 @@ export type WsActionType =
 export interface WsBoardElementAction {
   action: WsActionType;
   payload: BoardElement | CursorMove;
+}
+
+export interface SelectionOverlay {
+  key: string;
+  element: BoardElement;
+  color: string;
+  label?: string;
 }

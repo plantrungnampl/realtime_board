@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as VerifyEmailRouteImport } from './routes/verify-email'
+import { Route as TestSelectionRouteImport } from './routes/test-selection'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as PricingRouteImport } from './routes/pricing'
@@ -26,6 +27,11 @@ import { Route as OrganizationsOrgIdMembersRouteImport } from './routes/organiza
 const VerifyEmailRoute = VerifyEmailRouteImport.update({
   id: '/verify-email',
   path: '/verify-email',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TestSelectionRoute = TestSelectionRouteImport.update({
+  id: '/test-selection',
+  path: '/test-selection',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RegisterRoute = RegisterRouteImport.update({
@@ -99,6 +105,7 @@ export interface FileRoutesByFullPath {
   '/pricing': typeof PricingRoute
   '/profile': typeof ProfileRoute
   '/register': typeof RegisterRouteWithChildren
+  '/test-selection': typeof TestSelectionRoute
   '/verify-email': typeof VerifyEmailRoute
   '/board/$boardId': typeof BoardBoardIdRoute
   '/organizations/new': typeof OrganizationsNewRoute
@@ -114,6 +121,7 @@ export interface FileRoutesByTo {
   '/pricing': typeof PricingRoute
   '/profile': typeof ProfileRoute
   '/register': typeof RegisterRouteWithChildren
+  '/test-selection': typeof TestSelectionRoute
   '/verify-email': typeof VerifyEmailRoute
   '/board/$boardId': typeof BoardBoardIdRoute
   '/organizations/new': typeof OrganizationsNewRoute
@@ -130,6 +138,7 @@ export interface FileRoutesById {
   '/pricing': typeof PricingRoute
   '/profile': typeof ProfileRoute
   '/register': typeof RegisterRouteWithChildren
+  '/test-selection': typeof TestSelectionRoute
   '/verify-email': typeof VerifyEmailRoute
   '/board/$boardId': typeof BoardBoardIdRoute
   '/organizations/new': typeof OrganizationsNewRoute
@@ -147,6 +156,7 @@ export interface FileRouteTypes {
     | '/pricing'
     | '/profile'
     | '/register'
+    | '/test-selection'
     | '/verify-email'
     | '/board/$boardId'
     | '/organizations/new'
@@ -162,6 +172,7 @@ export interface FileRouteTypes {
     | '/pricing'
     | '/profile'
     | '/register'
+    | '/test-selection'
     | '/verify-email'
     | '/board/$boardId'
     | '/organizations/new'
@@ -177,6 +188,7 @@ export interface FileRouteTypes {
     | '/pricing'
     | '/profile'
     | '/register'
+    | '/test-selection'
     | '/verify-email'
     | '/board/$boardId'
     | '/organizations/new'
@@ -193,6 +205,7 @@ export interface RootRouteChildren {
   PricingRoute: typeof PricingRoute
   ProfileRoute: typeof ProfileRoute
   RegisterRoute: typeof RegisterRouteWithChildren
+  TestSelectionRoute: typeof TestSelectionRoute
   VerifyEmailRoute: typeof VerifyEmailRoute
   BoardBoardIdRoute: typeof BoardBoardIdRoute
   OrganizationsNewRoute: typeof OrganizationsNewRoute
@@ -206,6 +219,13 @@ declare module '@tanstack/react-router' {
       path: '/verify-email'
       fullPath: '/verify-email'
       preLoaderRoute: typeof VerifyEmailRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/test-selection': {
+      id: '/test-selection'
+      path: '/test-selection'
+      fullPath: '/test-selection'
+      preLoaderRoute: typeof TestSelectionRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/register': {
@@ -316,6 +336,7 @@ const rootRouteChildren: RootRouteChildren = {
   PricingRoute: PricingRoute,
   ProfileRoute: ProfileRoute,
   RegisterRoute: RegisterRouteWithChildren,
+  TestSelectionRoute: TestSelectionRoute,
   VerifyEmailRoute: VerifyEmailRoute,
   BoardBoardIdRoute: BoardBoardIdRoute,
   OrganizationsNewRoute: OrganizationsNewRoute,
