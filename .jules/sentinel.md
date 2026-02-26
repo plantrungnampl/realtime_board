@@ -53,3 +53,14 @@
 1. Implement a `security_headers` middleware using `axum::middleware::from_fn`.
 2. Apply `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, and `X-XSS-Protection: 1; mode=block`.
 3. Register this middleware globally in the main router.
+
+## 2026-03-05 - JWT Type Confusion
+
+**Vulnerability:** The application used the same JWT secret and validation logic for different token types (Access Tokens and Email Verification Tokens) without a distinguishing `typ` claim in the Access Token schema. This allowed an attacker to use a valid Email Verification Token as an Access Token to takeover an account or bypass authentication.
+
+**Learning:** When using JWTs for multiple purposes, relying solely on structure or signature is insufficient. Explicit type discrimination is required to prevent cross-purpose usage. This also highlights the importance of consistent schemas across different token types.
+
+**Prevention:**
+1. Always include a `typ` (type) claim in all JWTs.
+2. Verify the `typ` claim matches the expected purpose during token validation.
+3. Use separate secrets or keys for different token types if possible, or enforce strict schema validation.
