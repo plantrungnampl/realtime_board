@@ -170,7 +170,9 @@ const BoardCircleItem = ({ element, isInteractive, onPointerDown, registerRef }:
 };
 
 const BoardDrawingItem = ({ element, isInteractive, onPointerDown, registerRef }: BoardElementItemProps) => {
-  const points = element.properties.points;
+  // Explicitly cast to DrawingElement or access properties safely
+  const drawingElement = element as Extract<BoardElement, { element_type: "Drawing" }>;
+  const points = drawingElement.properties.points;
   const isValid = Array.isArray(points) && isValidDrawingPoints(points);
   const positionX = coerceNumber(element.position_x, 0);
   const positionY = coerceNumber(element.position_y, 0);
@@ -207,10 +209,12 @@ const BoardDrawingItem = ({ element, isInteractive, onPointerDown, registerRef }
 };
 
 const BoardTextItem = ({ element, isInteractive, onPointerDown, onOpenTextEditor, registerRef }: BoardElementItemProps) => {
+  // Explicitly cast to TextElement or access properties safely
+  const textElement = element as Extract<BoardElement, { element_type: "Text" }>;
   const positionX = coerceNumber(element.position_x, 0);
   const positionY = coerceNumber(element.position_y, 0);
   const fontSize = element.style.fontSize ?? DEFAULT_TEXT_STYLE.fontSize ?? 16;
-  const content = element.properties?.content ?? "";
+  const content = textElement.properties?.content ?? "";
   const color = element.style.textColor ?? DEFAULT_TEXT_STYLE.fill ?? "#1F2937";
   const style = useMemo(
     () => ({
@@ -256,9 +260,11 @@ const BoardTextItem = ({ element, isInteractive, onPointerDown, onOpenTextEditor
 };
 
 const BoardStickyNoteItem = ({ element, isInteractive, onPointerDown, onOpenTextEditor, registerRef }: BoardElementItemProps) => {
+  // Explicitly cast to StickyNoteElement or access properties safely
+  const stickyElement = element as Extract<BoardElement, { element_type: "StickyNote" }>;
   const rect = getRectBounds(element);
   const fontSize = element.style.fontSize ?? 16;
-  const content = element.properties?.content ?? "";
+  const content = stickyElement.properties?.content ?? "";
   const padding = 12;
   const color = element.style.textColor ?? "#1F2937";
   const style = useMemo(
