@@ -205,11 +205,11 @@ export function TopBar() {
         <div className="h-6 w-px bg-border mx-2 hidden sm:block" />
 
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" className="w-9 h-9 p-0 rounded-full">
-            <Gift className="w-5 h-5 text-text-secondary" />
+          <Button variant="ghost" size="sm" className="w-9 h-9 p-0 rounded-full" aria-label={t("nav.viewGifts")}>
+            <Gift className="w-5 h-5 text-text-secondary" aria-hidden="true" />
           </Button>
-          <Button variant="ghost" size="sm" className="w-9 h-9 p-0 rounded-full">
-            <Bell className="w-5 h-5 text-text-secondary" />
+          <Button variant="ghost" size="sm" className="w-9 h-9 p-0 rounded-full" aria-label={t("nav.viewNotifications")}>
+            <Bell className="w-5 h-5 text-text-secondary" aria-hidden="true" />
           </Button>
           
           <DropdownMenu>
