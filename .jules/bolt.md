@@ -19,3 +19,13 @@
 **Learning:** In `@pixi/react`, passing a new function to the `draw` prop of `<Graphics>` on every render forces the underlying Pixi object to clear and redraw, even if the visual output hasn't changed. By memoizing the `draw` callback with granular dependencies (e.g., style, width, height) instead of the volatile `element` object (which changes on every drag frame due to position updates), we prevent expensive redraws during dragging.
 
 **Action:** When using `<Graphics>` in `@pixi/react`, always wrap the `draw` function in `useCallback` and ensure its dependencies are visually relevant properties, not the entire state object. Suppress `react-hooks/preserve-manual-memoization` if necessary.
+
+## 2025-02-13 - [Optimization] Avoiding Cascading Renders from `useEffect`
+**Learning:** Using `useEffect` to trigger a state change synchronously after a render (e.g., `if (!canComment) setTool("select")`) forces React to throw away the just-completed render and start a new one, causing a cascading render that hurts performance. This is particularly problematic in complex components like `board.$boardId.tsx` where rendering is expensive. By calculating the derived state directly during render (or adjusting the state before rendering), we avoid this double-render penalty.
+
+**Action:** Avoid calling `setState` inside `useEffect` if the state can be derived directly from props or other state during the initial render phase.
+
+## 2025-02-13 - [Optimization] Stable Pixi Graphics Props II
+**Learning:** In `@pixi/react`, passing inline `draw` functions and inline `style` objects (e.g. `{{ fontSize: 11, fill: cursor.color }}`) into components like `<pixiGraphics>` and `<pixiText>` on every render forces the underlying Pixi object to clear, recreate, and redraw objects/styles. In high-frequency components like cursors, this is extremely bad for performance. By using `useCallback` for draw functions and `useMemo` for inline styles based on primitive dependencies, we save significant processing time by keeping referential equality between renders.
+
+**Action:** When using components in `@pixi/react`, always avoid passing inline functions for `draw` and inline objects for `style`. Wrap them in `useCallback` and `useMemo` respectively.
