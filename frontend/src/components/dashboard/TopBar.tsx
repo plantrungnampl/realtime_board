@@ -205,10 +205,10 @@ export function TopBar() {
         <div className="h-6 w-px bg-border mx-2 hidden sm:block" />
 
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" className="w-9 h-9 p-0 rounded-full">
+          <Button aria-label={t("nav.whatsNew")} variant="ghost" size="sm" className="w-9 h-9 p-0 rounded-full">
             <Gift className="w-5 h-5 text-text-secondary" />
           </Button>
-          <Button variant="ghost" size="sm" className="w-9 h-9 p-0 rounded-full">
+          <Button aria-label={t("nav.notifications")} variant="ghost" size="sm" className="w-9 h-9 p-0 rounded-full">
             <Bell className="w-5 h-5 text-text-secondary" />
           </Button>
           
