@@ -10,42 +10,78 @@ export const coerceNumber = (value: number | null | undefined, fallback: number)
 export const clampColor = (value: number, fallback: number) =>
   Number.isFinite(value) && value >= 0 && value <= 0xffffff ? value : fallback;
 
+const COLOR_CACHE_MAX_SIZE = 500;
+const colorCache = new Map<string, number>();
+
 export const parseColor = (value?: string, fallback = 0x000000) => {
   if (!value) return fallback;
   if (value === "transparent") return fallback;
+
+  const cacheKey = `${value}_${fallback}`;
+  const cached = colorCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
+  let result = fallback;
   if (value.startsWith("#")) {
-    return clampColor(Number.parseInt(value.slice(1), 16), fallback);
-  }
-  if (value.startsWith("rgb")) {
+    result = clampColor(Number.parseInt(value.slice(1), 16), fallback);
+  } else if (value.startsWith("rgb")) {
     const parts = value.match(/\d+(\.\d+)?/g);
-    if (!parts || parts.length < 3) return fallback;
-    const [r, g, b] = parts.map((part) => Math.max(0, Math.min(255, Number(part))));
-    return clampColor((r << 16) + (g << 8) + b, fallback);
+    if (parts && parts.length >= 3) {
+      const [r, g, b] = parts.map((part) => Math.max(0, Math.min(255, Number(part))));
+      result = clampColor((r << 16) + (g << 8) + b, fallback);
+    }
+  } else {
+    const hex = Number.parseInt(value.replace(/[^0-9A-Fa-f]/g, ""), 16);
+    result = clampColor(Number.isFinite(hex) ? hex : fallback, fallback);
   }
-  const hex = Number.parseInt(value.replace(/[^0-9A-Fa-f]/g, ""), 16);
-  return clampColor(Number.isFinite(hex) ? hex : fallback, fallback);
+
+  if (colorCache.size >= COLOR_CACHE_MAX_SIZE) {
+    const firstKey = colorCache.keys().next().value;
+    if (firstKey !== undefined) colorCache.delete(firstKey);
+  }
+  colorCache.set(cacheKey, result);
+
+  return result;
 };
+
+const fillStyleCache = new Map<string, { color: number; alpha: number }>();
 
 export const resolveFillStyle = (value?: string, fallback = 0x000000) => {
   if (!value || value === "transparent") {
     return { color: fallback, alpha: 0 };
   }
+
+  const cacheKey = `${value}_${fallback}`;
+  const cached = fillStyleCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
+  let result;
   if (value.startsWith("rgba")) {
     const parts = value.match(/\d+(\.\d+)?/g);
     if (!parts || parts.length < 4) {
-      return { color: fallback, alpha: 0 };
+      result = { color: fallback, alpha: 0 };
+    } else {
+      const [r, g, b, a] = parts.map((part) => Number(part));
+      const color = clampColor(
+        (Math.max(0, Math.min(255, r)) << 16)
+          + (Math.max(0, Math.min(255, g)) << 8)
+          + Math.max(0, Math.min(255, b)),
+        fallback,
+      );
+      const alpha = Math.max(0, Math.min(1, a));
+      result = { color, alpha };
     }
-    const [r, g, b, a] = parts.map((part) => Number(part));
-    const color = clampColor(
-      (Math.max(0, Math.min(255, r)) << 16)
-        + (Math.max(0, Math.min(255, g)) << 8)
-        + Math.max(0, Math.min(255, b)),
-      fallback,
-    );
-    const alpha = Math.max(0, Math.min(1, a));
-    return { color, alpha };
+  } else {
+    result = { color: parseColor(value, fallback), alpha: 1 };
   }
-  return { color: parseColor(value, fallback), alpha: 1 };
+
+  if (fillStyleCache.size >= COLOR_CACHE_MAX_SIZE) {
+    const firstKey = fillStyleCache.keys().next().value;
+    if (firstKey !== undefined) fillStyleCache.delete(firstKey);
+  }
+  fillStyleCache.set(cacheKey, result);
+
+  return result;
 };
 
 export const isValidDrawingPoints = (points: number[]) =>

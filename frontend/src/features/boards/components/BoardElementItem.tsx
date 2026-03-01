@@ -170,7 +170,7 @@ const BoardCircleItem = ({ element, isInteractive, onPointerDown, registerRef }:
 };
 
 const BoardDrawingItem = ({ element, isInteractive, onPointerDown, registerRef }: BoardElementItemProps) => {
-  const points = element.properties.points;
+  const points = element.element_type === "Drawing" ? element.properties.points : undefined;
   const isValid = Array.isArray(points) && isValidDrawingPoints(points);
   const positionX = coerceNumber(element.position_x, 0);
   const positionY = coerceNumber(element.position_y, 0);
@@ -210,7 +210,7 @@ const BoardTextItem = ({ element, isInteractive, onPointerDown, onOpenTextEditor
   const positionX = coerceNumber(element.position_x, 0);
   const positionY = coerceNumber(element.position_y, 0);
   const fontSize = element.style.fontSize ?? DEFAULT_TEXT_STYLE.fontSize ?? 16;
-  const content = element.properties?.content ?? "";
+  const content = element.element_type === "Text" ? element.properties?.content ?? "" : "";
   const color = element.style.textColor ?? DEFAULT_TEXT_STYLE.fill ?? "#1F2937";
   const style = useMemo(
     () => ({
@@ -258,7 +258,7 @@ const BoardTextItem = ({ element, isInteractive, onPointerDown, onOpenTextEditor
 const BoardStickyNoteItem = ({ element, isInteractive, onPointerDown, onOpenTextEditor, registerRef }: BoardElementItemProps) => {
   const rect = getRectBounds(element);
   const fontSize = element.style.fontSize ?? 16;
-  const content = element.properties?.content ?? "";
+  const content = element.element_type === "StickyNote" ? element.properties?.content ?? "" : "";
   const padding = 12;
   const color = element.style.textColor ?? "#1F2937";
   const style = useMemo(
